@@ -1,0 +1,346 @@
+========================================
+知到自动播放脚本 - 多课程配置说明
+版本：v3.1+
+========================================
+
+【功能概述】
+
+从v3.1版本开始，支持每个账号配置不同的课程名称。
+课程名称从 config.json 迁移至 account.json，实现更灵活的课程管理。
+
+
+【核心变化】
+
+v3.0 及之前版本：
+-------------------
+- 课程名称在 config.json 中配置
+- 所有账号使用相同的课程
+- 切换课程需要修改 config.json
+
+v3.1 及之后版本：
+-------------------
+- 课程名称在 account.json 中配置
+- 每个账号可以配置不同的课程
+- 切换课程只需修改对应账号的配置文件
+- 向后兼容：未配置时使用默认值
+
+
+【配置文件格式】
+
+config.json（v3.1+）
+-------------------
+{
+  "min_watch_percentage": 0.95,
+  "max_videos_per_run": 999,
+  "captcha_timeout": 300,
+  "enable_notifications": true,
+  "note": "course_name已移至account.json，每个账号可配置不同课程"
+}
+
+注意：course_name 字段已移除
+
+
+account.json（v3.1+）
+-------------------
+{
+    "username": "你的账号",
+    "password": "你的密码",
+    "course_name": "中国近现代史纲要",
+    "note": "请填写账号、密码和课程名称"
+}
+
+新增：course_name 字段（必填，建议）
+
+
+【使用场景】
+
+场景1：同一账号学习多门课程
+-------------------
+步骤：
+1. 第一门课程学完后，修改 account.json 中的 course_name
+2. 重新运行程序
+3. 自动切换到新课程
+
+示例：
+# 第一次运行 - 学习近代史
+account.json:
+{
+    "username": "15239230879",
+    "password": "Lsj060819",
+    "course_name": "中国近现代史纲要"
+}
+
+# 第二次运行 - 学习毛概
+account.json:
+{
+    "username": "15239230879",
+    "password": "Lsj060819",
+    "course_name": "毛泽东思想和中国特色社会主义理论体系概论"
+}
+
+
+场景2：不同账号学习不同课程
+-------------------
+配置：
+account1.json:
+{
+    "username": "user1",
+    "password": "pass1",
+    "course_name": "中国近现代史纲要"
+}
+
+account2.json:
+{
+    "username": "user2",
+    "password": "pass2",
+    "course_name": "思想道德与法治"
+}
+
+account3.json:
+{
+    "username": "user3",
+    "password": "pass3",
+    "course_name": "马克思主义基本原理"
+}
+
+运行：
+python zhidao_web_auto_player_final.py --account account1.json
+python zhidao_web_auto_player_final.py --account account2.json
+python zhidao_web_auto_player_final.py --account account3.json
+
+
+场景3：多实例运行不同课程
+-------------------
+优势：
+- 同时学习多门课程
+- 提高学习效率
+- 各账号独立进度
+
+注意事项：
+- 建议最多同时运行2-3个实例
+- 避免同一账号多开
+- 确保有足够的系统资源
+
+
+【向后兼容】
+
+如果 account.json 中未配置 course_name：
+-------------------
+程序行为：
+1. 尝试从 config.json 读取 course_name（如果存在）
+2. 如果都没有，使用默认值："中国近现代史纲要"
+3. 输出警告日志：
+   ⚠️ account.json中未配置课程名称，使用默认值: XXX
+
+建议：
+- 尽快在 account.json 中添加 course_name 字段
+- 从 config.json 中移除 course_name 字段
+
+
+【常见课程名称】
+
+思政类课程：
+-------------------
+- 中国近现代史纲要
+- 毛泽东思想和中国特色社会主义理论体系概论
+- 马克思主义基本原理
+- 思想道德与法治
+- 习近平新时代中国特色社会主义思想概论
+
+其他常见课程：
+-------------------
+- 大学英语
+- 高等数学
+- 线性代数
+- 概率论与数理统计
+- 大学物理
+- 程序设计基础
+- 数据结构
+
+注意：课程名称必须与知到平台上显示的完全一致
+
+
+【课程名称查找】
+
+方法1：查看网页
+-------------------
+1. 登录知到网站
+2. 进入"我的课程"
+3. 复制课程卡片上显示的课程名称
+4. 粘贴到 account.json 的 course_name 字段
+
+
+
+【配置优先级】
+
+优先级顺序（从高到低）：
+-------------------
+1. account.json 中的 course_name
+2. config.json 中的 course_name（兼容旧版本）
+3. 程序默认值："中国近现代史纲要"
+
+
+【实现细节】
+
+load_account() 方法变化：
+-------------------
+# v3.0 版本
+def load_account(self):
+    return username, password
+
+# v3.1 版本
+def load_account(self):
+    username = account.get('username')
+    password = account.get('password')
+    course_name = account.get('course_name', '')
+    
+    # 向后兼容
+    if not course_name:
+        course_name = self.config.get('course_name', '中国近现代史纲要')
+        self.logger.warning(f"⚠️ account.json中未配置课程名称，使用默认值: {course_name}")
+    
+    return username, password, course_name
+
+
+run() 方法变化：
+-------------------
+# 保存课程名称到实例变量
+username, password, course_name = self.load_account()
+self.course_name = course_name
+
+# 查找课程时使用
+self.find_chinese_history_course()  # 自动使用 self.course_name
+
+
+find_chinese_history_course() 方法变化：
+-------------------
+# 支持参数传入
+def find_chinese_history_course(self, course_name=None):
+    if course_name is None:
+        course_name = getattr(self, 'course_name', None) or \
+                      self.config.get('course_name', '中国近现代史纲要')
+
+
+【日志输出示例】
+
+启动时：
+-------------------
+✅ 已加载账号: 152****879
+✅ 目标课程: 中国近现代史纲要
+
+开始知到网页版自动播放程序
+============================================================
+账号配置: account.json
+程序配置: config.json
+运行模式: 有界面模式
+============================================================
+
+登录成功！
+正在查找'中国近现代史纲要'课程...
+成功点击'中国近现代史纲要'课程
+
+
+未配置课程名称时：
+-------------------
+⚠️ account.json中未配置课程名称，使用默认值: 中国近现代史纲要
+
+
+【常见问题】
+
+问题1：找不到课程怎么办？
+-------------------
+答：检查以下几点：
+1. 课程名称是否完全一致（包括标点符号）
+2. 课程是否在"我的课程"列表中
+3. 查看 course_page_*.png 截图确认
+4. 尝试使用课程名称的关键词（如"近现代史"）
+
+问题2：可以使用课程简称吗？
+-------------------
+答：建议使用完整名称。但程序会尝试模糊匹配，
+    例如："近现代史纲要"可能匹配"中国近现代史纲要"
+
+问题3：不同账号必须配置不同课程吗？
+-------------------
+答：不是必须的。可以：
+- 所有账号配置相同课程（批量学习）
+- 每个账号配置不同课程（分别学习）
+- 根据需要灵活配置
+
+问题4：如何快速切换课程？
+-------------------
+答：只需修改 account.json 中的 course_name 字段，
+    无需重启程序或修改代码
+
+问题5：旧版配置文件如何升级？
+-------------------
+答：
+1. 将 config.json 中的 course_name 复制出来
+2. 粘贴到 account.json 中
+3. 删除 config.json 中的 course_name 行
+4. 重新运行程序
+
+
+【最佳实践】
+
+建议1：明确配置课程名称
+-------------------
+在每个 account.json 中都明确配置 course_name，
+避免依赖默认值。
+
+建议2：使用完整课程名称
+-------------------
+使用知到平台显示的完整课程名称，
+确保准确匹配。
+
+建议3：定期检查配置
+-------------------
+定期检查 account.json 配置是否正确，
+特别是课程名称是否需要更新。
+
+建议4：备份配置文件
+-------------------
+修改配置前先备份，避免配置错误导致无法运行。
+
+
+【升级指南】
+
+从 v3.0 升级到 v3.1：
+-------------------
+步骤1：备份配置文件
+cp config.json config.json.bak
+cp account*.json account*.json.bak
+
+步骤2：修改 account.json
+添加 course_name 字段：
+{
+    "username": "xxx",
+    "password": "xxx",
+    "course_name": "中国近现代史纲要"  # 新增
+}
+
+步骤3：修改 config.json
+移除 course_name 字段
+
+步骤4：测试运行
+python zhidao_web_auto_player_final.py
+
+步骤5：检查日志
+确认课程名称正确加载
+
+
+【技术支持】
+
+如有问题，请：
+1. 查看本文档
+2. 查看"使用说明.txt"
+3. 查看程序日志输出
+4. 查看调试截图
+
+常见错误已收录在"使用说明.txt"的常见问题部分。
+
+
+========================================
+更新时间：2025-10-29
+版本：v3.1
+========================================

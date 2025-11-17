@@ -1,0 +1,7 @@
+{
+  "min_watch_percentage": 0.95,
+  "max_videos_per_run": 999,
+  "captcha_timeout": 300,
+  "enable_notifications": true,
+  "note": "course_name已移至account.json，每个账号可配置不同课程"
+}

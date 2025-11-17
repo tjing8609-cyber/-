@@ -1,0 +1,403 @@
+# 知到网页版自动播放程序 - 多实例运行指南
+
+## 📚 功能说明
+
+本程序支持多账号同时运行，每个账号使用独立的配置文件、进度文件和日志文件，互不干扰。
+
+---
+
+## 🚀 快速开始
+
+### 方式1：使用智能启动器（推荐）
+
+```bash
+# 智能启动器会根据 course_type 字段自动选择对应版本
+# course_type = 1: 无题目课程（使用 zhidao_web_auto_player_final.py）
+# course_type = 2: 有题目课程（使用 zhidao_web_auto_player_with_quiz.py）
+
+# 单账号运行
+python zhidao_launcher.py --account account.json
+
+# 多账号运行
+python zhidao_launcher.py --account account1.json  # 终端1
+python zhidao_launcher.py --account account2.json  # 终端2
+python zhidao_launcher.py --account account3.json  # 终端3
+```
+
+### 方式2：直接运行无题目课程版本
+
+```bash
+# 编辑 account.json 填写账号密码，确保 course_type = 1
+python zhidao_web_auto_player_final.py
+
+# 或指定账号文件
+python zhidao_web_auto_player_final.py --account account1.json
+```
+
+### 方式3：直接运行有题目课程版本
+
+```bash
+# 编辑 account.json 填写账号密码，确保 course_type = 2
+python zhidao_web_auto_player_with_quiz.py --account account.json
+
+# 或多账号运行
+python zhidao_web_auto_player_with_quiz.py --account account1.json  # 终端1
+python zhidao_web_auto_player_with_quiz.py --account account2.json  # 终端2
+```
+
+---
+
+## 📁 文件结构
+
+### 运行后自动生成的文件
+
+```
+zhidao/
+├── zhidao_web_auto_player_final.py   # 主程序
+├── config.json                        # 程序配置（共享）
+│
+├── account.json                       # 默认账号配置
+├── account1.json                      # 账号1配置
+├── account2.json                      # 账号2配置
+├── account3.json                      # 账号3配置
+│
+├── progress_account.json              # 默认账号进度（自动生成）
+├── progress_account1.json             # 账号1进度（自动生成）
+├── progress_account2.json             # 账号2进度（自动生成）
+├── progress_account3.json             # 账号3进度（自动生成）
+│
+├── zhidao_account.log                 # 默认账号日志（自动生成）
+├── zhidao_account1.log                # 账号1日志（自动生成）
+├── zhidao_account2.log                # 账号2日志（自动生成）
+└── zhidao_account3.log                # 账号3日志（自动生成）
+```
+
+---
+
+## ⚙️ 配置文件说明
+
+### 1. 账号配置文件（account1.json, account2.json...）
+
+```json
+{
+    "username": "您的手机号或学号",
+    "password": "您的密码",
+    "course_name": "大学生心理健康",
+    "course_type": 2,
+    "use_sidebar_layout": true,
+    "max_watch_minutes": 30,
+    "note": "账号1配置 - 请填写第一个账号的用户名、密码和课程名称",
+    "course_type_note": "课程类型: 1=无题目课程(默认), 2=有题目课程(会弹出题目，自动点击关闭)",
+    "use_sidebar_layout_note": "侧边栏布局: false=使用主区域查找(默认,稳定), true=启用侧边栏布局检测(适用于新版界面)",
+    "max_watch_minutes_note": "最大观看时长(分钟): 0=播放完所有视频(默认), >0=播放指定分钟数后停止"
+}
+```
+
+**重要字段说明：**
+- `username`: 登录账号（手机号或学号）
+- `password`: 登录密码
+- `course_name`: 要学习的课程名称
+- `course_type`: **1=无题目课程**, **2=有题目课程**（重要！）
+- `use_sidebar_layout`: 是否使用侧边栏布局（新版界面）
+- `max_watch_minutes`: 0=播放所有视频，>0=播放指定分钟后停止
+
+**注意：** 
+- 每个账号使用独立的配置文件，互不影响
+- `course_type` 决定使用哪个版本的脚本（通过启动器自动选择）
+
+### 2. 程序配置文件（config.json）
+
+```json
+{
+    "course_name": "中国近现代史纲要",
+    "min_watch_percentage": 0.95,
+    "max_videos_per_run": 999,
+    "captcha_timeout": 300,
+    "enable_notifications": true
+}
+```
+
+**说明：**
+- `max_videos_per_run: 999` - 持续播放直到所有视频完成
+- 所有账号共享此配置
+
+---
+
+## 🎯 命令行参数
+
+### 基本用法
+
+```bash
+python zhidao_web_auto_player_final.py [选项]
+```
+
+### 可用选项
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--account FILE` | 指定账号配置文件 | account.json |
+| `--config FILE` | 指定程序配置文件 | config.json |
+| `--headless` | 无头模式运行（不显示浏览器） | 有界面模式 |
+| `-h, --help` | 显示帮助信息 | - |
+
+### 使用示例
+
+```bash
+# 查看帮助
+python zhidao_web_auto_player_final.py --help
+
+# 使用账号1配置
+python zhidao_web_auto_player_final.py --account account1.json
+
+# 使用无头模式运行
+python zhidao_web_auto_player_final.py --account account1.json --headless
+
+# 自定义所有配置文件
+python zhidao_web_auto_player_final.py --account my_account.json --config my_config.json
+```
+
+---
+
+## 💡 多账号运行最佳实践
+
+### 1. 准备工作
+
+```bash
+# 1. 复制账号配置模板
+# 已有 account1.json, account2.json, account3.json
+
+# 2. 编辑每个配置文件，填写对应账号信息
+# 用记事本或VS Code打开编辑
+
+# 3. 确保电脑资源充足
+# 建议：8GB内存以上，同时运行不超过3个实例
+```
+
+### 2. 启动多个实例
+
+**方法1：使用智能启动器（推荐）**
+```bash
+# 终端1
+cd C:\Users\16224\Desktop\zhidao
+conda activate study312
+python zhidao_launcher.py --account account1.json
+
+# 终端2（按Win+R，输入powershell，新开窗口）
+cd C:\Users\16224\Desktop\zhidao
+conda activate study312
+python zhidao_launcher.py --account account2.json
+
+# 终端3
+cd C:\Users\16224\Desktop\zhidao
+conda activate study312
+python zhidao_launcher.py --account account3.json
+```
+
+**方法2：直接运行无题目版本**
+```bash
+# 终端1 - 确保 account1.json 中 course_type = 1
+cd C:\Users\16224\Desktop\zhidao
+conda activate study312
+python zhidao_web_auto_player_final.py --account account1.json
+
+# 终端2
+cd C:\Users\16224\Desktop\zhidao
+conda activate study312
+python zhidao_web_auto_player_final.py --account account2.json
+```
+
+**方法3：直接运行有题目版本**
+```bash
+# 终端1 - 确保 account1.json 中 course_type = 2
+cd C:\Users\16224\Desktop\zhidao
+conda activate study312
+python zhidao_web_auto_player_with_quiz.py --account account1.json
+
+# 终端2
+cd C:\Users\16224\Desktop\zhidao
+conda activate study312
+python zhidao_web_auto_player_with_quiz.py --account account2.json
+```
+
+**方法4：创建批处理文件**
+
+**智能启动器方式（推荐）：**
+
+创建 `运行账号1.bat`:
+```batch
+@echo off
+REM 知到自动播放 - 账号1（智能启动器）
+cd /d C:\Users\16224\Desktop\zhidao
+call conda activate study312
+python zhidao_launcher.py --account account1.json
+pause
+```
+
+创建 `运行账号2.bat`:
+```batch
+@echo off
+REM 知到自动播放 - 账号2（智能启动器）
+cd /d C:\Users\16224\Desktop\zhidao
+call conda activate study312
+python zhidao_launcher.py --account account2.json
+pause
+```
+
+**无题目版本方式：**
+
+创建 `运行账号1_无题目.bat`:
+```batch
+@echo off
+REM 知到自动播放 - 账号1（无题目版本）
+cd /d C:\Users\16224\Desktop\zhidao
+call conda activate study312
+python zhidao_web_auto_player_final.py --account account1.json
+pause
+```
+
+**有题目版本方式：**
+
+创建 `运行账号1_有题目.bat`:
+```batch
+@echo off
+REM 知到自动播放 - 账号1（有题目版本）
+cd /d C:\Users\16224\Desktop\zhidao
+call conda activate study312
+python zhidao_web_auto_player_with_quiz.py --account account1.json
+pause
+```
+
+然后双击运行各个批处理文件。
+
+### 3. 时间错开启动
+
+```
+建议启动间隔：5-10分钟
+- 00:00 启动账号1
+- 00:05 启动账号2
+- 00:10 启动账号3
+```
+
+---
+
+## ⚠️ 注意事项
+
+### 1. 资源占用
+
+每个实例约占用：
+- 💻 内存：500MB-1GB
+- 🔄 CPU：10-20%
+- 🌐 网络：视频流量
+
+**建议：** 最多同时运行2-3个实例
+
+### 2. 账号安全
+
+- ⚠️ 不建议在同一IP同时登录大量账号
+- ⚠️ 建议时间错开，避免被检测为异常
+- ⚠️ 每个账号的配置文件请妥善保管
+
+### 3. 进度管理
+
+- ✅ 每个账号的进度独立保存
+- ✅ 程序中断后可以继续播放
+- ✅ 不同账号的进度互不影响
+
+### 4. 日志查看
+
+```bash
+# 查看账号1的日志
+type zhidao_account1.log
+
+# 实时监控日志（PowerShell）
+Get-Content zhidao_account1.log -Wait -Tail 20
+```
+
+---
+
+## 🔧 故障排查
+
+### 问题1：提示"账号或密码为空"
+
+**解决：** 检查对应的账号配置文件，确保 username 和 password 已填写
+
+### 问题2：进度文件冲突
+
+**原因：** 多个实例使用了相同的账号配置文件
+
+**解决：** 确保每个实例使用不同的 `--account` 参数
+
+### 问题3：浏览器启动失败
+
+**原因：** ChromeDriver 下载失败或Chrome版本不匹配
+
+**解决：** 
+```bash
+# 删除缓存的驱动重新下载
+rm -r ~/.wdm
+```
+
+### 问题4：内存不足
+
+**解决：** 减少同时运行的实例数量
+
+---
+
+## 📊 运行示例输出
+
+```
+============================================================
+知到网页版自动播放程序 - 多实例支持版
+============================================================
+账号配置: account1.json
+程序配置: config.json
+运行模式: 有界面模式
+============================================================
+
+正在清理 0 个旧的调试文件...
+✅ 无需清理，没有找到旧的调试文件
+
+2025-10-29 12:00:00 - INFO - 日志系统初始化完成，日志文件: zhidao_account1.log
+2025-10-29 12:00:00 - INFO - 配置文件: config.json
+2025-10-29 12:00:00 - INFO - 账号配置: account1.json
+2025-10-29 12:00:00 - INFO - 进度文件: progress_account1.json
+2025-10-29 12:00:00 - INFO - 日志文件: zhidao_account1.log
+2025-10-29 12:00:05 - INFO - 浏览器驱动初始化完成
+2025-10-29 12:00:10 - INFO - ✅ 已加载账号: 152****79
+...
+```
+
+---
+
+## 🎉 总结
+
+- ✅ 支持多账号同时运行
+- ✅ 每个账号独立配置、进度、日志
+- ✅ **智能启动器自动选择脚本版本**
+- ✅ **支持无题目课程和有题目课程**
+- ✅ 命令行参数灵活控制
+- ✅ 持续播放直到所有视频完成
+- ✅ 断点续播，进度不丢失
+
+## 📌 版本选择说明
+
+### 无题目课程版本（zhidao_web_auto_player_final.py）
+- 适用于：课程视频播放过程中**不会弹出题目**
+- 配置：`course_type = 1`
+- 特点：稳定、快速
+
+### 有题目课程版本（zhidao_web_auto_player_with_quiz.py）
+- 适用于：课程视频播放过程中**会弹出题目**（需要点击关闭）
+- 配置：`course_type = 2`
+- 特点：自动检测并关闭题目弹窗
+- 支持弹窗类型：
+  - 普通题目弹窗
+  - AI助教小智出题弹窗
+  - 其他类型题目弹窗
+
+### 智能启动器（zhidao_launcher.py）
+- **推荐使用**：根据配置文件自动选择对应版本
+- 无需手动选择脚本文件
+- 一键启动，自动适配
+
+**祝您使用愉快！** 🚀

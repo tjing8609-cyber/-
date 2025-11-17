@@ -1,0 +1,34 @@
+# 账号配置文件（包含敏感信息）
+account*.json
+
+# 进度文件
+progress_*.json
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志文件
+*.log
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Chrome Driver
+chromedriver.exe
+chromedriver

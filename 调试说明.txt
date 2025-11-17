@@ -1,0 +1,544 @@
+========================================
+知到自动播放脚本 - 调试说明
+版本：v3.0 - 支持多实例 + PPT处理
+========================================
+
+本文档包含所有技术细节、调试方法和问题修复记录
+
+
+【核心功能实现】
+
+1. 自动清理调试文件
+-------------------
+功能：每次程序启动时自动清理旧的调试文件
+清理范围：
+  - 所有 .png 截图文件
+  - 所有带时间戳的 .html 文件（*_202*.html）
+
+实现位置：cleanup_debug_files() 方法
+触发时机：程序初始化时自动执行
+
+
+2. 账号密码外部化配置
+-------------------
+配置文件：account.json
+读取方法：load_account() 方法
+安全特性：
+  - 密码不在代码中暴露
+  - 可以添加到 .gitignore
+  - 使用后可以清空
+  - 脱敏显示账号：176****12
+
+
+3. 新窗口自动切换
+-------------------
+问题：点击视频后打开新窗口，程序停留在旧窗口找不到video元素
+
+解决方案：
+  1. 记录点击前的窗口句柄
+  2. 点击视频后检测窗口数量变化
+  3. 如果增加了新窗口，自动切换到新窗口
+  4. 播放完成后关闭新窗口并返回原窗口
+
+关键代码：
+  original_windows = driver.window_handles
+  element.click()
+  if len(current_windows) > len(original_windows):
+      new_window = [w for w in current_windows if w not in original_windows][0]
+      driver.switch_to.window(new_window)
+
+
+4. 视频完成状态检测
+-------------------
+检测方法：查找特定的class名称
+  - 已完成：class="iconfont zhihuishu-wancheng"（绿色勾✓）
+  - 未完成：class="iconfont zhihuishu-weikaishi"（空心圆○）
+  - 100%：文本包含"100%"
+  - 部分观看：正则匹配 1%-99% 百分比
+
+实现位置：is_video_completed() 方法
+
+过滤规则：
+  - 跳过：包含“作业”字样
+  - 跳过：已完成（有绿色勾✓）
+  - 跳过：100%完成
+  - 跳过：不是.mp4文件
+  - 跳过（稍后处理）：.pptx/.ppt文件
+  - 继续播放：8%, 17%等部分百分比
+  - 选择：未完成的.mp4视频
+
+
+5. 视频播放启动策略
+-------------------
+策略1：点击视频中央黑色区域（优先，最可靠）
+  - 计算video元素的中心坐标
+  - 创建真实的MouseEvent点击事件
+  - 触发中心位置元素的点击
+
+策略2：JavaScript直接播放（辅助）
+  - video.play()
+  - 作为兜底方案
+
+实现位置：click_video_center() 方法
+
+
+6. 视频卡顿检测和恢复
+-------------------
+检测机制：
+  - 每10秒检查一次播放进度
+  - 如果进度差值 < 1秒，计数+1
+  - 连续4次无变化判定为卡顿（从3次调整为4次）
+
+恢复策略：
+  策睥1：点击视频中央（应对自动暂停）
+    - 模拟真实用户点击
+    - 触发播放器恢复
+  
+  策睥2：暂停-播放（刷新缓冲）
+    - video.pause()
+    - 等待500ms
+    - video.play()
+
+实现位置：simulate_watching() 方法
+
+
+6. 视频卡顿检测和恢复
+-------------------
+检测机制：
+  - 每10秒检查一次播放进度
+  - 如果进度差值 < 1秒，计数+1
+  - 连续4次无变化判定为卡顿（从3次调整为4次）
+
+恢复策略：
+  策睥1：点击视频中央（应对自动暂停）
+    - 模拟真实用户点击
+    - 触发播放器恢复
+  
+  策睥2：暂停-播放（刷新缓冲）
+    - video.pause()
+    - 等待500ms
+    - video.play()
+
+实现位置：simulate_watching() 方法
+
+
+7. 实际视频进度检测（v3.0）
+-------------------
+功能：以视频实际播放进度为准，而非程序等待时间
+
+关键逻辑：
+  - 每次循环开始获取 video.currentTime
+  - 判断 video_progress >= watch_time
+  - 达到目标进度立即退出
+  - 超时保护：最多等待 2×watch_time
+
+优势：
+  - 准确反映视频实际观看状况
+  - 避免因网络卡顿导致的误判
+  - 支持断点续播（部分百分比）
+
+实现位置：simulate_watching() 方法
+
+
+8. PPT文件处理（v3.0）
+-------------------
+功能：在所有视频播放完成后，自动处理PPT文件
+
+处理流程：
+  1. 查找所有包含 .ppt/.pptx 的元素
+  2. 过滤已完成的PPT
+  3. 点击PPT进入页面
+  4. 等待5秒
+  5. 关闭窗口/后退返回课程列表
+  6. 记录已完成PPT
+
+实现位置：
+  - find_unwatched_ppts() 方法
+  - play_ppt() 方法
+  - run() 方法中在视频播放后调用
+
+
+9. 多实例支持（v3.0）
+-------------------
+功能：支持同时运行多个账号
+
+核心机制：
+  - 命令行参数 --account 指定账号配置文件
+  - 基于账号文件名生成独立进度文件
+  - 基于账号文件名生成独立日志文件
+
+文件映射：
+  account1.json → progress_account1.json, zhidao_account1.log
+  account2.json → progress_account2.json, zhidao_account2.log
+  account3.json → progress_account3.json, zhidao_account3.log
+
+命令示例：
+  python zhidao_web_auto_player_final.py --account account1.json
+  python zhidao_web_auto_player_final.py --account account2.json
+
+实现位置：
+  - __init__() 方法：动态生成文件名
+  - main() 函数：argparse 参数解析
+
+
+【调试方法】
+
+1. 保存调试信息
+-------------------
+程序会在关键节点自动保存：
+  - 登录页面：login_page_*.png 和 .html
+  - 课程页面：course_page_*.png 和 .html
+  - 视频列表：video_list_*.png 和 .html
+  - 视频播放器：video_player_page_*.png 和 .html
+
+使用方法：
+  查看截图了解页面状态
+  在HTML中搜索元素定位问题
+
+
+2. 日志分析
+-------------------
+关键日志标识：
+  ✓ 成功操作
+  ⚠ 警告信息
+  ✗ 错误信息
+
+重要日志：
+  - "已加载账号" - 确认账号读取成功
+  - "✓ 检测到新窗口" - 新窗口切换成功
+  - "✓ 在主页面找到<video>元素" - video元素定位成功
+  - "✓ 成功点击视频中央区域" - 播放启动成功
+  - "视频时长: XXX秒" - 视频时长获取成功
+  - "视频实际进度: XX秒" - 播放进度正常
+  - "⚠ 视频进度无变化，连续X次" - 检测到卡顿
+  - "✓ 已点击视频中央" - 卡顿恢复操作
+
+
+3. 常见错误排查
+-------------------
+错误：no such element: Unable to locate element: {"method":"xpath","selector":"//video"}
+原因：video元素在新窗口中，程序未切换窗口
+解决：已实现自动窗口切换
+
+错误：Cannot read properties of null (reading 'duration')
+原因：JavaScript访问了null对象
+解决：已使用安全模式：document.querySelector('video') ? video.duration : null
+
+错误：账号配置文件 account.json 不存在
+原因：account.json文件被删除或移动
+解决：创建account.json文件并填写账号密码
+
+错误：账号或密码为空
+原因：account.json中未填写账号密码
+解决：在account.json中填写正确的账号和密码
+
+错误：JSON格式错误
+原因：JSON格式不正确
+解决：检查引号、逗号、括号是否正确
+
+
+【问题修复记录】
+
+修复1：视频完成状态误判
+-------------------
+时间：2025-10-28
+问题：识别了120+个"未观看"视频，实际很多已完成
+原因：检测逻辑错误，查找green颜色样式，但实际是iconfont字体图标
+修复：使用正确的class名称 zhihuishu-wancheng
+效果：从120+个降低到12个真实未观看视频
+
+
+修复2：无法找到播放按钮
+-------------------
+时间：2025-10-28
+问题：查找10+种播放按钮选择器超时失败
+原因：绿色箭头播放按钮会自动收起
+用户发现：点击屏幕中央黑色部分也可以播放视频
+修复：优先点击视频中央黑色区域
+效果：不依赖播放按钮可见性
+
+
+修复3：无法找到video元素（新窗口问题）
+-------------------
+时间：2025-10-28
+问题：点击视频后找不到video元素
+原因：点击后打开了新窗口，video在新窗口中
+证据：
+  - 旧窗口URL: https://wenda.zhihuishu.com/...
+  - 新窗口URL: https://hike.zhihuishu.com/...
+修复：
+  1. 记录点击前窗口数量
+  2. 检测新窗口出现
+  3. 自动切换到新窗口
+  4. 播放完成后关闭新窗口并返回
+效果：成功在新窗口找到video元素并播放
+
+
+修复4：视频播放卡顿
+-------------------
+时间：2025-10-28
+问题：视频实际进度停滞不前
+原因：网络缓冲或网站自动暂停
+用户发现：点击屏幕中央可以恢复播放
+修复：
+  1. 改进进度检测逻辑（差值<1秒）
+  2. 连续3次无变化触发恢复
+  3. 点击视频中央 + 暂停播放
+效果：自动检测和恢复卡顿
+
+
+修复5：网站自动暂停检测
+-------------------
+时间：2025-10-28
+问题：视频会自动暂停（防脚本机制）
+原因：网站检测长时间无交互
+用户反馈：有时候视频会自动按停
+修复：
+  1. 卡顿时优先点击视频中央
+  2. 模拟真实用户点击行为
+  3. 双重策略确保恢复
+效果：成功应对自动暂停
+
+
+修复6：部分观看视频识别（v3.0）
+-------------------
+时间：2025-10-29
+问题：无法识别显示 8%, 17% 等部分百分比的视频
+原因：只检测 100% 和绿色勾，不检查部分百分比
+用户反馈：“我需要的是实际进度到检测到的秒数时切换”
+修复：
+  1. 正则匹配 1%-99% 百分比：r'\\b([1-9]\\d?%)\\b'
+  2. 匹配到部分百分比返回 False（未完成）
+  3. 记录日志：“找到部分观看视频：XX%”
+效果：成功识别并继续播放部分观看的视频
+
+
+修复7：视频进度判定逻辑（v3.0）
+-------------------
+时间：2025-10-29
+问题：程序以等待时间而非实际视频进度判断是否完成
+原因：使用 elapsed >= watch_time 作为结束条件
+用户反馈：“而不是你认为的进度到了就切换”
+修复：
+  1. 改为检查 video_progress >= watch_time
+  2. 每次循环开始获取实际进度
+  3. 添加超时保护（2×watch_time）
+  4. 日志显示实际进度为主
+效果：视频真正播放到目标时长才切换
+
+
+修复8：视频文件识别逻辑（v3.0）
+-------------------
+时间：2025-10-29
+问题：带百分比的视频被错误跳过
+原因：text.endswith('.mp4') 无法匹配 "xxx.mp4 8%"
+用户反馈：“无法检测完成一半的视频，检测逻辑有误”
+修复：
+  1. 改为 '.mp4' in text 而非 endswith
+  2. 单独过滤 .pptx/.ppt/.pdf 文件
+  3. 支持识别后缀百分比的视频
+效果：成功识别所有视频包括带百分比的
+
+
+修复9：持续播放模式（v3.0）
+-------------------
+时间：2025-10-29
+问题：程序只播放20个视频就停止
+原因：max_videos_per_run 默认值为 20
+用户反馈：“希望的是重复播放，直到所有视频播放完成”
+修复：
+  1. config.json 中改为 999
+  2. 从for循环改为while循环
+  3. 日志显示“持续播放直到所有视频完成”
+效果：程序持续运行直到所有视频完成
+
+
+【技术细节】
+
+1. 窗口切换实现
+-------------------
+# 记录原始窗口
+original_windows = driver.window_handles
+original_window = driver.current_window_handle
+
+# 点击元素
+element.click()
+
+# 检测新窗口
+current_windows = driver.window_handles
+if len(current_windows) > len(original_windows):
+    new_window = [w for w in current_windows if w not in original_windows][0]
+    driver.switch_to.window(new_window)
+
+# 完成后返回
+driver.close()  # 关闭新窗口
+driver.switch_to.window(original_window)  # 返回原窗口
+
+
+2. 点击视频中央实现
+-------------------
+# 获取video元素
+video = driver.find_element(By.XPATH, "//video")
+
+# JavaScript点击中心
+driver.execute_script("""
+    var video = arguments[0];
+    var rect = video.getBoundingClientRect();
+    var centerX = rect.left + rect.width / 2;
+    var centerY = rect.top + rect.height / 2;
+    
+    // 创建点击事件
+    var clickEvent = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: centerX,
+        clientY: centerY
+    });
+    
+    // 获取中心位置的元素并点击
+    var elem = document.elementFromPoint(centerX, centerY);
+    if (elem) {
+        elem.dispatchEvent(clickEvent);
+    }
+""", video)
+
+
+3. 安全JavaScript调用
+-------------------
+# 获取视频时长
+duration = driver.execute_script(
+    "return document.querySelector('video') ? document.querySelector('video').duration : null"
+)
+
+# 检测播放状态
+is_playing = driver.execute_script(
+    "return document.querySelector('video') ? !document.querySelector('video').paused : false"
+)
+
+# 获取播放进度
+current_time = driver.execute_script(
+    "return document.querySelector('video') ? document.querySelector('video').currentTime : 0"
+)
+
+
+4. 卡顿检测逻辑
+-------------------
+# 每10秒检查一次
+if int(elapsed) % 10 == 0:
+    current_progress = get_video_progress()
+    
+    # 检查进度变化
+    if abs(current_progress - last_progress_check) < 1:
+        no_progress_count += 1
+        
+        if no_progress_count >= 3:
+            # 触发恢复
+            # 1. 点击视频中央
+            # 2. 暂停-播放
+            no_progress_count = 0
+    else:
+        no_progress_count = 0
+
+
+【性能优化】
+
+1. 智能等待
+-------------------
+使用WebDriverWait代替固定sleep
+设置合理的超时时间
+减少不必要的等待
+
+
+2. 减少干扰行为
+-------------------
+降低随机滚动频率：30% → 20%
+减小滚动幅度：±200px → ±100px
+移除可能影响播放的随机点击
+
+
+3. 提前结束
+-------------------
+实时检测视频实际播放进度
+达到目标时长立即结束
+避免浪费时间
+
+
+【代码结构】
+
+主要类：ZhidaoWebAutoPlayerFinal
+
+核心方法：
+- cleanup_debug_files()    # 清理调试文件
+- load_account()           # 读取账号密码
+- login()                  # 自动登录
+- find_course()            # 查找课程
+- find_unwatched_videos()  # 查找未观看视频
+- is_video_completed()     # 检测完成状态
+- play_video()             # 播放视频
+- wait_for_video_player()  # 等待播放器加载
+- click_video_center()     # 点击视频中央
+- get_video_duration()     # 获取视频时长
+- is_video_playing()       # 检测播放状态
+- get_video_progress()     # 获取播放进度
+- simulate_watching()      # 模拟观看
+- ensure_video_playing()   # 确保播放
+- save_debug_info()        # 保存调试信息
+- find_unwatched_ppts()    # 查找PPT文件（v3.0）
+- play_ppt()               # 处理PPT文件（v3.0）
+- run()                    # 主流程
+
+主函数：
+- main()                   # 命令行参数解析（v3.0）
+
+
+【依赖库】
+
+selenium>=4.0.0            # 浏览器自动化
+webdriver-manager>=3.0.0   # ChromeDriver管理
+
+
+【运行环境】
+
+Python 3.8+
+Chrome浏览器
+Windows/Linux/Mac
+
+
+========================================
+更新时间：2025-10-29
+版本：v3.0 - 支持多实例 + PPT处理
+========================================
+
+【v3.0 更新内容】
+
+1. 部分观看视频识别
+   - 支持识别 8%, 17% 等部分百分比
+   - 正则匹配 1%-99%
+   - 自动继续播放未完成视频
+
+2. 实际视频进度检测
+   - 以 video.currentTime 为准
+   - 而非程序等待时间
+   - 支持断点续播
+
+3. 持续播放模式
+   - max_videos_per_run: 999
+   - 直到所有视频100%完成
+   - while 循环代替 for 循环
+
+4. PPT文件自动处理
+   - 所有视频完成后执行
+   - 点击进入 → 等待5秒 → 返回
+   - 记录已完成PPT
+
+5. 多实例支持
+   - 命令行参数 --account
+   - 独立进度文件
+   - 独立日志文件
+   - 批处理文件快捷启动
+
+6. 视频文件识别优化
+   - 支持后缀百分比
+   - '.mp4' in text 代替 endswith
+   - 单独过滤 PPT/PDF 文件
