@@ -1,5 +1,7 @@
 # 账号配置文件（包含敏感信息）
-account*.json
+account1.json
+account2.json
+account3.json
 
 # 进度文件
 progress_*.json

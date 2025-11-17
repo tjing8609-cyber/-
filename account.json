@@ -1,0 +1,12 @@
+{
+    "username": "",
+    "password": "",
+    "course_name": "中国近现代史纲要",
+    "course_type": 1,
+    "use_sidebar_layout": false,
+    "max_watch_minutes": 0,
+    "note": "请在运行脚本前填写您的账号、密码和课程名称",
+    "course_type_note": "课程类型: 1=无题目课程(默认), 2=有题目课程(会弹出题目，自动点击关闭)",
+    "use_sidebar_layout_note": "侧边栏布局: false=使用主区域查找(默认,稳定), true=启用侧边栏布局检测(适用于新版界面)",
+    "max_watch_minutes_note": "最大观看时长(分钟): 0=播放完所有视频(默认), >0=播放指定分钟数后停止"
+}
