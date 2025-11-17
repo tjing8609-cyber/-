@@ -1,0 +1,118 @@
+目标（不变）
+
+自动化脚本需导航至已登录的智慧树学生仪表盘页面：https://onlineweb.zhihuishu.com/onlinestuh5
+在页面“共享课”区域中精确定位并点击“大学生心理健康”课程卡片，进入课程详情页。
+总体实现思路与技术栈建议
+
+推荐使用 Playwright 或 Selenium（Python/NodeJS）以获得稳定的等待、选择器和滚动支持。若使用 Puppeteer，也可参考同样思路。
+采用显式等待（explicit waits）、可见性断言和重试机制，避免使用硬编码 sleep。
+使用 CSS 选择器或 XPath，并尽量结合文本匹配与属性判断以提高鲁棒性。
+在查找长列表项时实现滚动加载（scroll-and-wait）直到找到目标或达到超时。
+对关键步骤添加日志和可配置超时（例如 15–30s）。
+步骤详述（带示例实现方法/伪代码要点）
+
+确保页面已加载并在目标 URL
+等待导航完成并断言当前 URL 包含 /onlinestuh5。
+等待页面主容器加载（例如 body 或特定容器选择器）。
+示例（伪代码）
+
+wait_for_url_contains('/onlinestuh5', timeout)
+wait_for_selector('div.main-container', visible=True)
+定位“共享课”标签并确保激活
+在包含 tab 导航的父容器中查找文本 "共享课" 的 tab 元素。父容器可能是 class="tab-nav"、role="tablist"、nav、ul 等。
+首先查找父容器：例如 CSS: '.tab-nav, [role="tablist"], .tabs'
+在父容器内使用文本匹配定位 tab：XPath 示例 //[contains(@class,'tab-nav')]//button[contains(normalize-space(.),'共享课')] 或 //[role='tablist']//*[contains(text(),'共享课')]
+判断是否激活：检查 class 包含 'active'/'is-selected'，或 aria-selected="true"，或其他 data-* 属性。
+若未激活，则点击并等待对应内容区域加载（等到内容容器可见或 aria-controls 指向的 id 出现）。
+示例伪代码（Playwright/Selenium 风格）
+
+tab = find_in_parent(parent_selector, xpath_or_css_for_text('共享课'))
+if not (tab.has_class('active') or tab.get_attribute('aria-selected') == 'true'):
+tab.click()
+wait_for_selector(shared_content_selector, visible=True)
+注意：使用 normalize-space() 或 contains(normalize-space(.),'共享课') 以容忍前后空格与换行。
+
+限定搜索范围至“共享课”内容区
+在点击后或确认已激活时，仅在该标签对应的内容区域内查找课程卡片。
+常见定位策略：
+aria-controls：tab 元素可能有 aria-controls="sharedCoursesContent" → 直接使用 '#' + value
+相邻 DOM：tab 的父节点或 tablist 下方跟随的内容面板（例如 panel/div）
+直接常见选择器：#sharedCoursesContent, .course-list-shared, .tab-panel--shared
+等待该区域可见并作为后续选择器的根节点。
+示例
+
+shared_root_selector = tab.get_attribute('aria-controls') ? '#' + that : 'div.course-list-shared'
+root = wait_for_selector(shared_root_selector, visible=True, timeout=10000)
+在“共享课”内容区内精确查找“大学生心理健康”课程卡片（必须同时满足所有条件） 必须匹配的条件：
+标题文本包含 "大学生心理健康"（使用包含匹配）
+学习进度文本匹配正则 "进度:\s*\d+(.\d+)?%"（例如 进度:54.9%）
+包含教师或机构名称（例如 '吉林大学'、'北京大学' 等任一名单项）
+可选：含 img 标签或背景图的视觉封面以辅助确认
+排除位于“重要提醒”区域的卡片（例如父元素 id="importantReminders"、class="top-carousel"）
+实现策略与示例选择器/XPath
+
+在 shared_root 下以卡片项为单位遍历，比如每个卡片为 div.card, li.course-item, .course-card 等。
+对每个卡片执行以下检查（伪代码）：
+title_el = card.query_selector('.title, .course-title, h3, .card-title')
+if title_el and '大学生心理健康' in normalize_space(title_el.text)
+progress_el = card.query_selector(xpath=".//[matches(normalize-space(.), '进度\s:\s*\d+(\.\d+)?%')]" )
+或使用 regex 在获取文本后进行匹配
+teacher_el = card.query_selector('.teacher, .org, .source')
+if teacher_el and any(name in teacher_el.text for name in ['吉林大学','北京大学', ...])
+visual_check = card.query_selector('img') or card_has_background_image(card)
+ensure not ancestor_matches(card, '#importantReminders, .top-carousel')
+推荐 XPath 模式（更精准）
+
+//div[@id='sharedCoursesContent']//div[contains(@class,'course-card')][.//text()[contains(normalize-space(.),'大学生心理健康')] and .//[matches(normalize-space(.),'进度\s:\s*\d+(\.\d+)?%')] and (.//*[contains(text(),'吉林大学') or contains(text(),'北京大学')])]
+如果运行环境不支持 XPath 2.0 matches()，则获取文本后用语言内正则匹配。
+
+滚动与懒加载考虑
+
+如果列表为懒加载或分页，先尝试在 root 内查找；若未找到，执行向下滚动加载：
+while not found and scroll_attempts < N:
+root.scroll_by(0, viewport_height)
+wait short time for network/DOM update
+re-scan newly visible cards
+超时后抛出未找到错误并记录快照。
+点击目标卡片并验证已进入详情页
+一旦匹配所有条件，先 scrollIntoView(card) 并确保可点击（元素可见且启用）。
+点击 card 或内部链接（如 a.course-link）。
+等待导航/内容变化：可等待 URL 变化、页面标题包含课程名或课程详情主要容器加载（例如 .course-detail）。
+记录点击成功与目标页面加载时间。
+伪代码示例
+
+card.scroll_into_view_if_needed()
+clickable = wait_until(card.is_enabled() and card.is_displayed(), timeout=5000)
+card.click()
+wait_for_url_contains('/courseDetail') or wait_for_selector('.course-detail', timeout=15000)
+错误处理与降级策略
+
+若在共享课区域未找到符合全部条件的卡片：
+记录页面 DOM 截图与 HTML（以便调试）。
+尝试放宽匹配（例如教师名称改为模糊匹配或忽略视觉特征），但先记录原始失败原因。
+若点击后未导航或详情未加载，尝试点击卡片中的链接元素（a 标签），或重试点击一次。
+对网络或元素不稳定引发的异常，进行有限重试（例如最多 2 次）并最终抛错。
+开发与调试建议
+
+先在浏览器 DevTools 中手动找出共享课 tab、其 content panel 和若干课程卡片的准确选择器（id/class/XPath），并把这些作为首选选择器写入脚本配置。
+打开脚本的调试日志与页面截图保存，便于定位选择器失效或 DOM 变化。
+将可配置项抽象为参数：selector 配置、等待超时、滚动步长、教师机构白名单等。
+示例（Playwright 风格伪实现片段）
+
+await page.waitForURL(/onlinestuh5/)
+const tab = await page.locator('.tab-nav >> text=共享课').first()
+if (!(await tab.getAttribute('class')).includes('active')) { await tab.click(); await page.waitForSelector('#sharedCoursesContent') }
+const root = page.locator('#sharedCoursesContent')
+for (let i=0;i<scrollAttempts;i++) { const cards = await root.locator('.course-card').all() for (const card of cards) { const title = await card.locator('.title').innerText().catch(()=>'') const progress = await card.innerText().catch(()=>'') const teacher = await card.locator('.teacher').innerText().catch(()=>'') if (title.includes('大学生心理健康') && /进度\s*:\s*\d+(.\d+)?%/.test(progress) && /(吉林大学|北京大学)/.test(teacher) && !(await card.isDescendantOf('#importantReminders'))) { await card.scrollIntoViewIfNeeded() await card.click() await page.waitForSelector('.course-detail') return } } await root.scrollBy(0, viewportHeight) await page.waitForTimeout(500) }
+throw new Error('未找到符合条件的大学生心理健康课程卡片')
+交付物（建议）
+
+一个可运行脚本或函数：activate_shared_tab_and_open_course(page, options)
+配置文件：包含常用选择器、教师白名单、超时与重试次数
+调试说明：如何在 DOM 变化时快速更新选择器
+总结要点（便于 Qoder 直接实现）
+
+使用显式等待、文本 normalize-space/contains、正则匹配进度、教师白名单匹配、排除重要提醒区域。
+将搜索限定在共享课 panel 下，并实现滚动加载支持。
+在匹配到符合所有条件的卡片后 scrollIntoView 并点击，验证进入详情页。
+添加日志、截图与有限重试用于稳健性与可调试性。

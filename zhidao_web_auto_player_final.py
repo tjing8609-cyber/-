@@ -440,7 +440,7 @@ class ZhidaoWebAutoPlayerFinal:
     def wait_for_captcha_completion(self, timeout=None):
         """等待用户完成人机验证"""
         if timeout is None:
-            timeout = self.config.get('captcha_timeout', 300)
+            timeout = self.config.get('captcha_timeout', 60)  # 默认60秒，不再是300秒
         
         self.logger.info("检测到人机验证，请手动完成验证...")
         
@@ -451,7 +451,24 @@ class ZhidaoWebAutoPlayerFinal:
                 winsound.Beep(1000, 500)  # 1000Hz，持续500ms
             except Exception:
                 pass
-
+        
+        # 硬等待20秒，但每2秒检查一次是否已完成
+        self.logger.info("⏳ 等待20秒，期间每2秒检查一次验证状态...")
+        for i in range(10):  # 20秒分成10次，每次2秒
+            time.sleep(2)
+            
+            # 检查是否已登录（验证通过）
+            if self.check_login_success():
+                self.logger.info("✅ 登录成功，立即继续执行")
+                return True
+            
+            # 检查是否还有人机验证
+            if not self.check_captcha():
+                self.logger.info("✅ 人机验证已消失，立即继续执行")
+                return True
+        
+        # 20秒后，开始正常的循环检查
+        self.logger.info("⏰ 20秒已过，开始正常检查流程...")
         start_time = time.time()
         check_interval = 5  # 每5秒检查一次
 
@@ -553,12 +570,16 @@ class ZhidaoWebAutoPlayerFinal:
                             if not self.wait_for_captcha_completion():
                                 self.logger.warning("人机验证等待超时或失败")
                                 return False
-                            # 验证完成后继续检查登录状态
-                            continue
+                            # 验证完成后直接跳出循环，不再重复检查
+                            self.logger.info("✅ 人机验证已完成，跳过剩余检查")
+                            break
                         
                         # 检查登录是否成功
                         if self.check_login_success():
                             self.logger.info("登录成功！")
+                            self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                            time.sleep(5)  # 硬等待5秒
+                            self.logger.info("✅ 页面加载完成，继续执行")
                             return True
                         
                         # 检查是否还在登录页面
@@ -568,12 +589,18 @@ class ZhidaoWebAutoPlayerFinal:
                             self.smart_wait(2)
                             if self.check_login_success():
                                 self.logger.info("登录成功！")
+                                self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                                time.sleep(5)  # 硬等待5秒
+                                self.logger.info("✅ 页面加载完成，继续执行")
                                 return True
                     
                     self.logger.warning(f"等待{max_wait}秒后登录状态仍未确认")
                     # 最后再检查一次
                     if self.check_login_success():
                         self.logger.info("最终检查：登录成功！")
+                        self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                        time.sleep(5)  # 硬等待5秒
+                        self.logger.info("✅ 页面加载完成，继续执行")
                         return True
                     else:
                         self.logger.warning("最终检查：登录状态不确定")
@@ -583,6 +610,9 @@ class ZhidaoWebAutoPlayerFinal:
                     return False
             else:
                 self.logger.info("当前已登录或无需登录")
+                self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                time.sleep(5)  # 硬等待5秒
+                self.logger.info("✅ 页面加载完成，继续执行")
                 return True
 
         except Exception as e:

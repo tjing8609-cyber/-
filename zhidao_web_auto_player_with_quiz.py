@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-知到网页版自动播放脚本 - 有题目版本 (v1.0)
-支持自动播放、题目弹窗处理、侧边栏导航
+知到网页版自动播放脚本 - 有题目版本 (v2.0)
+支持自动播放、题目弹窗处理、侧边栏导航、新版布局支持
 """
 
 import time
@@ -49,7 +49,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         self.quizzes_answered_this_session = 0
         
         self.logger.info("="*60)
-        self.logger.info("知到网页版自动播放器 - 有题目版本 v1.0")
+        self.logger.info("知到网页版自动播放器 - 有题目版本 v2.0")
         self.logger.info("="*60)
     
     def setup_logging(self):
@@ -161,7 +161,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1920,1080')
+        chrome_options.add_argument('--window-size=1349,768')  # 设置窗口大小
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
         
         # 禁用自动化提示
@@ -255,12 +255,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             if not self.wait_for_captcha_completion():
                                 self.logger.warning("人机验证等待超时或失败")
                                 return False
-                            # 验证完成后继续检查登录状态
-                            continue
+                            # 验证完成后直接跳出循环，不再重复检查
+                            self.logger.info("✅ 人机验证已完成，跳过剩余检查")
+                            break
                         
                         # 检查登录是否成功
                         if self.check_login_success():
                             self.logger.info("登录成功！")
+                            self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                            time.sleep(5)  # 硬等待5秒
+                            self.logger.info("✅ 页面加载完成，继续执行")
                             return True
                         
                         # 检查是否还在登录页面
@@ -270,12 +274,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.smart_wait(2)
                             if self.check_login_success():
                                 self.logger.info("登录成功！")
+                                self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                                time.sleep(5)  # 硬等待5秒
+                                self.logger.info("✅ 页面加载完成，继续执行")
                                 return True
                     
                     self.logger.warning(f"等待{max_wait}秒后登录状态仍未确认")
                     # 最后再检查一次
                     if self.check_login_success():
                         self.logger.info("最终检查：登录成功！")
+                        self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                        time.sleep(5)  # 硬等待5秒
+                        self.logger.info("✅ 页面加载完成，继续执行")
                         return True
                     else:
                         self.logger.warning("最终检查：登录状态不确定")
@@ -285,6 +295,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     return False
             else:
                 self.logger.info("当前已登录或无需登录")
+                self.logger.info("⏳ 等待5秒，确保页面完全加载...")
+                time.sleep(5)  # 硬等待5秒
+                self.logger.info("✅ 页面加载完成，继续执行")
                 return True
 
         except Exception as e:
@@ -473,6 +486,23 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """等待用户完成人机验证"""
         self.logger.info("检测到人机验证，请手动完成验证...")
         
+        # 硬等待20秒，但每2秒检查一次是否已完成
+        self.logger.info("⏳ 等待20秒，期间每2秒检查一次验证状态...")
+        for i in range(10):  # 20秒分成10次，每次2秒
+            time.sleep(2)
+            
+            # 检查是否已登录（验证通过）
+            if self.check_login_success():
+                self.logger.info("✅ 登录成功，立即继续执行")
+                return True
+            
+            # 检查是否还有人机验证
+            if not self.check_captcha():
+                self.logger.info("✅ 人机验证已消失，立即继续执行")
+                return True
+        
+        # 20秒后，开始正常的循环检查
+        self.logger.info("⏰ 20秒已过，开始正常检查流程...")
         start_time = time.time()
         check_interval = 5  # 每5秒检查一次
 
@@ -516,6 +546,280 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
     
     def find_course(self, course_name=None):
+        """查找并点击课程（自动适配新版/老版布局）"""
+        # 如果配置了使用侧边栏布局，则使用新版查找逻辑
+        use_sidebar = self.account_config.get('use_sidebar_layout', False)
+        
+        if use_sidebar:
+            self.logger.info("🆕 检测到配置为新版布局，使用侧边栏查找逻辑")
+            return self.find_course_in_sidebar(course_name)
+        else:
+            self.logger.info("📜 使用老版主区域查找逻辑")
+            return self.find_course_legacy(course_name)
+    
+    def find_course_in_sidebar(self, course_name=None):
+        """新版布局：在“共享课”标签页中查找课程（根据要求.txt实现）"""
+        if course_name is None:
+            course_name = self.account_config.get('course_name')
+        
+        self.logger.info(f"正在在新版布局中查找'{course_name}'课程...")
+        
+        try:
+            # 步骤1：确保页面已加载
+            current_url = self.driver.current_url
+            self.logger.info(f"当前页面URL: {current_url}")
+            
+            if '/onlinestuh5' not in current_url:
+                self.logger.warning("当前不在主页，尝试导航...")
+                self.driver.get('https://onlineweb.zhihuishu.com/onlinestuh5')
+                self.smart_wait(5)
+            
+            # 步骤2：定位并激活“共享课”标签
+            self.logger.info("步骤1: 查找并激活'共享课'标签...")
+            
+            # 多种标签页选择器
+            tab_selectors = [
+                "//div[contains(@class, 'tab')]//text()[normalize-space()='共享课']/ancestor::*[self::button or self::div or self::a][1]",
+                "//button[normalize-space(text())='共享课']",
+                "//div[contains(@class, 'tab')][normalize-space(text())='共享课']",
+                "//a[normalize-space(text())='共享课']",
+                "//*[@role='tab'][normalize-space(text())='共享课']",
+                "//*[contains(text(), '共享课')]"
+            ]
+            
+            shared_tab = None
+            for tab_selector in tab_selectors:
+                try:
+                    tabs = self.driver.find_elements(By.XPATH, tab_selector)
+                    if tabs:
+                        shared_tab = tabs[0]
+                        self.logger.info(f"✅ 找到'共享课'标签: {tab_selector}")
+                        break
+                except:
+                    continue
+            
+            if not shared_tab:
+                self.logger.error("❌ 未找到'共享课'标签，可能不是新版布局")
+                return False
+            
+            # 检查是否已激活
+            tab_class = shared_tab.get_attribute('class') or ''
+            tab_aria = shared_tab.get_attribute('aria-selected') or ''
+            is_active = 'active' in tab_class.lower() or tab_aria == 'true'
+            
+            if not is_active:
+                self.logger.info("点击激活'共享课'标签...")
+                try:
+                    shared_tab.click()
+                except:
+                    self.driver.execute_script("arguments[0].click();", shared_tab)
+                self.smart_wait(2)
+            else:
+                self.logger.info("✅ '共享课'标签已激活")
+            
+            # 步骤3：定位“共享课”内容区域
+            self.logger.info("步骤2: 定位'共享课'内容区域...")
+            
+            # 尝试多种方法获取内容区域
+            content_root = None
+            
+            # 方法1：通过aria-controls
+            aria_controls = shared_tab.get_attribute('aria-controls')
+            if aria_controls:
+                try:
+                    content_root = self.driver.find_element(By.ID, aria_controls)
+                    self.logger.info(f"✅ 通过aria-controls找到内容区: #{aria_controls}")
+                except:
+                    pass
+            
+            # 方法2：通过常见选择器
+            if not content_root:
+                content_selectors = [
+                    "//div[@id='sharedCoursesContent']",
+                    "//div[contains(@class, 'course-list-shared')]",
+                    "//div[contains(@class, 'tab-panel')]//div[contains(@class, 'course')]",
+                    "//div[contains(@class, 'shared')]//div[contains(@class, 'course')]"
+                ]
+                
+                for selector in content_selectors:
+                    try:
+                        roots = self.driver.find_elements(By.XPATH, selector)
+                        if roots:
+                            content_root = roots[0]
+                            self.logger.info(f"✅ 找到内容区: {selector}")
+                            break
+                    except:
+                        continue
+            
+            if not content_root:
+                self.logger.warning("⚠️  未找到专门的内容区，将在整个页面中查找")
+                content_root = self.driver.find_element(By.TAG_NAME, 'body')
+            
+            # 步骤4：在内容区中滚动加载并查找课程卡片
+            self.logger.info(f"步骤3: 在'共享课'区域中查找'{course_name}'课程卡片...")
+            
+            # 等待内容加载
+            self.smart_wait(3)
+            
+            # 滚动加载
+            for scroll_attempt in range(5):
+                self.logger.info(f"滚动加载第 {scroll_attempt + 1} 次...")
+                self.driver.execute_script("arguments[0].scrollIntoView();", content_root)
+                self.driver.execute_script("window.scrollBy(0, 500);")
+                self.smart_wait(1)
+                
+                # 查找所有课程卡片 - 使用更广泛的选择器
+                card_selectors = [
+                    ".//div[contains(@class, 'course-card')]",
+                    ".//div[contains(@class, 'courseCard')]",
+                    ".//div[contains(@class, 'course-item')]",
+                    ".//div[contains(@class, 'courseItem')]",
+                    ".//li[contains(@class, 'course')]",
+                    ".//div[contains(@class, 'card')]",
+                    ".//div[contains(@class, 'item')]",  # 新增
+                    ".//li",  # 新增：尝试所有li元素
+                    ".//div[.//*[contains(@class, 'img')]]",  # 新增：包含图片的div
+                ]
+                
+                all_cards = []
+                for card_selector in card_selectors:
+                    try:
+                        cards = content_root.find_elements(By.XPATH, card_selector)
+                        if cards:
+                            self.logger.debug(f"选择器 {card_selector} 找到 {len(cards)} 个元素")
+                            all_cards.extend(cards)
+                    except Exception as e:
+                        self.logger.debug(f"选择器 {card_selector} 失败: {e}")
+                        continue
+                
+                # 去重
+                unique_cards = []
+                seen_ids = set()
+                for card in all_cards:
+                    card_id = id(card)
+                    if card_id not in seen_ids:
+                        unique_cards.append(card)
+                        seen_ids.add(card_id)
+                
+                if not unique_cards:
+                    self.logger.warning("未找到任何课程卡片，继续滚动...")
+                    # 调试：输出页面HTML
+                    if scroll_attempt == 2:  # 第3次尝试时输出调试信息
+                        try:
+                            page_html = content_root.get_attribute('innerHTML')[:500]
+                            self.logger.debug(f"内容区HTML片段: {page_html}")
+                        except:
+                            pass
+                    continue
+                
+                self.logger.info(f"找到 {len(unique_cards)} 个课程卡片，开始精确匹配...")
+                
+                # 步骤5：精确匹配课程卡片（根据要求.txt）
+                for idx, card in enumerate(unique_cards, 1):
+                    try:
+                        card_text = card.text or ''
+                        
+                        # 条件1：标题包含课程名
+                        if course_name not in card_text:
+                            continue
+                        
+                        # 排除“重要提醒”区域
+                        card_classes = card.get_attribute('class') or ''
+                        card_id = card.get_attribute('id') or ''
+                        if 'important' in card_classes.lower() or 'reminder' in card_classes.lower() or 'carousel' in card_classes.lower():
+                            self.logger.debug(f"⚠️  跳过重要提醒区卡片: {card_id}")
+                            continue
+                        
+                        # 排除书名号和直播课
+                        if '《' in card_text or '》' in card_text:
+                            self.logger.debug(f"⚠️  排除书名号: {card_text[:40]}")
+                            continue
+                        if '直播' in card_text or '见面课' in card_text:
+                            self.logger.debug(f"⚠️  排除直播课: {card_text[:40]}")
+                            continue
+                        
+                        # 条件2：匹配进度文本（正则：进度\s*:\s*\d+(\.\d+)?%）
+                        import re
+                        progress_match = re.search(r'进度\s*[:：]\s*(\d+(?:\.\d+)?)%', card_text)
+                        if not progress_match:
+                            self.logger.debug(f"⚠️  未找到进度信息: {card_text[:60]}")
+                            continue
+                        
+                        progress_value = progress_match.group(1)
+                        self.logger.info(f"✅ 找到进度: {progress_value}%")
+                        
+                        # 条件3：包含教师/机构名称（白名单）
+                        teacher_keywords = ['吉林大学', '北京大学', '清华大学', '北京师范大学', '中山大学', '南京大学',
+                                           '杨振斌', '李娜', '王芳', '张伟']
+                        
+                        found_teacher = False
+                        for keyword in teacher_keywords:
+                            if keyword in card_text:
+                                self.logger.info(f"✅ 找到教师/机构: {keyword}")
+                                found_teacher = True
+                                break
+                        
+                        if not found_teacher:
+                            self.logger.debug(f"⚠️  未找到匹配的教师/机构: {card_text[:60]}")
+                            continue
+                        
+                        # 条件4：可选-检查是否有图片封面
+                        has_image = len(card.find_elements(By.TAG_NAME, 'img')) > 0
+                        if has_image:
+                            self.logger.info("✅ 卡片包含图片封面")
+                        
+                        # 所有条件匹配，点击该卡片
+                        self.logger.info(f"🎯 找到符合条件的课程卡片 #{idx}: {card_text[:80]}")
+                        
+                        # 滚动到可视区域
+                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", card)
+                        self.smart_wait(1)
+                        
+                        # 尝试点击卡片内的链接
+                        link = None
+                        try:
+                            link = card.find_element(By.XPATH, ".//a[contains(@href, 'course') or contains(@href, 'study')]")
+                        except:
+                            # 如果没有链接，尝试点击卡片本身
+                            link = card
+                        
+                        # 多策略点击
+                        try:
+                            link.click()
+                            self.logger.info("✅ 普通点击成功")
+                        except:
+                            try:
+                                self.driver.execute_script("arguments[0].click();", link)
+                                self.logger.info("✅ JavaScript点击成功")
+                            except Exception as e:
+                                self.logger.error(f"点击失败: {e}")
+                                continue
+                        
+                        # 等待页面跳转
+                        self.smart_wait(5)
+                        
+                        # 验证是否进入课程详情页
+                        new_url = self.driver.current_url
+                        if 'course' in new_url.lower() or 'detail' in new_url.lower() or 'study' in new_url.lower():
+                            self.logger.info(f"✅ 成功进入课程页: {new_url}")
+                            return True
+                        else:
+                            self.logger.warning(f"⚠️  URL未变化，继续尝试下一个: {new_url}")
+                    
+                    except Exception as card_error:
+                        self.logger.debug(f"处理卡片 #{idx} 时出错: {card_error}")
+                        continue
+            
+            self.logger.error(f"未找到符合所有条件的'{course_name}'课程卡片")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"新版布局查找课程失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return False
+    
+    def find_course_legacy(self, course_name=None):
         """查找并点击课程（结合v4.10和原版本的改进逻辑）"""
         # 如果没有传入课程名称，从配置文件读取
         if course_name is None:
@@ -734,11 +1038,525 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.smart_wait(3)
             self.logger.info(f"✅ 当前页面: {self.driver.current_url}")
             
+            # 关闭所有弹窗（学前必读、AI助手等）
+            self.close_all_dialogs()
+            
             return True
             
         except Exception as e:
             self.logger.error(f"进入学习页面失败: {e}")
             return False
+    
+    def find_unwatched_videos(self):
+        """查找未观看的视频（从右侧目录）"""
+        self.logger.info("🔍 查找未观看的视频...")
+        unwatched_videos = []
+        
+        try:
+            # 查找右侧目录侧边栏
+            sidebar_selectors = [
+                "//div[contains(@class, 'box-right')]",  # 优先：右侧整个目录容器
+                "//div[contains(@class, 'catalog_box')]",  # 目录盒子
+                "//div[contains(@class, 'catalog')]",
+                "//div[contains(@class, 'sidebar')]",
+                "//div[contains(@class, 'directory')]",
+                "//aside",
+            ]
+            
+            sidebar = None
+            for selector in sidebar_selectors:
+                try:
+                    sidebar = self.driver.find_element(By.XPATH, selector)
+                    if sidebar and sidebar.is_displayed():
+                        self.logger.info(f"✅ 找到右侧目录: {selector}")
+                        break
+                except:
+                    continue
+            
+            if not sidebar:
+                self.logger.warning("⚠️  未找到右侧目录，可能不是新版布局")
+                return []
+            
+            # 滚动侧边栏加载所有内容
+            self.logger.info("📜 滚动右侧目录加载所有视频...")
+            
+            # 查找实际的滚动容器（el-scrollbar__wrap）
+            scroll_container = None
+            try:
+                # 优先查找 el-scrollbar__wrap
+                scroll_container = sidebar.find_element(By.XPATH, ".//*[contains(@class, 'el-scrollbar__wrap')]")
+                self.logger.info("✅ 找到滚动容器: el-scrollbar__wrap")
+            except:
+                try:
+                    # 备用：查找其他滚动容器
+                    scroll_container = sidebar.find_element(By.XPATH, ".//*[contains(@class, 'scrollbar-wrap') or contains(@class, 'scroll-wrap')]")
+                    self.logger.info("✅ 找到滚动容器: scrollbar-wrap")
+                except:
+                    # 最后使用sidebar本身
+                    scroll_container = sidebar
+                    self.logger.info("使用侧边栏本身作为滚动容器")
+            
+            # 使用鼠标滚轮事件模拟真实滚动
+            self.logger.info("🔄 开始使用鼠标滚轮模拟滚动...")
+            for i in range(10):
+                # 记录滚动前的位置
+                scroll_before = self.driver.execute_script("return arguments[0].scrollTop;", scroll_container)
+                
+                # 使用JavaScript触发wheel事件（模拟鼠标滚轮）
+                self.driver.execute_script("""
+                    var element = arguments[0];
+                    var wheelEvent = new WheelEvent('wheel', {
+                        deltaY: 500,  // 向下滚动500像素
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    element.dispatchEvent(wheelEvent);
+                    
+                    // 备用方法：直接修改scrollTop
+                    element.scrollTop = element.scrollTop + 500;
+                """, scroll_container)
+                
+                self.smart_wait(0.8)  # 等待滚动动画和内容加载
+                
+                # 记录滚动后的位置
+                scroll_after = self.driver.execute_script("return arguments[0].scrollTop;", scroll_container)
+                scroll_height = self.driver.execute_script("return arguments[0].scrollHeight;", scroll_container)
+                
+                self.logger.info(f"  滚动 {i+1}/10: {scroll_before}px → {scroll_after}px (总高度: {scroll_height}px)")
+                
+                # 如果已经到底，提前退出
+                if scroll_after >= scroll_height - 100:
+                    self.logger.info(f"  ✅ 已滚动到底部，提前结束滚动")
+                    break
+                
+                # 如果滚动位置没有变化，说明滚动失败
+                if scroll_after == scroll_before:
+                    self.logger.warning(f"  ⚠️  滚动位置未变化，可能滚动失败")
+            
+            self.logger.info("✅ 滚动完成，等待内容加载...")
+            self.smart_wait(2)
+            
+            # 回到顶部
+            self.driver.execute_script("arguments[0].scrollTop = 0;", scroll_container)
+            self.smart_wait(1)
+            
+            # 在侧边栏中查找视频元素
+            self.logger.info("🔍 开始查找视频元素...")
+            
+            video_selectors = [
+                ".//li[contains(@class, 'clearfix')]",  # 优先：课程列表项
+                ".//div[contains(@class, 'video') or contains(@class, 'lesson')]",
+                ".//li[contains(@class, 'video') or contains(@class, 'lesson')]",
+                ".//a[contains(@class, 'video') or contains(@class, 'lesson')]",
+                ".//*[contains(@class, 'catalog_title')]",  # 课程标题
+                ".//div[contains(@class, 'item')]",
+                ".//div[contains(@class, 'chapter-item')]",
+                ".//span[contains(@class, 'catalog_title')]",  # span标签的课程标题
+                ".//li",  # 通用li元素
+            ]
+            
+            all_video_elements = []
+            for selector in video_selectors:
+                try:
+                    elements = sidebar.find_elements(By.XPATH, selector)
+                    if elements:
+                        self.logger.info(f"✅ 选择器 '{selector}' 找到 {len(elements)} 个元素")
+                        all_video_elements.extend(elements)
+                    else:
+                        self.logger.debug(f"⚠️  选择器 '{selector}' 未找到元素")
+                except Exception as e:
+                    self.logger.debug(f"❌ 选择器 '{selector}' 失败: {e}")
+            
+            # 去重
+            unique_elements = list(dict.fromkeys(all_video_elements))
+            self.logger.info(f"📋 总共找到 {len(unique_elements)} 个去重后的视频元素")
+            
+            # 如果找不到任何元素，保存HTML调试
+            if len(unique_elements) == 0:
+                try:
+                    debug_html = sidebar.get_attribute('outerHTML')
+                    with open('debug_sidebar.html', 'w', encoding='utf-8') as f:
+                        f.write(debug_html)
+                    self.logger.warning("⚠️  未找到任何视频元素，已保存侧边栏HTML到 debug_sidebar.html")
+                    self.logger.info("🔍 请检查 debug_sidebar.html 文件，查看实际的HTML结构")
+                except Exception as e:
+                    self.logger.debug(f"保存HTML失败: {e}")
+            
+            # 筛选未观看视频
+            for idx, element in enumerate(unique_elements):
+                try:
+                    text = element.text
+                    if not text or len(text) < 3:
+                        continue
+                    
+                    # 跳过PPT文件
+                    if '.pptx' in text.lower() or '.ppt' in text.lower():
+                        self.logger.debug(f"  → 跳过：PPT文件 ({text[:30]}...)")
+                        continue
+                    
+                    # 跳过PDF等其他文件
+                    if '.pdf' in text.lower():
+                        self.logger.debug(f"  → 跳过：PDF文件 ({text[:30]}...)")
+                        continue
+
+                    # 跳过作业
+                    if "作业" in text:
+                        self.logger.debug(f"  → 跳过：作业 ({text[:30]}...)")
+                        continue
+                    
+                    # 跳过非视频内容（见面课、课程问答、课程表、成绩分析、课程资料、平时测试）
+                    skip_keywords = ["见面课", "课程问答", "课程表", "成绩分析", "课程资料", "平时测试"]
+                    if any(keyword in text for keyword in skip_keywords):
+                        self.logger.debug(f"  → 跳过：非视频内容 ({text[:30]}...)")
+                        continue
+                    
+                    # 跳过章节标题（只有章节名称，没有时长信息）
+                    # 例如："绪章\n绪论——增强适应能力，争做创造性人才"
+                    if ':' not in text and 'px' not in text:  # 没有时长格式
+                        # 检查是否包含数字编号（如 0.1, 1.1, 2.1.1）
+                        import re
+                        has_number = re.search(r'\d+\.\d+', text)
+                        if not has_number:
+                            # 没有编号且没有时长，可能是章节标题
+                            self.logger.debug(f"  → 跳过：章节标题 ({text[:30]}...)")
+                            continue
+
+                    # 检查是否已完成（查找蓝色勾选标记）
+                    try:
+                        # 方法1：查找 time_icofinish class（知到平台完成标记）
+                        parent_element = element  # 从当前元素开始
+                        
+                        # 如果是span，向上查找父元素
+                        try:
+                            if element.tag_name == 'span':
+                                parent_element = element.find_element(By.XPATH, "./..")
+                        except:
+                            pass
+                        
+                        # 查找完成标记（优先time_icofinish）
+                        completed_markers = parent_element.find_elements(By.XPATH, 
+                            ".//*[contains(@class, 'time_icofinish') or contains(@class, 'complete') or contains(@class, 'finish') or contains(@class, 'done') or contains(@class, '已完成')]")
+                        
+                        if completed_markers:
+                            self.logger.debug(f"  → 跳过：找到完成标记 ({text[:30]}...)")
+                            continue
+                        
+                        # 方法2：检查进度是否100%
+                        try:
+                            progress_element = parent_element.find_element(By.XPATH, ".//*[contains(@class, 'progress-num')]")
+                            progress_text = progress_element.text.strip()
+                            # 提取数字
+                            import re
+                            progress_match = re.search(r'(\d+)%', progress_text)
+                            if progress_match:
+                                progress_value = int(progress_match.group(1))
+                                if progress_value == 100:
+                                    self.logger.debug(f"  → 跳过：进度100% ({text[:30]}...)")
+                                    continue
+                                elif progress_value > 0:
+                                    # 有进度但未完成，记录进度
+                                    self.logger.debug(f"  ℹ️  进度{progress_value}%: {text[:30]}...")
+                        except:
+                            pass
+                        
+                        # 方法3：检查文本中是否包含100%或完成关键词
+                        if '100%' in text or '已完成' in text or '已学完' in text:
+                            self.logger.debug(f"  → 跳过：文本包含完成标记 ({text[:30]}...)")
+                            continue
+                            
+                    except Exception as e:
+                        self.logger.debug(f"  检查完成状态失败: {e}")
+                        pass
+
+                    # 尝试判断是否是视频
+                    if element.is_displayed() and element.is_enabled():
+                        unwatched_videos.append({
+                            'element': element,
+                            'text': text[:100]
+                        })
+                        self.logger.info(f"  → ✅ 找到未观看视频: {text[:50]}...")
+                        
+                except Exception as e:
+                    self.logger.debug(f"处理视频元素 {idx+1} 时出错: {e}")
+                    continue
+            
+            self.logger.info(f"\n🎯 共找到 {len(unwatched_videos)} 个未观看视频")
+            return unwatched_videos
+            
+        except Exception as e:
+            self.logger.error(f"查找视频时出错: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return []
+    
+    def close_all_dialogs(self):
+        """关闭所有弹窗（学前必读、AI助手等）"""
+        self.logger.info("🚨 检查并关闭弹窗...")
+        
+        # 【新策略】通过文本内容查找弹窗，然后点击关闭按钮（不是直接隐藏）
+        try:
+            result = self.driver.execute_script("""
+                // 需要关闭的弹窗关键词
+                var keywords = ['学前必读', 'AI助教', '同学'];
+                var closedCount = 0;
+                var closedInfo = [];
+                
+                // 查找所有包含关键词的元素
+                keywords.forEach(function(keyword) {
+                    // 使用XPath查找包含关键词的元素
+                    var xpath = "//*[contains(text(), '" + keyword + "')]";
+                    var result = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+                    
+                    for (var i = 0; i < result.snapshotLength; i++) {
+                        var element = result.snapshotItem(i);
+                        
+                        // 向上查找最近的弹窗容器（通常是div）
+                        var container = element;
+                        var maxDepth = 10;  // 最多向上查10层
+                        while (container && maxDepth > 0) {
+                            // 检查是否是弹窗容器（通常是position: fixed或absolute的div）
+                            var style = window.getComputedStyle(container);
+                            if (container.tagName === 'DIV' && 
+                                (style.position === 'fixed' || style.position === 'absolute') &&
+                                (style.zIndex > 100 || style.display === 'block')) {
+                                
+                                // 找到了弹窗容器，现在查找关闭按钮
+                                if (style.display !== 'none') {
+                                    // 多种关闭按钮选择器（按优先级排序）
+                                    var closeSelectors = [
+                                        'i.iconfont.iconguanbi',              // 学前必读的iconfont图标
+                                        'img.ai-close-icon',                  // AI助手的图片关闭按钮
+                                        'button[aria-label="Close"]',         // ARIA标签的关闭按钮
+                                        'button.el-dialog__headerbtn',        // Element UI关闭按钮
+                                        'i.el-dialog__close',                 // Element UI关闭图标
+                                        'i.el-icon-close',                    // Element UI图标
+                                        'img[alt="close"]',                   // alt="close"的图片
+                                        'i.iconfont',                         // 通用iconfont图标
+                                        '[class*="close"]',                   // 包含close的元素
+                                        'button',                             // 最后尝试所有按钮
+                                    ];
+                                    
+                                    var closeBtn = null;
+                                    for (var j = 0; j < closeSelectors.length; j++) {
+                                        closeBtn = container.querySelector(closeSelectors[j]);
+                                        if (closeBtn) {
+                                            // 检查按钮文本或属性是否与关闭相关
+                                            var btnText = (closeBtn.textContent || '').trim();
+                                            var btnClass = closeBtn.className || '';
+                                            var btnAlt = closeBtn.getAttribute('alt') || '';
+                                            if (btnText === '×' || btnText === '' || 
+                                                btnClass.includes('close') || 
+                                                btnAlt.includes('close') ||
+                                                closeBtn.getAttribute('aria-label') === 'Close') {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (closeBtn) {
+                                        try {
+                                            closeBtn.click();
+                                            closedCount++;
+                                            closedInfo.push({
+                                                keyword: keyword,
+                                                btnSelector: closeBtn.tagName + '.' + (closeBtn.className || 'no-class'),
+                                                containerClass: container.className
+                                            });
+                                            console.log('点击关闭按钮:', keyword, closeBtn.className || closeBtn.tagName);
+                                        } catch(e) {
+                                            console.error('点击关闭按钮失败:', e);
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                            container = container.parentElement;
+                            maxDepth--;
+                        }
+                    }
+                });
+                
+                return {count: closedCount, info: closedInfo};
+            """)
+            
+            if result and result.get('count', 0) > 0:
+                self.logger.info(f"✅ 已点击关闭 {result['count']} 个弹窗")
+                for info in result.get('info', []):
+                    self.logger.debug(f"  - 关键词: {info['keyword']}, 按钮: {info.get('btnSelector', 'unknown')}")
+                self.smart_wait(1)  # 等待弹窗关闭动画完成
+                return  # 成功关闭后直接返回
+            else:
+                self.logger.debug("未找到可关闭的弹窗")
+        except Exception as e:
+            self.logger.debug(f"点击关闭按钮失败: {e}")
+        
+        # 尝试15次，每次关闭一个弹窗后检查是否还有更多
+        for attempt in range(15):
+            # 先检查是否还有弹窗
+            try:
+                dialogs = self.driver.find_elements(By.XPATH, 
+                    "//div[contains(@class, 'el-dialog__wrapper') and not(contains(@style, 'display: none'))]")
+                if not dialogs:
+                    self.logger.debug("✅ 未检测到弹窗")
+                    break
+                
+                self.logger.debug(f"🔍 检测到 {len(dialogs)} 个弹窗，尝试关闭...")
+            except:
+                break
+            
+            closed_this_round = False
+            
+            # 按优先级尝试关闭按钮选择器（只尝试一次，成功后立即退出）
+            close_button_selectors = [
+                # 【最高优先级】ss2077自定义弹窗的关闭按钮（图片）
+                "//div[contains(@class, 'ss2077-custom-dialog')]//img[@alt='close'][@class='icon']",  # 精确匹配
+                "//div[contains(@class, 'ss2077-custom-title')]//img[@alt='close']",
+                "//img[@alt='close'][@class='icon']",  # 通用图片关闭按钮
+                
+                # 学前必读弹窗的关闭按钮（优先点击<button>，不点击<i>）
+                "//div[contains(text(), '学前必读')]/ancestor::div[contains(@class, 'el-dialog__wrapper')]//button[contains(@class, 'el-dialog__headerbtn')]",  # 通过文本定位
+                "//div[contains(@class, 'el-dialog__wrapper')][not(contains(@class, 'ss2077'))]//button[contains(@class, 'el-dialog__headerbtn')]",  # 排除ss2077弹窗
+                "//button[contains(@class, 'el-dialog__headerbtn')]",  # Element UI关闭按钮
+                "//button[@aria-label='Close']",  # 有Close标签的按钮
+                "//div[contains(@class, 'el-dialog__header')]//button",  # 弹窗头部的按钮
+                
+                # 通用关闭按钮
+                "//button[contains(@class, 'close')]",
+                "//*[normalize-space(text())='×']",
+                "//*[contains(text(), '关闭')]",  # 文本匹配“关闭”
+            ]
+            
+            for selector in close_button_selectors:
+                try:
+                    buttons = self.driver.find_elements(By.XPATH, selector)
+                    if not buttons:
+                        continue
+                    
+                    self.logger.debug(f"🔍 选择器找到 {len(buttons)} 个按钮: {selector[:60]}")
+                    
+                    # 只点击第一个按钮
+                    btn = buttons[0]
+                    
+                    # 【建议1】确保按钮在视口中可见，滚动到视图中
+                    try:
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", btn)
+                        self.smart_wait(0.3)  # 等待滚动完成
+                    except:
+                        pass
+                    
+                    # 【建议2】使用显式等待，确保元素可点击
+                    try:
+                        WebDriverWait(self.driver, 3).until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    except:
+                        pass
+                    
+                    # 【建议3】模拟用户行为：移动鼠标到按钮上再点击
+                    try:
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        ActionChains(self.driver).move_to_element(btn).click().perform()
+                        self.logger.info(f"✅ 关闭弹窗(鼠标移动): {selector[:60]}")
+                        closed_this_round = True
+                        self.smart_wait(1)  # 等待弹窗关闭动画完成
+                        break
+                    except:
+                        # 如果鼠标移动点击失败，尝试普通点击
+                        try:
+                            btn.click()
+                            self.logger.info(f"✅ 关闭弹窗: {selector[:60]}")
+                            closed_this_round = True
+                            self.smart_wait(1)
+                            break
+                        except:
+                            # 普通点击失败，尝试JavaScript点击
+                            try:
+                                self.driver.execute_script("arguments[0].click();", btn)
+                                self.logger.info(f"✅ 关闭弹窗(JS): {selector[:60]}")
+                                closed_this_round = True
+                                self.smart_wait(1)
+                                break
+                            except:
+                                continue
+                except Exception as e:
+                    self.logger.debug(f"选择器处理失败: {str(e)[:50]}")
+                    continue
+            
+            if not closed_this_round:
+                # 没有找到可点击的按钮，退出
+                self.logger.debug("⚠️  未找到可点击的关闭按钮")
+                break
+        
+        # 检查是否还有可见的弹窗，如果有则保存HTML调试
+        self.check_and_save_dialogs_for_debug()
+        
+        self.logger.info("✅ 弹窗关闭检查完成")
+    
+    def check_and_save_dialogs_for_debug(self):
+        """检查是否还有未关闭的弹窗，并保存HTML供调试"""
+        try:
+            # 查找可能的弹窗元素
+            dialog_selectors = [
+                "//div[contains(@class, 'dialog') and contains(@style, 'display')]",
+                "//div[contains(@class, 'modal') and contains(@style, 'display')]",
+                "//div[contains(@class, 'popup')]",
+                "//div[contains(@class, 'el-dialog__wrapper')]",
+            ]
+            
+            found_dialogs = []
+            for selector in dialog_selectors:
+                try:
+                    dialogs = self.driver.find_elements(By.XPATH, selector)
+                    for dialog in dialogs:
+                        if dialog.is_displayed():
+                            found_dialogs.append(dialog)
+                except:
+                    continue
+            
+            if found_dialogs:
+                self.logger.warning(f"⚠️  检测到 {len(found_dialogs)} 个未关闭的弹窗，保存HTML供调试...")
+                
+                # 保存完整页面HTML
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                html_file = f'debug_dialogs_{timestamp}.html'
+                
+                try:
+                    with open(html_file, 'w', encoding='utf-8') as f:
+                        f.write(self.driver.page_source)
+                    self.logger.info(f"💾 已保存完整HTML: {html_file}")
+                except Exception as e:
+                    self.logger.error(f"保存HTML失败: {e}")
+                
+                # 保存每个弹窗的HTML片段
+                for idx, dialog in enumerate(found_dialogs, 1):
+                    try:
+                        dialog_html = dialog.get_attribute('outerHTML')
+                        dialog_file = f'debug_dialog_{idx}_{timestamp}.html'
+                        with open(dialog_file, 'w', encoding='utf-8') as f:
+                            f.write(dialog_html)
+                        self.logger.info(f"💾 已保存弹窗{idx}: {dialog_file}")
+                        
+                        # 输出弹窗的class和id信息
+                        dialog_class = dialog.get_attribute('class') or ''
+                        dialog_id = dialog.get_attribute('id') or ''
+                        self.logger.info(f"  弹窗{idx} class: {dialog_class[:100]}")
+                        if dialog_id:
+                            self.logger.info(f"  弹窗{idx} id: {dialog_id}")
+                    except Exception as e:
+                        self.logger.error(f"保存弹窗{idx}HTML失败: {e}")
+                
+                # 保存截图
+                try:
+                    screenshot_file = f'debug_dialogs_{timestamp}.png'
+                    self.driver.save_screenshot(screenshot_file)
+                    self.logger.info(f"📸 已保存截图: {screenshot_file}")
+                except Exception as e:
+                    self.logger.error(f"保存截图失败: {e}")
+                
+                self.logger.warning("🔍 请查看以上调试文件分析弹窗结构")
+            
+        except Exception as e:
+            self.logger.debug(f"检查弹窗调试信息失败: {e}")
     
     def get_video_progress(self):
         """获取视频当前播放进度（秒）"""
@@ -832,6 +1650,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def check_for_quiz(self):
         """检查是否有题目弹窗"""
         try:
+            # 先检查是否是ss2077自定义弹窗（AI助手），如果是则不是题目
+            try:
+                ss2077_dialogs = self.driver.find_elements(By.XPATH, "//div[contains(@class, 'ss2077-custom-dialog')]")
+                if ss2077_dialogs and any(d.is_displayed() for d in ss2077_dialogs):
+                    self.logger.debug("检测到ss2077自定义弹窗，不是题目弹窗")
+                    return False
+            except:
+                pass
+            
             # 查找题目弹窗的常见选择器
             quiz_selectors = [
                 "//div[contains(@class, 'topic-item')]",  # 题目容器
@@ -1148,6 +1975,32 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if not self.enter_study_page():
                 self.logger.error("❌ 进入学习页面失败，程序退出")
                 return
+            
+            # 查找未观看的视频
+            unwatched_videos = self.find_unwatched_videos()
+            
+            if not unwatched_videos:
+                self.logger.warning("⚠️  未找到未观看的视频，直接监控题目弹窗")
+            else:
+                self.logger.info(f"🎯 找到 {len(unwatched_videos)} 个未观看视频，开始播放")
+                
+                # 播放第一个未观看视频
+                first_video = unwatched_videos[0]
+                self.logger.info(f"🎬 点击播放: {first_video['text']}")
+                
+                try:
+                    # 尝试点击
+                    first_video['element'].click()
+                    self.logger.info("✅ 普通点击成功")
+                except:
+                    try:
+                        # 如果普通点击失败，尝试JavaScript点击
+                        self.driver.execute_script("arguments[0].click();", first_video['element'])
+                        self.logger.info("✅ JavaScript点击成功")
+                    except Exception as e:
+                        self.logger.error(f"❌ 点击视频失败: {e}")
+                
+                self.smart_wait(3)  # 等待视频加载
             
             # 主循环：观看视频并回答题目
             self.logger.info("\n" + "="*60)
