@@ -1048,9 +1048,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
     
     def find_unwatched_videos(self):
-        """查找未观看的视频（从右侧目录）"""
+        """查找未观看的视频（从右侧目录），同时记录已观看视频列表"""
         self.logger.info("🔍 查找未观看的视频...")
         unwatched_videos = []
+        watched_videos = []  # 新增：记录已观看视频
         
         try:
             # 查找右侧目录侧边栏
@@ -1269,6 +1270,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         
                         if completed_markers:
                             self.logger.debug(f"  → 跳过：找到完成标记 ({text[:30]}...)")
+                            # 记录已观看视频
+                            watched_videos.append({
+                                'text': text[:100],
+                                'title': self._extract_video_title(text)
+                            })
                             continue
                         
                         # 方法2：检查进度是否100%
@@ -1282,6 +1288,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 progress_value = int(progress_match.group(1))
                                 if progress_value == 100:
                                     self.logger.debug(f"  → 跳过：进度100% ({text[:30]}...)")
+                                    # 记录已观看视频
+                                    watched_videos.append({
+                                        'text': text[:100],
+                                        'title': self._extract_video_title(text)
+                                    })
                                     continue
                                 elif progress_value > 0:
                                     # 有进度但未完成，记录进度
@@ -1292,6 +1303,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         # 方法3：检查文本中是否包含100%或完成关键词
                         if '100%' in text or '已完成' in text or '已学完' in text:
                             self.logger.debug(f"  → 跳过：文本包含完成标记 ({text[:30]}...)")
+                            # 记录已观看视频
+                            watched_videos.append({
+                                'text': text[:100],
+                                'title': self._extract_video_title(text)
+                            })
                             continue
                             
                     except Exception as e:
@@ -1311,6 +1327,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     continue
             
             self.logger.info(f"\n🎯 共找到 {len(unwatched_videos)} 个未观看视频")
+            self.logger.info(f"📚 共找到 {len(watched_videos)} 个已观看视频")
+            
+            # 保存已观看视频列表为类属性，供后续检查使用
+            self.watched_video_list = watched_videos
+            self.logger.debug(f"已保存已观看视频列表: {len(watched_videos)} 个")
+            
             return unwatched_videos
             
         except Exception as e:
@@ -1318,6 +1340,121 @@ class ZhidaoWebAutoPlayerWithQuiz:
             import traceback
             self.logger.error(traceback.format_exc())
             return []
+    
+    def _extract_video_title(self, text):
+        """从元素文本中提取视频标题（去除进度、时长等信息）"""
+        import re
+        # 移除进度百分比（如 11%, 100%）
+        text = re.sub(r'\d+%', '', text)
+        # 移除时长（如 00:07:14）
+        text = re.sub(r'\d{2}:\d{2}:\d{2}', '', text)
+        text = re.sub(r'\d{2}:\d{2}', '', text)
+        # 移除多余的空格和换行
+        text = ' '.join(text.split())
+        # 取前50个字符作为标题
+        return text[:50].strip()
+    
+    def get_current_video_title(self):
+        """获取当前正在播放的视频标题（从左上角）"""
+        try:
+            # 尝试多种选择器查找视频标题
+            title_selectors = [
+                "//span[@class='lesson-order_videotop_lesson']",  # 知到平台常见
+                "//div[contains(@class, 'video-title')]",
+                "//div[contains(@class, 'videotop')]//span",
+                "//h1[contains(@class, 'title')]",
+                "//div[contains(@class, 'current-video')]//span",
+            ]
+            
+            for selector in title_selectors:
+                try:
+                    element = self.driver.find_element(By.XPATH, selector)
+                    if element and element.is_displayed():
+                        title = element.text.strip()
+                        if title:
+                            self.logger.debug(f"获取到当前视频标题: {title[:50]}")
+                            return self._extract_video_title(title)
+                except:
+                    continue
+            
+            self.logger.debug("未找到当前视频标题元素")
+            return None
+        except Exception as e:
+            self.logger.debug(f"获取当前视频标题失败: {e}")
+            return None
+    
+    def check_and_skip_watched_video(self):
+        """检查当前播放的视频是否已观看，如果是则跳转到下一个未观看视频"""
+        try:
+            # 如果没有已观看视频列表，直接返回
+            if not hasattr(self, 'watched_video_list') or not self.watched_video_list:
+                return False
+            
+            # 获取当前播放的视频标题
+            current_title = self.get_current_video_title()
+            if not current_title:
+                return False
+            
+            # 检查是否在已观看列表中
+            for watched in self.watched_video_list:
+                watched_title = watched.get('title', '')
+                # 使用模糊匹配（包含关系）
+                if watched_title and (watched_title in current_title or current_title in watched_title):
+                    self.logger.warning(f"⚠️  检测到重复播放已观看视频: {current_title}")
+                    self.logger.info("🔄 重新检索视频列表，跳转到下一个未观看视频...")
+                    
+                    # 重新查找未观看视频
+                    unwatched_videos = self.find_unwatched_videos()
+                    
+                    if not unwatched_videos:
+                        self.logger.warning("⚠️  未找到未观看视频，继续监控")
+                        return False
+                    
+                    # 点击第一个未观看视频
+                    first_video = unwatched_videos[0]
+                    self.logger.info(f"🎬 点击播放: {first_video['text'][:50]}")
+                    
+                    try:
+                        first_video['element'].click()
+                        self.logger.info("✅ 普通点击成功")
+                    except:
+                        try:
+                            self.driver.execute_script("arguments[0].click();", first_video['element'])
+                            self.logger.info("✅ JavaScript点击成功")
+                        except Exception as e:
+                            self.logger.error(f"❌ 点击视频失败: {e}")
+                    
+                    self.smart_wait(3)
+                    
+                    # 启动播放
+                    try:
+                        play_result = self.driver.execute_script("""
+                            var video = document.querySelector('video');
+                            if (video) {
+                                var playPromise = video.play();
+                                if (playPromise !== undefined) {
+                                    playPromise.then(function() {
+                                        return 'success';
+                                    }).catch(function(error) {
+                                        return 'error: ' + error.message;
+                                    });
+                                }
+                                return 'video found and play() called';
+                            } else {
+                                return 'video not found';
+                            }
+                        """)
+                        self.logger.info(f"✅ JavaScript播放结果: {play_result}")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️  JavaScript启动播放失败: {e}")
+                    
+                    self.smart_wait(2)
+                    return True
+            
+            return False
+        except Exception as e:
+            self.logger.error(f"检查重复播放时出错: {e}")
+            return False
     
     def close_all_dialogs(self):
         """关闭所有弹窗（学前必读、AI助手等）"""
@@ -2071,13 +2208,25 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.info("🎬 开始自动播放（视频会自动连续播放）")
             self.logger.info("="*60)
             
-            # 由于是自动连续播放，这里主要是监控题目弹窗
+            # 用于定时检查重复播放
+            check_counter = 0
+            check_interval = 6  # 每6次循环（约30秒）检查一次
+            
+            # 由于是自动连续播放，这里主要是监控题目弹窗和重复播放
             while True:
                 self.smart_wait(5)
                 
                 # 检查题目弹窗
                 if self.check_for_quiz():
                     self.answer_quiz()
+                
+                # 定时检查是否重复播放已观看视频
+                check_counter += 1
+                if check_counter >= check_interval:
+                    self.logger.debug("🔍 定时检查是否重复播放...")
+                    if self.check_and_skip_watched_video():
+                        self.logger.info("✅ 已跳转到下一个未观看视频")
+                    check_counter = 0  # 重置计数器
                 
                 # TODO: 添加退出条件（如达到观看时长、所有视频播放完毕等）
             
