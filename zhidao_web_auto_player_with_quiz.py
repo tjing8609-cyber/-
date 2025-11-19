@@ -1867,7 +1867,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
     
     def answer_quiz(self):
-        """回答题目（依次尝试A-D，直到正确）"""
+        """回答题目（支持多次作答，识别正确/错误答案）"""
         try:
             self.logger.info("📝 开始回答题目...")
             
@@ -1877,10 +1877,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 "//label[contains(@class, 'el-radio')]",  # Element UI单选框标签
                 "//div[contains(@class, 'el-radio')]",  # Element UI单选框容器
                 "//span[contains(@class, 'el-radio__label')]",  # Element UI单选框文本
-                "//div[contains(@class, 'topic-item')]",
-                "//div[contains(@class, 'subject-item')]",
-                "//div[contains(@class, 'option')]",
-                "//label[contains(@class, 'option')]",
             ]
             
             options = []
@@ -1899,8 +1895,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
             
             if not options:
                 self.logger.warning("⚠️  未找到题目选项")
-                # 尝试直接关闭弹窗
-                self.close_quiz_dialog()
                 return False
             
             # 依次尝试每个选项，直到正确
@@ -1917,64 +1911,107 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     # 点击选项
                     try:
                         current_option.click()
-                        self.smart_wait(1)
+                        self.smart_wait(0.5)
                     except:
                         # 如果直接点击失败，尝试用JavaScript点击
                         self.driver.execute_script("arguments[0].click();", current_option)
-                        self.smart_wait(1)
+                        self.smart_wait(0.5)
                     
-                    # 查找并点击确定/提交按钮（如果有）
+                    # 查找并点击确定/提交按钮
                     submit_buttons = [
+                        "//span[contains(text(), '确定')]",
                         "//button[contains(text(), '确定')]",
+                        "//span[contains(text(), '提交')]",
                         "//button[contains(text(), '提交')]",
-                        "//div[contains(text(), '确定') and contains(@class, 'btn')]",
-                        "//div[contains(@class, 'submit')]",
+                        "//div[contains(@class, 'popbtn_ok')]",  # 知到平台的确定按钮
                     ]
                     
+                    submit_clicked = False
                     for btn_selector in submit_buttons:
                         try:
-                            submit_btn = self.driver.find_element(By.XPATH, btn_selector)
-                            if submit_btn.is_displayed():
-                                submit_btn.click()
-                                self.logger.info("✅ 已点击提交")
-                                self.smart_wait(2)
+                            submit_btns = self.driver.find_elements(By.XPATH, btn_selector)
+                            for submit_btn in submit_btns:
+                                if submit_btn.is_displayed() and submit_btn.is_enabled():
+                                    try:
+                                        submit_btn.click()
+                                        self.logger.info("✅ 已点击提交")
+                                        submit_clicked = True
+                                        break
+                                    except:
+                                        try:
+                                            self.driver.execute_script("arguments[0].click();", submit_btn)
+                                            self.logger.info("✅ JavaScript点击提交")
+                                            submit_clicked = True
+                                            break
+                                        except:
+                                            continue
+                            if submit_clicked:
                                 break
                         except:
                             continue
                     
-                    # 等待反馈（可能需要一点时间）
-                    self.smart_wait(1.5)
+                    if submit_clicked:
+                        self.smart_wait(1.5)  # 等待反馈
                     
-                    # 检查是否正确
-                    if self.check_answer_correct():
+                    # 检查答案是否正确
+                    answer_result = self.check_answer_result()
+                    
+                    if answer_result == 'correct':
                         self.logger.info(f"✅ {current_label} 是正确答案！")
-                        
-                        # 关闭题目弹窗
-                        self.smart_wait(1)
-                        self.close_quiz_dialog()
-                        
                         self.quizzes_answered_this_session += 1
                         self.progress['total_quizzes'] += 1
                         
+                        # 等待一下确保结果显示完毕
+                        self.smart_wait(2)
                         return True
-                    else:
-                        self.logger.warning(f"❌ {current_label} 不正确，继续尝试...")
+                        
+                    elif answer_result == 'wrong':
+                        self.logger.warning(f"❌ {current_label} 不正确")
+                        
+                        # 尝试提取正确答案
+                        correct_answer = self.extract_correct_answer()
+                        if correct_answer:
+                            self.logger.info(f"💡 正确答案是: {correct_answer}")
+                            
+                            # 尝试点击正确答案
+                            if self.click_correct_answer(correct_answer, options):
+                                self.logger.info("✅ 已选择正确答案")
+                                
+                                # 再次提交
+                                for btn_selector in submit_buttons:
+                                    try:
+                                        submit_btns = self.driver.find_elements(By.XPATH, btn_selector)
+                                        for submit_btn in submit_btns:
+                                            if submit_btn.is_displayed() and submit_btn.is_enabled():
+                                                submit_btn.click()
+                                                self.logger.info("✅ 已重新提交")
+                                                self.smart_wait(1.5)
+                                                break
+                                        break
+                                    except:
+                                        continue
+                                
+                                self.quizzes_answered_this_session += 1
+                                self.progress['total_quizzes'] += 1
+                                self.smart_wait(2)
+                                return True
+                        
                         # 继续下一个选项
+                        continue
+                    else:
+                        self.logger.debug("⚠️  未检测到明确的结果，继续尝试...")
                         continue
                     
                 except Exception as e:
                     self.logger.error(f"尝试选项 {current_label} 失败: {e}")
                     continue
             
-            # 所有选项都尝试完了还是没正确，直接关闭
-            self.logger.warning("⚠️  所有选项都尝试完毕，未找到正确答案")
-            self.close_quiz_dialog()
+            # 所有选项都尝试完了
+            self.logger.warning("⚠️  所有选项都尝试完毕")
             return False
             
         except Exception as e:
             self.logger.error(f"回答题目失败: {e}")
-            # 尝试关闭弹窗
-            self.close_quiz_dialog()
             return False
     
     def check_answer_correct(self):
@@ -2033,6 +2070,118 @@ class ZhidaoWebAutoPlayerWithQuiz:
             
         except Exception as e:
             self.logger.debug(f"检查答案正确性失败: {e}")
+            return False
+    
+    def check_answer_result(self):
+        """检查答案结果（返回 'correct', 'wrong' 或 None）"""
+        try:
+            # 检查是否有"正确"提示
+            correct_selectors = [
+                "//*[contains(text(), '回答正确')]",
+                "//*[contains(text(), '正确')]",
+                "//*[contains(@class, 'colorGreen')]",  # 知到平台绿色正确标记
+                "//*[contains(@class, 'correct')]",
+                "//*[contains(@class, 'success')]",
+            ]
+            
+            for selector in correct_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for elem in elements:
+                        if elem.is_displayed():
+                            text = elem.text.strip()
+                            if '正确' in text and '错误' not in text:
+                                self.logger.debug(f"检测到正确标记: {text}")
+                                return 'correct'
+                except:
+                    continue
+            
+            # 检查是否有"错误"提示
+            error_selectors = [
+                "//*[contains(text(), '回答错误')]",
+                "//*[contains(text(), '错误')]",
+                "//*[contains(@class, 'colorRed')]",  # 知到平台红色错误标记
+                "//*[contains(@class, 'error')]",
+                "//*[contains(@class, 'wrong')]",
+            ]
+            
+            for selector in error_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for elem in elements:
+                        if elem.is_displayed():
+                            text = elem.text.strip()
+                            if '错误' in text:
+                                self.logger.debug(f"检测到错误标记: {text}")
+                                return 'wrong'
+                except:
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"检查答案结果失败: {e}")
+            return None
+    
+    def extract_correct_answer(self):
+        """提取正确答案（从错误提示中）"""
+        try:
+            # 查找包含正确答案的元素
+            answer_selectors = [
+                "//*[contains(text(), '正确答案')]",
+                "//*[contains(text(), '正确选项')]",
+                "//*[contains(@class, 'correct-answer')]",
+                "//*[contains(@class, 'right-answer')]",
+            ]
+            
+            for selector in answer_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for elem in elements:
+                        if elem.is_displayed():
+                            text = elem.text.strip()
+                            # 提取答案字母（A/B/C/D）
+                            import re
+                            # 匹配 "A" 或 "（A）" 或 "A、" 或 "A."
+                            match = re.search(r'([A-D])', text)
+                            if match:
+                                answer_letter = match.group(1)
+                                self.logger.debug(f"提取到正确答案: {answer_letter}")
+                                return answer_letter
+                except:
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"提取正确答案失败: {e}")
+            return None
+    
+    def click_correct_answer(self, answer_letter, options):
+        """点击正确答案"""
+        try:
+            # 将字母转换为索引
+            answer_index = ord(answer_letter) - ord('A')
+            
+            if 0 <= answer_index < len(options):
+                correct_option = options[answer_index]
+                
+                try:
+                    correct_option.click()
+                    self.smart_wait(0.5)
+                    return True
+                except:
+                    try:
+                        self.driver.execute_script("arguments[0].click();", correct_option)
+                        self.smart_wait(0.5)
+                        return True
+                    except:
+                        return False
+            
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"点击正确答案失败: {e}")
             return False
     
     def close_quiz_dialog(self):
@@ -2142,6 +2291,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # 清空本次任务的已完成视频记录
             self.progress['completed_videos'] = []
             self.save_progress()
+            
+            # 清空已观看视频列表（任务开始时重置）
+            self.watched_video_list = []
+            self.logger.info("✅ 已清空已观看视频列表")
             
             # 登录
             if not self.login():
@@ -2256,6 +2409,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def cleanup(self):
         """清理资源"""
+        # 清空已观看视频列表（任务结束时清空）
+        if hasattr(self, 'watched_video_list'):
+            self.watched_video_list = []
+            self.logger.debug("✅ 已清空已观看视频列表")
+        
         self.logger.info("\n" + "="*60)
         self.logger.info("📊 本次运行统计")
         self.logger.info("="*60)
