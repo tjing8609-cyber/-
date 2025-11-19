@@ -1,7 +1,236 @@
-=======================================
+========================================
 ========================================
 知到自动播放脚本 - 版本更新日志
 ========================================
+
+【v3.7】2025-11-19 🔘 题目关闭机制优化版
+-------------------
+主题：优先使用"关闭"按钮，ESC键作为后备
+
+信息来源：DevTools截图分析
+
+**关键发现：**
+
+从用户提供的DevTools截图中，我发现了重要信息：
+
+### 1️⃣ 题目弹窗底部有"关闭"按钮
+
+```html
+<div class="el-dialog__footer">
+  <span>关闭</span>  <!-- ← 这个就是关闭按钮！ -->
+</div>
+```
+
+这是知到平台提供的**标准关闭按钮**，比ESC键更可靠！
+
+### 2️⃣ 答案结果标记结构
+
+**正确标记：**
+```html
+<span class="right" style="color: #00D789">✓</span>
+```
+- class: `right` (绿色勾)
+- 颜色: `#00D789`
+
+**错误标记：**
+```html
+<span class="error" style="color: #F94F17">✗</span>
+```
+- class: `error` (红色叉)
+- 颜色: `#F94F17`
+
+这确认了v3.6版本的精确匹配逻辑是正确的。
+
+**问题分析：**
+
+v3.5版本使用ESC键关闭题目弹窗：
+1. ❌ ESC键可能被其他弹窗拦截
+2. ❌ 不是标准的UI操作方式
+3. ❌ 可能在某些环境下失效
+4. ❌ 没有利用平台提供的关闭按钮
+
+**解决方案：**
+
+### 🎯 双重保障关闭机制
+
+**优先级顺序：**
+
+```
+1️⃣ 尝试点击"关闭"按钮（优先）
+   ├─ 选择器1: //span[contains(text(), '关闭')]
+   ├─ 选择器2: //button[contains(text(), '关闭')]
+   └─ 选择器3: //div[contains(@class, 'el-dialog__footer')]//span[contains(text(), '关闭')]
+        ↓ 成功
+      return True
+        ↓ 失败
+2️⃣ 使用ESC键（后备方案）
+   └─ send_keys(Keys.ESCAPE)
+```
+
+### 💻 关闭按钮实现
+
+```python
+# 【优化】点击"关闭"按钮关闭题目弹窗
+close_success = False
+close_selectors = [
+    "//span[contains(text(), '关闭')]",  # 知到平台的"关闭"按钮
+    "//button[contains(text(), '关闭')]",
+    "//div[contains(@class, 'el-dialog__footer')]//span[contains(text(), '关闭')]",
+]
+
+for close_selector in close_selectors:
+    try:
+        close_btns = self.driver.find_elements(By.XPATH, close_selector)
+        for close_btn in close_btns:
+            if close_btn.is_displayed():
+                try:
+                    close_btn.click()  # 普通点击
+                    self.logger.info("✅ 已点击'关闭'按钮")
+                    close_success = True
+                    break
+                except:
+                    try:
+                        # JavaScript点击（后备）
+                        self.driver.execute_script("arguments[0].click();", close_btn)
+                        self.logger.info("✅ 已点击'关闭'按钮（JS）")
+                        close_success = True
+                        break
+                    except:
+                        continue
+        if close_success:
+            break
+    except:
+        continue
+
+# 如果"关闭"按钮点击失败，使用ESC键作为后备
+if not close_success:
+    try:
+        from selenium.webdriver.common.keys import Keys
+        self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+        self.logger.info("✅ 已按ESC键关闭题目弹窗（后备方案）")
+    except Exception as e:
+        self.logger.warning(f"⚠️  ESC键关闭失败: {e}")
+```
+
+**两层点击尝试：**
+1. 普通点击 `close_btn.click()`
+2. JavaScript点击 `execute_script("arguments[0].click();")`
+
+### 修改位置（3处）
+
+**1️⃣ 单选题答对后：**
+- 位置：`answer_quiz()` → `if answer_result == 'correct'`
+- 修改：替换ESC键为"关闭"按钮优先
+
+**2️⃣ 提取正确答案后：**
+- 位置：`answer_quiz()` → `elif answer_result == 'wrong'`
+- 修改：替换ESC键为"关闭"按钮优先
+
+**3️⃣ 多选题处理后：**
+- 位置：`answer_quiz()` → `if is_multiple_choice or max_attempts >= 4`
+- 修改：替换ESC键为"关闭"按钮优先
+
+### 📊 修改对比表
+
+| 关闭方式 | v3.6 | v3.7 |
+|----------|------|------|
+| 主要方式 | ESC键 | 点击"关闭"按钮 ✅ |
+| 后备方案 | 无 | ESC键 ✅ |
+| 成功率 | 中 | 高 ✅ |
+| 符合UI规范 | 否 | 是 ✅ |
+| 利用平台功能 | 否 | 是 ✅ |
+| 双重保障 | 否 | 是 ✅ |
+
+### ✅ 优势对比
+
+**点击"关闭"按钮：**
+- ✅ 标准UI操作，符合用户习惯
+- ✅ 平台官方提供，稳定性高
+- ✅ 不受其他弹窗影响
+- ✅ 支持JavaScript点击后备
+
+**ESC键（后备）：**
+- ⚠️ 可能被其他弹窗拦截
+- ⚠️ 不是标准UI操作
+- ✅ 作为后备方案保证兼容性
+
+### 📝 修改文件
+
+📁 zhidao_web_auto_player_with_quiz.py
+  - answer_quiz(): 3处替换ESC键为"关闭"按钮优先
+  - 每处增加约40行代码（关闭按钮逻辑 + 后备ESC键）
+  - 双重保障机制：普通点击 → JS点击 → ESC键
+
+📁 版本更新日志.txt
+  - 记录v3.7版本详情
+
+### 📌 Git提交记录
+
+- `c7ed9a1` - 优化题目关闭方式：优先使用'关闭'按钮，ESC键作为后备方案，提高关闭成功率
+
+### 📊 代码统计
+
+- 新增代码：约128行
+- 删除代码：约28行
+- 净增加：约100行
+
+### 🔍 日志输出示例
+
+**成功点击关闭按钮：**
+```
+INFO  - 🔄 点击'关闭'按钮关闭题目弹窗...
+INFO  - ✅ 已点击'关闭'按钮
+INFO  - 🎬 已点击视频中央恢复播放: video clicked and playing
+```
+
+**关闭按钮失败，使用ESC键：**
+```
+INFO  - 🔄 点击'关闭'按钮关闭题目弹窗...
+INFO  - ✅ 已按ESC键关闭题目弹窗（后备方案）
+INFO  - 🎬 已点击视频中央恢复播放: video clicked and playing
+```
+
+**两种方式都失败：**
+```
+WARN  - ⚠️  ESC键关闭失败: ...
+ERROR - 回答题目失败: ...
+```
+
+### ✅ 向后兼容
+
+✅ 完全兼容v3.6
+✅ 不影响其他功能
+✅ 配置文件无需修改
+✅ 进度文件格式不变
+✅ ESC键仍可用（后备）
+
+### ⚠️ 重要说明
+
+**核心改进：**
+1. ✅ 优先使用平台提供的"关闭"按钮
+2. ✅ 双重点击尝试：普通点击 + JS点击
+3. ✅ ESC键作为后备方案，保证兼容性
+4. ✅ 提高关闭成功率和稳定性
+
+**测试建议：**
+
+```bash
+conda activate study312
+python zhidao_launcher.py --account account.json
+```
+
+观察日志输出：
+- 应优先显示 "✅ 已点击'关闭'按钮"
+- 如果关闭按钮失败，才显示 "✅ 已按ESC键关闭题目弹窗（后备方案）"
+- 关闭后自动恢复视频播放
+
+**用户体验提升：**
+
+- 🎯 **高成功率** - 双重保障机制
+- 🛡️ **更稳定** - 利用平台官方按钮
+- 👍 **符合规范** - 标准UI操作
+- 🔄**后备方案** - ESC键兼容保障
+
 
 【v3.6】2025-11-19 🔍 答案结果识别修复版
 -------------------
