@@ -2022,47 +2022,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         # 等待一下确保结果显示完毕
                         self.smart_wait(2)
                         
-                        # 【优化】点击"关闭"按钮关闭题目弹窗
-                        close_success = False
-                        close_selectors = [
-                            "//span[contains(text(), '关闭')]",  # 知到平台的"关闭"按钮
-                            "//button[contains(text(), '关闭')]",
-                            "//div[contains(@class, 'el-dialog__footer')]//span[contains(text(), '关闭')]",
-                        ]
-                        
-                        for close_selector in close_selectors:
-                            try:
-                                close_btns = self.driver.find_elements(By.XPATH, close_selector)
-                                for close_btn in close_btns:
-                                    if close_btn.is_displayed():
-                                        try:
-                                            close_btn.click()
-                                            self.logger.info("✅ 已点击'关闭'按钮")
-                                            close_success = True
-                                            break
-                                        except:
-                                            try:
-                                                self.driver.execute_script("arguments[0].click();", close_btn)
-                                                self.logger.info("✅ 已点击'关闭'按钮（JS）")
-                                                close_success = True
-                                                break
-                                            except:
-                                                continue
-                                if close_success:
-                                    break
-                            except:
-                                continue
-                        
-                        # 如果"关闭"按钮点击失败，使用ESC键作为后备
-                        if not close_success:
-                            try:
-                                from selenium.webdriver.common.keys import Keys
-                                self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-                                self.logger.info("✅ 已按ESC键关闭题目弹窗（后备方案）")
-                            except Exception as e:
-                                self.logger.warning(f"⚠️  ESC键关闭失败: {e}")
-                        
-                        self.smart_wait(1)
+                        # 按ESC键关闭题目弹窗
+                        try:
+                            from selenium.webdriver.common.keys import Keys
+                            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                            self.logger.info("✅ 已按ESC键关闭题目弹窗")
+                            self.smart_wait(1)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
                         
                         # 【新增】点击视频中央恢复播放
                         try:
@@ -2127,47 +2094,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.progress['total_quizzes'] += 1
                                 self.smart_wait(2)
                                 
-                                # 【优化】点击"关闭"按钮关闭题目弹窗
-                                close_success = False
-                                close_selectors = [
-                                    "//span[contains(text(), '关闭')]",  # 知到平台的"关闭"按钮
-                                    "//button[contains(text(), '关闭')]",
-                                    "//div[contains(@class, 'el-dialog__footer')]//span[contains(text(), '关闭')]",
-                                ]
-                                
-                                for close_selector in close_selectors:
-                                    try:
-                                        close_btns = self.driver.find_elements(By.XPATH, close_selector)
-                                        for close_btn in close_btns:
-                                            if close_btn.is_displayed():
-                                                try:
-                                                    close_btn.click()
-                                                    self.logger.info("✅ 已点击'关闭'按钮")
-                                                    close_success = True
-                                                    break
-                                                except:
-                                                    try:
-                                                        self.driver.execute_script("arguments[0].click();", close_btn)
-                                                        self.logger.info("✅ 已点击'关闭'按钮（JS）")
-                                                        close_success = True
-                                                        break
-                                                    except:
-                                                        continue
-                                        if close_success:
-                                            break
-                                    except:
-                                        continue
-                                
-                                # 如果"关闭"按钮点击失败，使用ESC键作为后备
-                                if not close_success:
-                                    try:
-                                        from selenium.webdriver.common.keys import Keys
-                                        self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-                                        self.logger.info("✅ 已按ESC键关闭题目弹窗（后备方案）")
-                                    except Exception as e:
-                                        self.logger.warning(f"⚠️  ESC键关闭失败: {e}")
-                                
-                                self.smart_wait(1)
+                                # 按ESC键关闭题目弹窗
+                                try:
+                                    from selenium.webdriver.common.keys import Keys
+                                    self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                                    self.logger.info("✅ 已按ESC键关闭题目弹窗")
+                                    self.smart_wait(1)
+                                except Exception as e:
+                                    self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
                                 
                                 # 【新增】点击视频中央恢复播放
                                 try:
@@ -2294,52 +2228,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     except:
                         continue
                 
-                # 【优化】点击"关闭"按钮关闭题目弹窗
-                self.logger.info("🔄 点击'关闭'按钮关闭题目弹窗...")
-                close_success = False
-                close_selectors = [
-                    "//span[contains(text(), '关闭')]",  # 知到平台的"关闭"按钮
-                    "//button[contains(text(), '关闭')]",
-                    "//div[contains(@class, 'el-dialog__footer')]//span[contains(text(), '关闭')]",
-                ]
-                
-                for close_selector in close_selectors:
-                    try:
-                        close_btns = self.driver.find_elements(By.XPATH, close_selector)
-                        for close_btn in close_btns:
-                            if close_btn.is_displayed():
-                                try:
-                                    close_btn.click()
-                                    self.logger.info("✅ 已点击'关闭'按钮")
-                                    close_success = True
-                                    break
-                                except:
-                                    try:
-                                        self.driver.execute_script("arguments[0].click();", close_btn)
-                                        self.logger.info("✅ 已点击'关闭'按钮（JS）")
-                                        close_success = True
-                                        break
-                                    except:
-                                        continue
-                        if close_success:
-                            break
-                    except:
-                        continue
-                
-                # 如果"关闭"按钮点击失败，使用ESC键作为后备
-                if not close_success:
-                    try:
-                        from selenium.webdriver.common.keys import Keys
-                        self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-                        self.logger.info("✅ 已按ESC键关闭题目弹窗（后备方案）")
-                    except Exception as e:
-                        self.logger.warning(f"⚠️  ESC键关闭失败: {e}") 
-                        return False
-                
-                self.logger.info("✅ 多选题已处理并关闭")
-                self.quizzes_answered_this_session += 1
-                self.progress['total_quizzes'] += 1
-                self.smart_wait(1)
+                # 按ESC键关闭题目弹窗
+                self.logger.info("🔄 按ESC键关闭题目弹窗...")
+                try:
+                    from selenium.webdriver.common.keys import Keys
+                    self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                    self.logger.info("✅ 多选题已处理并关闭")
+                    self.quizzes_answered_this_session += 1
+                    self.progress['total_quizzes'] += 1
+                    self.smart_wait(1)
+                except Exception as e:
+                    self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                    return False
                 
                 # 【新增】点击视频中央恢复播放
                 try:
