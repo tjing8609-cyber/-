@@ -3,6 +3,263 @@
 知到自动播放脚本 - 版本更新日志
 ========================================
 
+【v3.0】2025-11-19 🎯 智能题目处理与视频跳过优化版
+-------------------
+主题：完善题目处理逻辑，实现智能跳过已观看视频，优化用户体验
+
+**核心优化：**
+
+### 1️⃣ 智能跳过已观看视频功能
+
+**问题背景：**
+- 用户反馈：如果视频中间有几个已经看过，自动连播会重复观看这几个
+- 影响：浪费时间，降低学习效率
+
+**解决方案：**
+
+**【功能1】检索时同时记录已观看视频**
+```python
+def find_unwatched_videos(self):
+    # 本次检索发现的已观看视频
+    watched_videos = []
+    
+    # 如果已有已观看列表，先加载（累积模式）
+    if hasattr(self, 'watched_video_list') and self.watched_video_list:
+        watched_videos = self.watched_video_list.copy()
+    
+    # 发现已完成视频时添加（去重）
+    if not any(v.get('title') == video_title for v in watched_videos):
+        watched_videos.append({
+            'text': text[:100],
+            'title': video_title
+        })
+```
+
+**【功能2】定时检测当前播放视频**
+```python
+def get_current_video_title(self):
+    # 尝试多种选择器查找视频标题
+    title_selectors = [
+        "//span[@class='lesson-order_videotop_lesson']",
+        "//div[contains(@class, 'video-title')]",
+        "//div[contains(@class, 'videotop')]//span",
+    ]
+    # 返回当前播放的视频标题
+```
+
+**【功能3】自动跳转未观看视频**
+```python
+def check_and_skip_watched_video(self):
+    # 获取当前播放视频标题
+    current_title = self.get_current_video_title()
+    
+    # 检查是否在已观看列表中
+    if watched_title in current_title:
+        # 重新检索视频列表
+        unwatched_videos = self.find_unwatched_videos()
+        
+        # 点击第一个未观看视频
+        # 启动播放
+```
+
+**执行流程：**
+```
+第1次检索（任务开始）
+  ├─ 空列表 []
+  ├─ 发现5个已完成视频 (v1-v5)
+  └─ 保存 [v1, v2, v3, v4, v5]
+
+定时检查（每30秒）
+  ├─ 检测到正在播放 v3（已观看）
+  └─ 触发重新检索
+
+第2次检索
+  ├─ 加载现有列表 [v1-v5]
+  ├─ 新发现2个已完成 (v6, v7)
+  ├─ 去重后添加
+  └─ 保存 [v1-v7]
+  
+跳转播放
+  └─ 点击第一个未观看视频
+```
+
+**技术亮点：**
+- ✅ **累积模式** - 列表在整个会话中持续增长
+- ✅ **智能去重** - 基于视频标题，避免重复记录
+- ✅ **定时检查** - 每6次循环（约30秒）自动检测
+- ✅ **自动跳转** - 发现重复播放立即切换
+
+### 2️⃣ 完善题目处理逻辑
+
+**问题背景：**
+- 旧版本：遇到题目未作答就直接关闭，导致无法继续播放
+- 需求：题目可以多次作答，错误时显示正确答案
+
+**解决方案：**
+
+**【改进1】支持多次作答直到正确**
+```python
+def answer_quiz(self):
+    # 依次尝试每个选项 A-D
+    for attempt in range(max_attempts):
+        # 点击选项
+        # 提交
+        # 检查结果
+        
+        if answer_result == 'correct':
+            return True  # 成功
+        elif answer_result == 'wrong':
+            # 提取正确答案
+            correct_answer = self.extract_correct_answer()
+            # 自动选择正确答案
+            # 重新提交
+            return True
+```
+
+**【改进2】识别正确/错误答案标记**
+```python
+def check_answer_result(self):
+    # 正确标记
+    correct_selectors = [
+        "//*[contains(text(), '回答正确')]",
+        "//*[contains(@class, 'colorGreen')]",  # 绿色正确
+    ]
+    
+    # 错误标记
+    error_selectors = [
+        "//*[contains(text(), '回答错误')]",
+        "//*[contains(@class, 'colorRed')]",  # 红色错误
+    ]
+    
+    return 'correct' / 'wrong' / None
+```
+
+**【改进3】提取并自动选择正确答案**
+```python
+def extract_correct_answer(self):
+    # 查找包含正确答案的元素
+    # 提取答案字母（A/B/C/D）
+    # 支持匹配 "A" / "（A）" / "A、" / "A."
+    
+def click_correct_answer(self, answer_letter, options):
+    # 将字母转换为索引 (A=0, B=1, C=2, D=3)
+    # 点击对应选项
+```
+
+**【改进4】移除强制关闭逻辑**
+- ❌ 移除：未作答时强制关闭弹窗
+- ✅ 保留：只有正确作答后才继续
+
+**答题流程：**
+```
+检测到题目弹窗
+  ↓
+尝试选项 A
+  ↓
+提交
+  ↓
+检查结果
+  ├─ 正确 ✅
+  │   ↓
+  │  记录统计
+  │   ↓
+  │  等待2秒显示结果
+  │   ↓
+  │  继续播放
+  │
+  └─ 错误 ❌
+      ↓
+    提取正确答案 "C"
+      ↓
+    选择选项 C
+      ↓
+    重新提交
+      ↓
+    成功 ✅ → 继续播放
+```
+
+### 3️⃣ 已观看列表管理
+
+**【优化1】任务开始时清空**
+```python
+def run(self):
+    # 清空已观看视频列表（任务开始时重置）
+    self.watched_video_list = []
+    self.logger.info("✅ 已清空已观看视频列表")
+```
+
+**【优化2】任务结束时清空**
+```python
+def cleanup(self):
+    # 清空已观看视频列表（任务结束时清空）
+    if hasattr(self, 'watched_video_list'):
+        self.watched_video_list = []
+```
+
+**目的：**
+- 确保每次任务都是干净的开始
+- 避免旧数据影响新任务
+- 减少内存占用
+
+**修改文件：**
+
+📁 zhidao_web_auto_player_with_quiz.py
+  - find_unwatched_videos(): 累积记录已观看视频
+  - get_current_video_title(): 新增方法，获取当前播放标题
+  - check_and_skip_watched_video(): 新增方法，检测并跳过重复播放
+  - _extract_video_title(): 新增辅助方法，提取视频标题
+  - answer_quiz(): 重写题目处理逻辑
+  - check_answer_result(): 新增方法，识别答题结果
+  - extract_correct_answer(): 新增方法，提取正确答案
+  - click_correct_answer(): 新增方法，点击正确答案
+  - run(): 任务开始时清空已观看列表
+  - cleanup(): 任务结束时清空已观看列表
+
+📁 版本更新日志.txt
+  - 记录v3.0版本详情
+
+**Git提交记录：**
+
+1. `6126671` - 实现智能跳过已观看视频功能：检索时同时记录已观看列表，定时检测当前播放，自动跳转未观看视频
+2. `8b97902` - 优化已观看视频记录机制：重新检索时累积列表，添加去重逻辑，即时加入已完成视频
+3. `ad38095` - 完善题目处理逻辑：任务开始和结束时清空列表，支持多次作答，提取并选择正确答案，移除强制关闭逻辑
+
+**代码统计：**
+
+- 新增方法：4个
+- 优化方法：3个
+- 新增代码：约200行
+- 删除代码：约50行
+- 净增加：约150行
+
+**向后兼容：**
+
+✅ 完全兼容v2.1
+✅ 不影响普通版本（zhidao_web_auto_player_final.py）
+✅ 配置文件不需修改
+✅ 账号文件格式不变
+
+**重要说明：**
+
+⚠️ 智能跳过已观看视频，避免重复播放
+⚠️ 题目可以多次作答，错误时自动选择正确答案
+⚠️ 每次任务独立，已观看列表自动重置
+⚠️ 支持网页最小化后后台运行（JavaScript控制播放）
+
+**测试建议：**
+
+```bash
+conda activate study312
+python zhidao_launcher.py --account account.json
+```
+
+观察日志输出：
+- 检索时应显示已观看视频数量
+- 定时检查时显示 "🔍 定时检查是否重复播放..."
+- 题目处理时显示详细的作答过程
+- 错误时应显示 "💡 正确答案是: X"
+
+
 【v2.1】2025-11-17 🔧 弹窗关闭修复版 - 支持ss2077自定义弹窗
 -------------------
 主题：修复右下角AI助手弹窗无法关闭的问题
