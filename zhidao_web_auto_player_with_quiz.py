@@ -2341,11 +2341,51 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def check_answer_result(self):
         """检查答案结果（返回 'correct', 'wrong' 或 None）"""
         try:
-            # 检查是否有"正确"提示
+            # 【优先检查】先检查是否有"错误"提示（避免误判）
+            error_selectors = [
+                "//span[@class='error']",  # 【精确匹配】知到平台红色错误标记（仅匹配class="error"）
+                "//span[contains(@class, 'error') and contains(@class, 'answer')]",  # 匹配 class="error answer-text" 等组合
+                "//*[contains(text(), '回答错误')]",
+                "//*[contains(text(), '答题错误')]",
+                "//*[contains(@class, 'colorRed')]",  # 知到平台红色错误标记
+                "//*[contains(@class, 'wrong')]",
+            ]
+            
+            for selector in error_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for elem in elements:
+                        if elem.is_displayed():
+                            elem_class = elem.get_attribute('class') or ''
+                            elem_text = elem.text.strip()
+                            
+                            # 调试：记录元素详情
+                            self.logger.debug(f"检查错误标记元素: tag={elem.tag_name}, class='{elem_class}', text='{elem_text}'")
+                            
+                            # 【精确判断】必须是纯 'error' class 或包含明确错误文本
+                            if elem_class == 'error' or 'error answer' in elem_class:
+                                self.logger.info(f"✗ 检测到错误标记: <{elem.tag_name} class='{elem_class}'>")
+                                return 'wrong'
+                            
+                            # 检查文本内容
+                            if elem_text and ('回答错误' in elem_text or '答题错误' in elem_text):
+                                self.logger.info(f"✗ 检测到错误文本: {elem_text}")
+                                return 'wrong'
+                            
+                            # 检查包含"错误"但排除"正确"的情况
+                            if elem_text and '错误' in elem_text and '正确' not in elem_text:
+                                self.logger.info(f"✗ 检测到错误标记: {elem_text}")
+                                return 'wrong'
+                except Exception as e:
+                    self.logger.debug(f"检查错误选择器 {selector} 失败: {e}")
+                    continue
+            
+            # 【再检查】是否有"正确"提示
             correct_selectors = [
-                "//span[contains(@class, 'right')]",  # 【新增】知到平台绿色勾标记
+                "//span[@class='right']",  # 【精确匹配】知到平台绿色勾标记（仅匹配class="right"）
+                "//span[contains(@class, 'right') and contains(@class, 'answer')]",  # 匹配 class="right answer-text" 等组合
                 "//*[contains(text(), '回答正确')]",
-                "//*[contains(text(), '正确')]",
+                "//*[contains(text(), '答题正确')]",
                 "//*[contains(@class, 'colorGreen')]",  # 知到平台绿色正确标记
                 "//*[contains(@class, 'correct')]",
                 "//*[contains(@class, 'success')]",
@@ -2356,47 +2396,32 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     elements = self.driver.find_elements(By.XPATH, selector)
                     for elem in elements:
                         if elem.is_displayed():
-                            # 对于 class="right" 的 span，直接认为正确
-                            if 'right' in (elem.get_attribute('class') or ''):
-                                self.logger.debug(f"检测到正确标记: <span class='right'>")
+                            elem_class = elem.get_attribute('class') or ''
+                            elem_text = elem.text.strip()
+                            
+                            # 调试：记录元素详情
+                            self.logger.debug(f"检查正确标记元素: tag={elem.tag_name}, class='{elem_class}', text='{elem_text}'")
+                            
+                            # 【精确判断】必须是纯 'right' class 或包含明确正确文本
+                            if elem_class == 'right' or 'right answer' in elem_class:
+                                self.logger.info(f"✓ 检测到正确标记: <{elem.tag_name} class='{elem_class}'>")
                                 return 'correct'
                             
-                            # 对于其他元素，检查文本
-                            text = elem.text.strip()
-                            if '正确' in text and '错误' not in text:
-                                self.logger.debug(f"检测到正确标记: {text}")
+                            # 检查文本内容
+                            if elem_text and ('回答正确' in elem_text or '答题正确' in elem_text):
+                                self.logger.info(f"✓ 检测到正确文本: {elem_text}")
                                 return 'correct'
-                except:
-                    continue
-            
-            # 检查是否有"错误"提示
-            error_selectors = [
-                "//span[contains(@class, 'error')]",  # 【新增】知到平台红色错误标记
-                "//*[contains(text(), '回答错误')]",
-                "//*[contains(text(), '错误')]",
-                "//*[contains(@class, 'colorRed')]",  # 知到平台红色错误标记
-                "//*[contains(@class, 'error')]",
-                "//*[contains(@class, 'wrong')]",
-            ]
-            
-            for selector in error_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for elem in elements:
-                        if elem.is_displayed():
-                            # 对于 class="error" 的 span，直接认为错误
-                            if 'error' in (elem.get_attribute('class') or ''):
-                                self.logger.debug(f"检测到错误标记: <span class='error'>")
-                                return 'wrong'
                             
-                            # 对于其他元素，检查文本
-                            text = elem.text.strip()
-                            if '错误' in text:
-                                self.logger.debug(f"检测到错误标记: {text}")
-                                return 'wrong'
-                except:
+                            # 检查包含"正确"但排除"错误"的情况
+                            if elem_text and '正确' in elem_text and '错误' not in elem_text:
+                                self.logger.info(f"✓ 检测到正确标记: {elem_text}")
+                                return 'correct'
+                except Exception as e:
+                    self.logger.debug(f"检查正确选择器 {selector} 失败: {e}")
                     continue
             
+            # 【调试】如果既没有正确也没有错误，保存HTML用于分析
+            self.logger.debug("⚠️  未检测到明确的正确或错误标记")
             return None
             
         except Exception as e:
