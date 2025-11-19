@@ -2031,6 +2031,54 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.logger.error(f"❌ 点击视频失败: {e}")
                 
                 self.smart_wait(3)  # 等待视频加载
+                
+                # 点击视频中心区域启动播放
+                self.logger.info("🎯 点击视频中心区域启动播放...")
+                try:
+                    # 查找视频播放器
+                    video_player = None
+                    video_selectors = [
+                        "//video",  # 视频元素
+                        "//div[contains(@class, 'video-player')]",
+                        "//div[contains(@class, 'player')]",
+                        "//div[@id='video']",
+                    ]
+                    
+                    for selector in video_selectors:
+                        try:
+                            video_player = self.driver.find_element(By.XPATH, selector)
+                            if video_player and video_player.is_displayed():
+                                self.logger.debug(f"✅ 找到视频播放器: {selector}")
+                                break
+                        except:
+                            continue
+                    
+                    if video_player:
+                        # 获取播放器位置和大小
+                        location = video_player.location
+                        size = video_player.size
+                        
+                        # 计算中心点坐标
+                        center_x = location['x'] + size['width'] // 2
+                        center_y = location['y'] + size['height'] // 2
+                        
+                        self.logger.info(f"📍 视频中心坐标: ({center_x}, {center_y})")
+                        
+                        # 使用ActionChains点击中心点
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        ActionChains(self.driver).move_to_element_with_offset(
+                            video_player, 
+                            0,  # 相对于元素中心的偏移
+                            0
+                        ).click().perform()
+                        
+                        self.logger.info("✅ 已点击视频中心区域，视频应开始播放")
+                        self.smart_wait(2)
+                    else:
+                        self.logger.warning("⚠️  未找到视频播放器，跳过中心点击")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️  点击视频中心失败: {e}，继续监控")
             
             # 主循环：观看视频并回答题目
             self.logger.info("\n" + "="*60)
