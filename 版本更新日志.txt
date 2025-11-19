@@ -3,6 +3,209 @@
 知到自动播放脚本 - 版本更新日志
 ========================================
 
+【v3.5】2025-11-19 🎬 视频恢复播放增强版
+-------------------
+主题：题目关闭后自动点击视频中央恢复播放
+
+用户反馈：
+> "关闭题目后还需要点击屏幕中央开始视频"
+
+**问题分析：**
+
+在v3.4版本中，虽然使用ESC键成功关闭了题目弹窗，但：
+1. ❌ 视频依然处于暂停状态
+2. ❌ 需要手动点击视频才能恢复播放
+3. ❌ 影响自动化连续性
+
+**原因：**
+知到平台的防脚本机制：
+- 题目弹窗出现时会自动暂停视频
+- 关闭弹窗后不会自动恢复播放
+- 需要用户交互触发播放
+
+**解决方案：**
+
+### 🎬 模拟点击视频中央 + 调用play()
+
+**实现逻辑：**
+```javascript
+var video = document.querySelector('video');
+if (video) {
+    // 1️⃣ 计算视频中心点坐标
+    var rect = video.getBoundingClientRect();
+    var centerX = rect.left + rect.width / 2;
+    var centerY = rect.top + rect.height / 2;
+    
+    // 2️⃣ 创建鼠标点击事件
+    var clickEvent = new MouseEvent('click', {
+        view: window,
+        bubbles: true,
+        cancelable: true,
+        clientX: centerX,
+        clientY: centerY
+    });
+    
+    // 3️⃣ 分发点击事件到视频元素
+    video.dispatchEvent(clickEvent);
+    
+    // 4️⃣ 确保播放
+    video.play();
+}
+```
+
+**为什么需要点击中央？**
+
+根据记忆中的经验：
+> "当网站存在防脚本自动暂停机制时，在检测到视频卡顿后，除执行暂停再播放操作外，应优先模拟点击视频播放器中央区域，以触发播放器恢复，绕过反自动化检测。"
+
+- ✅ 点击中央区域是标准的用户操作
+- ✅ 能触发播放器的恢复逻辑
+- ✅ 绕过防脚本检测
+
+### 修改位置（3处）
+
+**1️⃣ 单选题答对后：**
+```python
+if answer_result == 'correct':
+    # 答题成功
+    self.quizzes_answered_this_session += 1
+    self.smart_wait(2)
+    
+    # 按ESC键关闭
+    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+    
+    # 【新增】点击视频中央恢复播放
+    result = driver.execute_script(video_script)
+    logger.info(f"🎬 已点击视频中央恢复播放: {result}")
+    
+    return True
+```
+
+**2️⃣ 提取正确答案后：**
+```python
+elif answer_result == 'wrong':
+    # 选择正确答案并提交
+    self.click_correct_answer(correct_answer, options)
+    submit_btn.click()
+    
+    # 按ESC键关闭
+    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+    
+    # 【新增】点击视频中央恢复播放
+    result = driver.execute_script(video_script)
+    logger.info(f"🎬 已点击视频中央恢复播放: {result}")
+    
+    return True
+```
+
+**3️⃣ 多选题处理后：**
+```python
+if is_multiple_choice or max_attempts >= 4:
+    # 选择所有选项并提交
+    # ...
+    
+    # 按ESC键关闭
+    driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+    
+    # 【新增】点击视频中央恢复播放
+    result = driver.execute_script(video_script)
+    logger.info(f"🎬 已点击视频中央恢复播放: {result}")
+    
+    return True
+```
+
+**执行流程：**
+
+```
+检测到题目弹窗
+  ↓
+选择答案 A
+  ↓
+提交
+  ↓
+检测到正确 ✅
+  ↓
+按ESC键关闭弹窗
+  ↓
+点击视频中央区域 🎬
+  ↓
+调用 video.play()
+  ↓
+视频自动恢复播放 ▶️
+```
+
+**技术亮点：**
+
+- ✅ **两层保障** - 点击事件 + play()调用
+- ✅ **精准定位** - 计算视频中心坐标
+- ✅ **事件模拟** - 使用MouseEvent模拟真实点击
+- ✅ **后台兼容** - JavaScript执行不需要窗口可见
+- ✅ **异常处理** - 失败不影响流程
+
+**修改对比表：**
+
+| 项目 | v3.4 | v3.5 |
+|------|------|------|
+| 关闭题目 | ESC键 | ESC键 |
+| 恢复播放 | 无 | 点击中央 + play() ✅ |
+| 自动化程度 | 中 | 高 ✅ |
+| 用户不干预 | 需要 | 不需要 ✅ |
+| 后台运行 | 支持 | 支持 ✅ |
+
+**修改文件：**
+
+📁 zhidao_web_auto_player_with_quiz.py
+  - answer_quiz(): 3处添加视频恢复播放逻辑
+  - 每处约31行 JavaScript 代码
+  - 模拟点击 + play()双重保障
+
+📁 版本更新日志.txt
+  - 记录v3.5版本详情
+
+**Git提交记录：**
+
+- `c4705b8` - 增强题目关闭后恢复播放：ESC键关闭题目后自动点击视频中央区域并调用play()恢复播放，防止视频暂停
+
+**代码统计：**
+
+- 新增代码：约98行
+- 删除代码：4行
+- 净增加：约94行
+
+**向后兼容：**
+
+✅ 完全兼容v3.4
+✅ 不影响答题逻辑
+✅ ESC键关闭保留
+✅ 配置文件不需修改
+
+**重要说明：**
+
+⚠️ 题目关闭后自动恢复视频播放
+⚠️ 模拟点击视频中央区域，绕过防脚本检测
+⚠️ 双重保障：点击事件 + play()调用
+⚠️ 后台运行完全兼容
+
+**测试建议：**
+
+```bash
+conda activate study312
+python zhidao_launcher.py --account account.json
+```
+
+观察日志输出：
+- 关闭题目后应显示 "🎬 已点击视频中央恢复播放: video clicked and playing"
+- 视频应自动恢复播放，无需手动不预
+- 后台运行也能正常恢复播放
+
+**用户体验提升：**
+
+- 🤖 **全自动化** - 无需人工不预
+- ⚡ **零延迟** - 立即恢复播放
+- 🛡️ **防检测** - 绕过反脚本机制
+- 🎯 **稳定性** - 双重保障机制
+
+
 【v3.4】2025-11-19 ⌨️ ESC键关闭优化版
 -------------------
 主题：优化题目关闭方式，使用ESC键替代查找关闭按钮
