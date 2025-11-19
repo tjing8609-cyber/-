@@ -1098,7 +1098,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
             
             # 使用鼠标滚轮事件模拟真实滚动
             self.logger.info("🔄 开始使用鼠标滚轮模拟滚动...")
-            for i in range(10):
+            
+            max_scroll_attempts = 20  # 最多滚动20次
+            scroll_no_change_count = 0  # 连续未变化次数
+            
+            for i in range(max_scroll_attempts):
                 # 记录滚动前的位置
                 scroll_before = self.driver.execute_script("return arguments[0].scrollTop;", scroll_container)
                 
@@ -1122,16 +1126,24 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 scroll_after = self.driver.execute_script("return arguments[0].scrollTop;", scroll_container)
                 scroll_height = self.driver.execute_script("return arguments[0].scrollHeight;", scroll_container)
                 
-                self.logger.info(f"  滚动 {i+1}/10: {scroll_before}px → {scroll_after}px (总高度: {scroll_height}px)")
+                self.logger.info(f"  滚动 {i+1}/{max_scroll_attempts}: {scroll_before}px → {scroll_after}px (总高度: {scroll_height}px)")
+                
+                # 如果滚动位置没有变化
+                if scroll_after == scroll_before:
+                    scroll_no_change_count += 1
+                    self.logger.debug(f"  ⚠️  滚动位置未变化 ({scroll_no_change_count}/3)")
+                    
+                    # 连续3次未变化，说明已经到底
+                    if scroll_no_change_count >= 3:
+                        self.logger.info(f"  ✅ 滚动位置连续3次未变化，已到达底部")
+                        break
+                else:
+                    scroll_no_change_count = 0  # 重置计数
                 
                 # 如果已经到底，提前退出
                 if scroll_after >= scroll_height - 100:
                     self.logger.info(f"  ✅ 已滚动到底部，提前结束滚动")
                     break
-                
-                # 如果滚动位置没有变化，说明滚动失败
-                if scroll_after == scroll_before:
-                    self.logger.warning(f"  ⚠️  滚动位置未变化，可能滚动失败")
             
             self.logger.info("✅ 滚动完成，等待内容加载...")
             self.smart_wait(2)
@@ -1215,11 +1227,29 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     if ':' not in text and 'px' not in text:  # 没有时长格式
                         # 检查是否包含数字编号（如 0.1, 1.1, 2.1.1）
                         import re
-                        has_number = re.search(r'\d+\.\d+', text)
-                        if not has_number:
-                            # 没有编号且没有时长，可能是章节标题
-                            self.logger.debug(f"  → 跳过：章节标题 ({text[:30]}...)")
-                            continue
+                        # 匹配视频编号格式：至少一个数字 + 点 + 至少一个数字（可选再次重复）
+                        # 0.1, 1.2.3, 2.1.6 等是视频
+                        # 0.2, 1.1, 2.1 等可能是章节标题
+                        has_valid_number = re.search(r'\d+\.\d+\.\d+', text)  # 三级编号（如 2.1.6）
+                        
+                        if not has_valid_number:
+                            # 没有三级编号，检查是否是二级编号
+                            has_two_level = re.search(r'\d+\.\d+', text)
+                            
+                            if has_two_level:
+                                # 有二级编号但没有时长，检查是否是章节标题
+                                # 如果编号中间没有空格且后面紧跟\n，可能是章节标题
+                                # 例如："0.2\n大学生活..." 是章节标题
+                                # 而："2.1.6\n调节情绪\n11%\n00:07:14" 是视频
+                                match = re.search(r'^(\d+\.\d+)\s*\n', text)
+                                if match:
+                                    # 编号后直接换行，可能是章节标题
+                                    self.logger.debug(f"  → 跳过：章节标题 ({text[:30]}...)")
+                                    continue
+                            else:
+                                # 没有编号且没有时长，必定是章节标题
+                                self.logger.debug(f"  → 跳过：章节标题 ({text[:30]}...)")
+                                continue
 
                     # 检查是否已完成（查找蓝色勾选标记）
                     try:
