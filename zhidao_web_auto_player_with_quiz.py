@@ -2022,7 +2022,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         # 等待一下确保结果显示完毕
                         self.smart_wait(2)
                         
-                        # 【修改】按ESC键关闭题目弹窗
+                        # 按ESC键关闭题目弹窗
                         try:
                             from selenium.webdriver.common.keys import Keys
                             self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
@@ -2030,6 +2030,37 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.smart_wait(1)
                         except Exception as e:
                             self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                        
+                        # 【新增】点击视频中央恢复播放
+                        try:
+                            video_script = """
+                            var video = document.querySelector('video');
+                            if (video) {
+                                // 点击视频中央区域
+                                var rect = video.getBoundingClientRect();
+                                var centerX = rect.left + rect.width / 2;
+                                var centerY = rect.top + rect.height / 2;
+                                
+                                var clickEvent = new MouseEvent('click', {
+                                    view: window,
+                                    bubbles: true,
+                                    cancelable: true,
+                                    clientX: centerX,
+                                    clientY: centerY
+                                });
+                                video.dispatchEvent(clickEvent);
+                                
+                                // 确保播放
+                                video.play();
+                                return 'video clicked and playing';
+                            }
+                            return 'video not found';
+                            """
+                            result = self.driver.execute_script(video_script)
+                            self.logger.info(f"🎬 已点击视频中央恢复播放: {result}")
+                            self.smart_wait(1)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️  点击视频中央失败: {e}")
                         
                         return True
                         
@@ -2063,7 +2094,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.progress['total_quizzes'] += 1
                                 self.smart_wait(2)
                                 
-                                # 【修改】按ESC键关闭题目弹窗
+                                # 按ESC键关闭题目弹窗
                                 try:
                                     from selenium.webdriver.common.keys import Keys
                                     self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
@@ -2071,6 +2102,37 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     self.smart_wait(1)
                                 except Exception as e:
                                     self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                                
+                                # 【新增】点击视频中央恢复播放
+                                try:
+                                    video_script = """
+                                    var video = document.querySelector('video');
+                                    if (video) {
+                                        // 点击视频中央区域
+                                        var rect = video.getBoundingClientRect();
+                                        var centerX = rect.left + rect.width / 2;
+                                        var centerY = rect.top + rect.height / 2;
+                                        
+                                        var clickEvent = new MouseEvent('click', {
+                                            view: window,
+                                            bubbles: true,
+                                            cancelable: true,
+                                            clientX: centerX,
+                                            clientY: centerY
+                                        });
+                                        video.dispatchEvent(clickEvent);
+                                        
+                                        // 确保播放
+                                        video.play();
+                                        return 'video clicked and playing';
+                                    }
+                                    return 'video not found';
+                                    """
+                                    result = self.driver.execute_script(video_script)
+                                    self.logger.info(f"🎬 已点击视频中央恢复播放: {result}")
+                                    self.smart_wait(1)
+                                except Exception as e:
+                                    self.logger.warning(f"⚠️  点击视频中央失败: {e}")
                                 
                                 return True
                         
@@ -2166,7 +2228,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     except:
                         continue
                 
-                # 【修改】按ESC键关闭题目弹窗
+                # 按ESC键关闭题目弹窗
                 self.logger.info("🔄 按ESC键关闭题目弹窗...")
                 try:
                     from selenium.webdriver.common.keys import Keys
@@ -2175,10 +2237,42 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.quizzes_answered_this_session += 1
                     self.progress['total_quizzes'] += 1
                     self.smart_wait(1)
-                    return True
                 except Exception as e:
                     self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
                     return False
+                
+                # 【新增】点击视频中央恢复播放
+                try:
+                    video_script = """
+                    var video = document.querySelector('video');
+                    if (video) {
+                        // 点击视频中央区域
+                        var rect = video.getBoundingClientRect();
+                        var centerX = rect.left + rect.width / 2;
+                        var centerY = rect.top + rect.height / 2;
+                        
+                        var clickEvent = new MouseEvent('click', {
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: centerX,
+                            clientY: centerY
+                        });
+                        video.dispatchEvent(clickEvent);
+                        
+                        // 确保播放
+                        video.play();
+                        return 'video clicked and playing';
+                    }
+                    return 'video not found';
+                    """
+                    result = self.driver.execute_script(video_script)
+                    self.logger.info(f"🎬 已点击视频中央恢复播放: {result}")
+                    self.smart_wait(1)
+                    return True
+                except Exception as e:
+                    self.logger.warning(f"⚠️  点击视频中央失败: {e}")
+                    return True  # 即使点击失败也返回True，因为题目已处理
             
             return False
             
