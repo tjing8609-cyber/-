@@ -2806,33 +2806,37 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     
                     last_progress_check = current_progress
                     
-                    # 检查视频是否播放完成（检查绿色勾标记）
+                    # 【新版】检查视频是否播放完成（基于视频播放进度）
                     try:
-                        # 查找当前视频标题
-                        if not current_title:
-                            current_title = self.get_current_video_title()
+                        # 获取视频时长和当前进度
+                        video_info = self.driver.execute_script("""
+                            var video = document.querySelector('video');
+                            if (video) {
+                                return {
+                                    duration: video.duration,
+                                    currentTime: video.currentTime,
+                                    ended: video.ended
+                                };
+                            }
+                            return null;
+                        """)
                         
-                        if current_title:
-                            # 在右侧目录中查找对应视频，检查是否有绿色勾
-                            completed_selectors = [
-                                f"//li[contains(., '{current_title[:20]}')]//i[contains(@class, 'zhihuishu-wancheng')]",
-                                f"//div[contains(., '{current_title[:20]}')]//i[contains(@class, 'zhihuishu-wancheng')]",
-                            ]
+                        if video_info:
+                            duration = video_info.get('duration', 0)
+                            currentTime = video_info.get('currentTime', 0)
+                            ended = video_info.get('ended', False)
                             
-                            for selector in completed_selectors:
-                                try:
-                                    complete_icon = self.driver.find_element(By.XPATH, selector)
-                                    if complete_icon and complete_icon.is_displayed():
-                                        self.logger.info(f"✅ 检测到视频已完成（绿色勾）: {current_title[:30]}")
-                                        video_completed = True
-                                        break
-                                except:
-                                    continue
-                            
-                            if video_completed:
+                            # 检测视频是否播放完成
+                            # 1. 视频ended属性为true
+                            # 2. 当前进度距离总时长不到5秒（避免卡顿误判）
+                            if ended or (duration > 0 and currentTime >= duration - 5):
+                                self.logger.info(f"✅ 检测到视频播放完成: {currentTime:.0f}/{duration:.0f}秒")
+                                video_completed = True
                                 break
-                    except:
-                        pass
+                            else:
+                                self.logger.debug(f"视频播放中: {currentTime:.0f}/{duration:.0f}秒 ({currentTime/duration*100:.1f}%)")
+                    except Exception as e:
+                        self.logger.debug(f"检测视频完成状态失败: {e}")
                     
                     # 等待10秒
                     time.sleep(10)
