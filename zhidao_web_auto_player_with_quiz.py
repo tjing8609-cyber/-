@@ -2032,53 +2032,39 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 
                 self.smart_wait(3)  # 等待视频加载
                 
-                # 点击视频中心区域启动播放
-                self.logger.info("🎯 点击视频中心区域启动播放...")
+                # 使用JavaScript直接启动视频播放（支持后台运行）
+                self.logger.info("🎯 使用JavaScript启动视频播放...")
                 try:
-                    # 查找视频播放器
-                    video_player = None
-                    video_selectors = [
-                        "//video",  # 视频元素
-                        "//div[contains(@class, 'video-player')]",
-                        "//div[contains(@class, 'player')]",
-                        "//div[@id='video']",
-                    ]
+                    # 方案2：直接操作video元素触发播放
+                    play_result = self.driver.execute_script("""
+                        // 查找video元素
+                        var video = document.querySelector('video');
+                        if (video) {
+                            // 尝试播放
+                            var playPromise = video.play();
+                            
+                            if (playPromise !== undefined) {
+                                playPromise.then(function() {
+                                    return 'success';
+                                }).catch(function(error) {
+                                    return 'error: ' + error.message;
+                                });
+                            }
+                            
+                            return 'video found and play() called';
+                        } else {
+                            return 'video not found';
+                        }
+                    """)
                     
-                    for selector in video_selectors:
-                        try:
-                            video_player = self.driver.find_element(By.XPATH, selector)
-                            if video_player and video_player.is_displayed():
-                                self.logger.debug(f"✅ 找到视频播放器: {selector}")
-                                break
-                        except:
-                            continue
-                    
-                    if video_player:
-                        # 获取播放器位置和大小
-                        location = video_player.location
-                        size = video_player.size
-                        
-                        # 计算中心点坐标
-                        center_x = location['x'] + size['width'] // 2
-                        center_y = location['y'] + size['height'] // 2
-                        
-                        self.logger.info(f"📍 视频中心坐标: ({center_x}, {center_y})")
-                        
-                        # 使用ActionChains点击中心点
-                        from selenium.webdriver.common.action_chains import ActionChains
-                        ActionChains(self.driver).move_to_element_with_offset(
-                            video_player, 
-                            0,  # 相对于元素中心的偏移
-                            0
-                        ).click().perform()
-                        
-                        self.logger.info("✅ 已点击视频中心区域，视频应开始播放")
+                    if play_result:
+                        self.logger.info(f"✅ JavaScript播放结果: {play_result}")
                         self.smart_wait(2)
                     else:
-                        self.logger.warning("⚠️  未找到视频播放器，跳过中心点击")
+                        self.logger.warning("⚠️  未找到video元素，可能需要等待")
                         
                 except Exception as e:
-                    self.logger.warning(f"⚠️  点击视频中心失败: {e}，继续监控")
+                    self.logger.warning(f"⚠️  JavaScript启动播放失败: {e}，继续监控")
             
             # 主循环：观看视频并回答题目
             self.logger.info("\n" + "="*60)
