@@ -1882,11 +1882,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 "//span[contains(@class, 'el-radio__label')]",  # Element UI单选框文本
                 "//span[contains(@class, 'el-checkbox__label')]",  # Element UI多选框文本
                 # 【新增】知到平台题目选项的通用选择器
-                "//div[contains(@class, 'topic-option')]",  # 知到题目选项容器
+                "//li[contains(@class, 'topic-item')]",  # 知到题目选项（最准确）
+                "//div[contains(@class, 'topic-option-item')]",  # 知到题目选项内容
                 "//div[contains(@class, 'option-item')]",  # 选项项
                 "//div[contains(@class, 'answer-option')]",  # 答案选项
-                "//span[contains(text(), 'A.') or contains(text(), 'B.') or contains(text(), 'C.') or contains(text(), 'D.')]/parent::*",  # 包含A/B/C/D的选项父元素
-                "//div[contains(., 'A.') or contains(., 'B.') or contains(., 'C.') or contains(., 'D.')][contains(@class, 'option')]",  # 包含选项标记的div
+                "//span[contains(text(), 'A') or contains(text(), 'B') or contains(text(), 'C') or contains(text(), 'D')]/ancestor::li",  # 包含A/B/C/D的选项父li元素
             ]
             
             options = []
