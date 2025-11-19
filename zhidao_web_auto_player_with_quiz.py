@@ -1881,6 +1881,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 "//div[contains(@class, 'el-checkbox')]",  # Element UI多选框容器
                 "//span[contains(@class, 'el-radio__label')]",  # Element UI单选框文本
                 "//span[contains(@class, 'el-checkbox__label')]",  # Element UI多选框文本
+                # 【新增】知到平台题目选项的通用选择器
+                "//div[contains(@class, 'topic-option')]",  # 知到题目选项容器
+                "//div[contains(@class, 'option-item')]",  # 选项项
+                "//div[contains(@class, 'answer-option')]",  # 答案选项
+                "//span[contains(text(), 'A.') or contains(text(), 'B.') or contains(text(), 'C.') or contains(text(), 'D.')]/parent::*",  # 包含A/B/C/D的选项父元素
+                "//div[contains(., 'A.') or contains(., 'B.') or contains(., 'C.') or contains(., 'D.')][contains(@class, 'option')]",  # 包含选项标记的div
             ]
             
             options = []
@@ -1894,11 +1900,32 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             options = visible_options
                             self.logger.info(f"🔍 找到 {len(visible_options)} 个选项: {selector}")
                             break  # 找到就停止，使用优先级最高的
-                except:
+                except Exception as e:
+                    self.logger.debug(f"选择器 {selector} 查找失败: {e}")
                     continue
             
             if not options:
                 self.logger.warning("⚠️  未找到题目选项")
+                
+                # 【新增】保存调试信息
+                try:
+                    import os
+                    debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'debug_quiz')
+                    os.makedirs(debug_dir, exist_ok=True)
+                    
+                    # 保存完整HTML
+                    html_path = os.path.join(debug_dir, f'quiz_no_options_{int(time.time())}.html')
+                    with open(html_path, 'w', encoding='utf-8') as f:
+                        f.write(self.driver.page_source)
+                    self.logger.info(f"💾 已保存题目HTML到: {html_path}")
+                    
+                    # 保存截图
+                    screenshot_path = os.path.join(debug_dir, f'quiz_no_options_{int(time.time())}.png')
+                    self.driver.save_screenshot(screenshot_path)
+                    self.logger.info(f"📸 已保存题目截图到: {screenshot_path}")
+                except Exception as e:
+                    self.logger.debug(f"保存调试信息失败: {e}")
+                
                 return False
             
             # 检测题目类型（单选/多选）
