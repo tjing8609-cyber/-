@@ -1051,7 +1051,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """查找未观看的视频（从右侧目录），同时记录已观看视频列表"""
         self.logger.info("🔍 查找未观看的视频...")
         unwatched_videos = []
-        watched_videos = []  # 新增：记录已观看视频
+        watched_videos = []  # 本次检索发现的已观看视频
+        
+        # 如果已有已观看列表，先加载（累积模式）
+        if hasattr(self, 'watched_video_list') and self.watched_video_list:
+            watched_videos = self.watched_video_list.copy()  # 复制现有列表
+            self.logger.debug(f"📚 加载现有已观看视频列表: {len(watched_videos)} 个")
         
         try:
             # 查找右侧目录侧边栏
@@ -1270,11 +1275,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         
                         if completed_markers:
                             self.logger.debug(f"  → 跳过：找到完成标记 ({text[:30]}...)")
-                            # 记录已观看视频
-                            watched_videos.append({
-                                'text': text[:100],
-                                'title': self._extract_video_title(text)
-                            })
+                            # 记录已观看视频（去重）
+                            video_title = self._extract_video_title(text)
+                            # 检查是否已存在
+                            if not any(v.get('title') == video_title for v in watched_videos):
+                                watched_videos.append({
+                                    'text': text[:100],
+                                    'title': video_title
+                                })
+                                self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
                             continue
                         
                         # 方法2：检查进度是否100%
@@ -1288,11 +1297,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 progress_value = int(progress_match.group(1))
                                 if progress_value == 100:
                                     self.logger.debug(f"  → 跳过：进度100% ({text[:30]}...)")
-                                    # 记录已观看视频
-                                    watched_videos.append({
-                                        'text': text[:100],
-                                        'title': self._extract_video_title(text)
-                                    })
+                                    # 记录已观看视频（去重）
+                                    video_title = self._extract_video_title(text)
+                                    if not any(v.get('title') == video_title for v in watched_videos):
+                                        watched_videos.append({
+                                            'text': text[:100],
+                                            'title': video_title
+                                        })
+                                        self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
                                     continue
                                 elif progress_value > 0:
                                     # 有进度但未完成，记录进度
@@ -1303,11 +1315,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         # 方法3：检查文本中是否包含100%或完成关键词
                         if '100%' in text or '已完成' in text or '已学完' in text:
                             self.logger.debug(f"  → 跳过：文本包含完成标记 ({text[:30]}...)")
-                            # 记录已观看视频
-                            watched_videos.append({
-                                'text': text[:100],
-                                'title': self._extract_video_title(text)
-                            })
+                            # 记录已观看视频（去重）
+                            video_title = self._extract_video_title(text)
+                            if not any(v.get('title') == video_title for v in watched_videos):
+                                watched_videos.append({
+                                    'text': text[:100],
+                                    'title': video_title
+                                })
+                                self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
                             continue
                             
                     except Exception as e:
