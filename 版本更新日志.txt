@@ -3,6 +3,231 @@
 知到自动播放脚本 - 版本更新日志
 ========================================
 
+【v3.1】2025-11-19 ✅ 多选题支持版
+-------------------
+主题：支持多选题处理，无正确答案时选择所有选项ABCD后关闭
+
+用户需求：
+> "有时候会有多选题，有的多选题不会出现正确答案，你需要选择ABCD四个选项后直接关闭题目"
+
+**问题分析：**
+
+旧版本只支持单选题逻辑：
+1. ✘ 无法识别多选框（checkbox）
+2. ✘ 找不到单个正确答案时就失败
+3. ✘ 不支持选择多个选项
+4. ✘ 某些多选题没有正确答案提示
+
+**解决方案：**
+
+### 1️⃣ 识别多选题类型
+
+**新增多选框选择器：**
+```python
+option_selectors = [
+    "//input[@type='radio']",      # 单选框
+    "//input[@type='checkbox']",   # 【新增】多选框
+    "//label[contains(@class, 'el-radio')]",     # Element UI单选框
+    "//label[contains(@class, 'el-checkbox')]",  # 【新增】Element UI多选框
+    "//div[contains(@class, 'el-radio')]",
+    "//div[contains(@class, 'el-checkbox')]",    # 【新增】多选框容器
+    "//span[contains(@class, 'el-radio__label')]",
+    "//span[contains(@class, 'el-checkbox__label')]",  # 【新增】多选框文本
+]
+```
+
+**自动检测题目类型：**
+```python
+# 检测题目类型（单选/多选）
+is_multiple_choice = False
+checkbox_inputs = driver.find_elements(By.XPATH, "//input[@type='checkbox']")
+checkbox_labels = driver.find_elements(By.XPATH, "//label[contains(@class, 'el-checkbox')]")
+
+if checkbox_inputs or checkbox_labels:
+    is_multiple_choice = True
+    logger.info("📝 检测到多选题")
+else:
+    logger.info("📝 检测到单选题")
+```
+
+### 2️⃣ 单选题逻辑（保持不变）
+
+依次尝试A、B、C、D选项：
+```
+尝试A → 提交 → 检查结果
+  ├─ 正确 ✅ → 记录统计 → 返回
+  └─ 错误 ❌ → 提取正确答案 → 选择 → 提交 → 成功
+
+尝试B → ...
+尝试C → ...
+尝试D → ...
+```
+
+### 3️⃣ 多选题处理逻辑（新增）
+
+**触发条件：**
+- 条件1：检测到多选框（`is_multiple_choice = True`）
+- 条件2：所有单选选项都尝试完毕（`max_attempts >= 4`）
+
+**执行流程：**
+```
+检测到多选题或所有选项尝试完毕
+  ↓
+选择所有选项 A、B、C、D
+  ├─ 检查是否已选中（避免重复点击）
+  ├─ 未选中 → 点击选择
+  └─ 已选中 → 跳过
+  ↓
+尝试提交（可选）
+  ↓
+直接关闭题目弹窗 🔄
+  ↓
+记录统计 ✅ → 继续播放
+```
+
+**详细代码：**
+```python
+# 如果是多选题或者所有单选都尝试过了，选择所有选项ABCD后直接关闭
+if is_multiple_choice or max_attempts >= 4:
+    logger.info("💡 疑似多选题或无法确定答案，选择所有选项ABCD后关闭...")
+    
+    # 选择所有选项
+    for i in range(min(4, len(options))):
+        option = options[i]
+        label = option_labels[i]  # A/B/C/D
+        
+        # 检查是否已选中
+        is_selected = False
+        tag_name = option.tag_name.lower()
+        if tag_name == 'input':
+            is_selected = option.is_selected()
+        else:
+            # label元素，查找内部input
+            inner_input = option.find_element(By.XPATH, ".//input")
+            is_selected = inner_input.is_selected()
+        
+        # 未选中则点击
+        if not is_selected:
+            logger.info(f"🎯 选择 {label}")
+            option.click()
+            smart_wait(0.3)
+        else:
+            logger.debug(f"✓ {label} 已选中")
+    
+    # 尝试提交
+    submit_btn.click()
+    smart_wait(1)
+    
+    # 直接关闭题目弹窗
+    close_quiz_dialog()
+    logger.info("✅ 多选题已处理并关闭")
+```
+
+### 4️⃣ 智能选中检测
+
+**支持多种元素类型：**
+
+| 元素类型 | 检测方法 |
+|---------|----------|
+| `<input type="checkbox">` | `is_selected()` |
+| `<input type="radio">` | `is_selected()` |
+| `<label>` | 查找内部 `input` 再检测 |
+| `<div>` | 查找内部 `input` 再检测 |
+| `<span>` | 查找内部 `input` 再检测 |
+
+**避免重复点击：**
+```python
+if not is_selected:
+    option.click()  # 只点击未选中的
+else:
+    logger.debug(f"✓ {label} 已选中")  # 跳过
+```
+
+### 5️⃣ 题目处理决策树
+
+```
+检测到题目弹窗
+  |
+  ├─ 检测题目类型
+  |   ├─ 单选题 📝 → 单选逻辑
+  |   └─ 多选题 📝 → 多选逻辑
+  |
+  ├─ 单选题处理
+  |   ├─ 尝试A → 正确 ✅ → 结束
+  |   ├─ 尝试B → 正确 ✅ → 结束
+  |   ├─ 尝试C → 正确 ✅ → 结束
+  |   ├─ 尝试D → 正确 ✅ → 结束
+  |   └─ 全部错误 ❌ → 转入多选逻辑
+  |
+  └─ 多选题处理
+      ├─ 选择A
+      ├─ 选择B
+      ├─ 选择C
+      ├─ 选择D
+      ├─ 提交（可选）
+      └─ 关闭弹窗 ✅ → 继续播放
+```
+
+**修改文件：**
+
+📁 zhidao_web_auto_player_with_quiz.py
+  - answer_quiz(): 新增多选题处理逻辑
+  - 新增4个多选框选择器
+  - 新增题目类型检测
+  - 新增选中状态检测
+  - 新增全选ABCD逻辑
+  - 新增关闭弹窗逻辑
+
+📁 版本更新日志.txt
+  - 记录v3.1版本详情
+
+**Git提交记录：**
+
+- `ecd75b6` - 支持多选题处理：1.识别多选框元素 2.单选题逻辑尝试后无正确答案时选择ABCD所有选项 3.提交后直接关闭弹窗
+
+**代码统计：**
+
+- 新增选择器：4个
+- 新增代码：约111行
+- 删除代码：2行
+- 净增加：约109行
+
+**技术亮点：**
+
+- ✅ **智能识别** - 自动区分单选/多选题
+- ✅ **去重点击** - 检测选中状态，避免重复点击
+- ✅ **降级处理** - 单选失败后自动转多选逻辑
+- ✅ **全面覆盖** - 支持checkbox/radio/label/div/span
+- ✅ **兼容旧版** - 单选题逻辑保持不变
+
+**向后兼容：**
+
+✅ 完全兼容v3.0
+✅ 单选题逻辑不受影响
+✅ 配置文件不需修改
+✅ 账号文件格式不变
+
+**重要说明：**
+
+⚠️ 支持多选题自动识别
+⚠️ 无正确答案时选择所有选项ABCD
+⚠️ 提交后直接关闭弹窗继续播放
+⚠️ 智能检测选中状态避免重复操作
+
+**测试建议：**
+
+```bash
+conda activate study312
+python zhidao_launcher.py --account account.json
+```
+
+观察日志输出：
+- 检测到多选题时显示 "📝 检测到多选题"
+- 选择选项时显示 "🎯 选择 A/B/C/D"
+- 已选中选项显示 "✓ A/B/C/D 已选中"
+- 关闭弹窗时显示 "✅ 多选题已处理并关闭"
+
+
 【v3.0】2025-11-19 🎯 智能题目处理与视频跳过优化版
 -------------------
 主题：完善题目处理逻辑，实现智能跳过已观看视频，优化用户体验
