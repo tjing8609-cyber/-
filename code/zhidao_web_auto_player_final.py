@@ -33,13 +33,16 @@ class ZhidaoWebAutoPlayerFinal:
         self.config_file = config_file
         self.account_file = account_file
         
+        # 获取项目根目录（code文件夹的上级目录）
+        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         # 根据账号配置文件名生成独立的进度文件
         # 例如: account1.json -> progress_account1.json
         account_name = os.path.splitext(os.path.basename(account_file))[0]
-        self.progress_file = f'progress_{account_name}.json'
+        self.progress_file = os.path.join(self.project_root, 'log', f'progress_{account_name}.json')
         
-        # 设置日志文件名（使用独立的日志文件）
-        self.log_file = f'zhidao_{account_name}.log'
+        # 设置日志文件名（使用独立的日志文件，存放在log文件夹）
+        self.log_file = os.path.join(self.project_root, 'log', f'zhidao_{account_name}.log')
         
         # 初始化刷新计数器（每10次才刷新一次）
         self.items_processed_since_refresh = 0

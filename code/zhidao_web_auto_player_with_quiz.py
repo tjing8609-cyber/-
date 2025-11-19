@@ -54,12 +54,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def setup_logging(self):
         """设置日志系统"""
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         # 从account文件名提取账号编号
         account_num = self.account_file.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
-        log_file = f'zhidao_account{account_num}_quiz.log'
+        log_file = os.path.join(project_root, 'log', f'zhidao_account{account_num}_quiz.log')
         
         # 配置日志
         self.logger = logging.getLogger(f'ZhidaoQuiz_{account_num}')
@@ -86,11 +89,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def check_and_cleanup_logs(self):
         """检查并清理日志文件"""
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         account_num = self.account_file.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
-        log_file = f'zhidao_account{account_num}_quiz.log'
+        log_file = os.path.join(project_root, 'log', f'zhidao_account{account_num}_quiz.log')
         
         # 检查日志文件大小
         if os.path.exists(log_file):
@@ -121,11 +127,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def load_progress(self):
         """加载进度记录"""
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         account_num = self.account_file.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
-        progress_file = f'progress_account{account_num}.json'
+        progress_file = os.path.join(project_root, 'log', f'progress_account{account_num}.json')
         
         if os.path.exists(progress_file):
             with open(progress_file, 'r', encoding='utf-8') as f:
@@ -152,11 +161,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def save_progress(self):
         """保存进度记录"""
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
         account_num = self.account_file.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
-        progress_file = f'progress_account{account_num}.json'
+        progress_file = os.path.join(project_root, 'log', f'progress_account{account_num}.json')
         
         self.progress['last_run'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
