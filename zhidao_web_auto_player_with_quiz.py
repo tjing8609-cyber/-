@@ -2021,6 +2021,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         
                         # 等待一下确保结果显示完毕
                         self.smart_wait(2)
+                        
+                        # 【修改】按ESC键关闭题目弹窗
+                        try:
+                            from selenium.webdriver.common.keys import Keys
+                            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                            self.logger.info("✅ 已按ESC键关闭题目弹窗")
+                            self.smart_wait(1)
+                        except Exception as e:
+                            self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                        
                         return True
                         
                     elif answer_result == 'wrong':
@@ -2052,6 +2062,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.quizzes_answered_this_session += 1
                                 self.progress['total_quizzes'] += 1
                                 self.smart_wait(2)
+                                
+                                # 【修改】按ESC键关闭题目弹窗
+                                try:
+                                    from selenium.webdriver.common.keys import Keys
+                                    self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                                    self.logger.info("✅ 已按ESC键关闭题目弹窗")
+                                    self.smart_wait(1)
+                                except Exception as e:
+                                    self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                                
                                 return True
                         
                         # 继续下一个选项
@@ -2146,15 +2166,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     except:
                         continue
                 
-                # 直接关闭题目弹窗
-                self.logger.info("🔄 尝试关闭题目弹窗...")
-                if self.close_quiz_dialog():
+                # 【修改】按ESC键关闭题目弹窗
+                self.logger.info("🔄 按ESC键关闭题目弹窗...")
+                try:
+                    from selenium.webdriver.common.keys import Keys
+                    self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
                     self.logger.info("✅ 多选题已处理并关闭")
                     self.quizzes_answered_this_session += 1
                     self.progress['total_quizzes'] += 1
+                    self.smart_wait(1)
                     return True
-                else:
-                    self.logger.warning("⚠️  关闭题目弹窗失败")
+                except Exception as e:
+                    self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
                     return False
             
             return False
