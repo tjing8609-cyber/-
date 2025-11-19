@@ -3,6 +3,252 @@
 知到自动播放脚本 - 版本更新日志
 ========================================
 
+【v3.3】2025-11-19 ✅ 答案结果识别修复版
+-------------------
+主题：修复题目答案结果识别失败和KeyError异常问题
+
+**问题现象：**
+
+用户反馈日志：
+```
+INFO - 🎯 尝试选择 A...
+INFO - ✅ A 是正确答案！
+ERROR - 尝试选项 A 失败: 'total_quizzes'
+INFO - 🎯 尝试选择 B...
+INFO - ✅ B 是正确答案！
+ERROR - 尝试选项 B 失败: 'total_quizzes'
+WARNING - ⚠️  所有选项都尝试完毕，未找到单个正确答案
+```
+
+**现象分析：**
+1. ✅ 能识别到正确答案（显示"✅ A 是正确答案！"）
+2. ❌ 但执行 `self.progress['total_quizzes'] += 1` 时报错
+3. ❌ 导致 `return True` 未执行，弹窗无法关闭
+4. ❌ 题目循环无限重复
+
+**问题原因：**
+
+### 1️⃣ 答案结果识别选择器不匹配
+
+通过DevTools分析HTML结构：
+
+**正确标记：**
+```html
+<span class="right">✓</span>  <!-- 绿色勾 #00D789 -->
+```
+
+**错误标记：**
+```html
+<span class="error">错误</span>  <!-- 红色文本 #F94F17 -->
+```
+
+**正确答案提示：**
+```html
+<p class="answer">正确答案：A</p>
+```
+
+旧选择器无法匹配！
+
+### 2️⃣ 进度文件向后兼容问题
+
+旧版本progress文件没有 `total_quizzes` 键：
+```json
+{
+  "total_watched": 10,
+  "completed_videos": [...],
+  "last_run": "..."
+  // 缺少 total_quizzes!
+}
+```
+
+导致 `KeyError: 'total_quizzes'` 异常。
+
+**解决方案：**
+
+### 1️⃣ 更新答案结果识别选择器
+
+**修复前：**
+```python
+correct_selectors = [
+    "//*[contains(text(), '回答正确')]",
+    "//*[contains(text(), '正确')]",
+    "//*[contains(@class, 'colorGreen')]",
+]
+
+error_selectors = [
+    "//*[contains(text(), '回答错误')]",
+    "//*[contains(text(), '错误')]",
+    "//*[contains(@class, 'colorRed')]",
+]
+```
+
+**修复后：**
+```python
+correct_selectors = [
+    "//span[contains(@class, 'right')]",  # 【新增】绿色勾标记（最高优先级）
+    "//*[contains(text(), '回答正确')]",
+    "//*[contains(text(), '正确')]",
+    "//*[contains(@class, 'colorGreen')]",
+]
+
+error_selectors = [
+    "//span[contains(@class, 'error')]",  # 【新增】红色错误标记（最高优先级）
+    "//*[contains(text(), '回答错误')]",
+    "//*[contains(text(), '错误')]",
+    "//*[contains(@class, 'colorRed')]",
+]
+```
+
+### 2️⃣ 优化识别逻辑
+
+**先检查class，再检查文本：**
+```python
+for elem in elements:
+    if elem.is_displayed():
+        # 【新增】先检查 class 属性
+        if 'right' in (elem.get_attribute('class') or ''):
+            logger.debug("检测到正确标记: <span class='right'>")
+            return 'correct'
+        
+        # 再检查文本内容
+        text = elem.text.strip()
+        if '正确' in text and '错误' not in text:
+            logger.debug(f"检测到正确标记: {text}")
+            return 'correct'
+```
+
+**优点：**
+- ✅ 更精准：直接匹配 `class="right"` 和 `class="error"`
+- ✅ 更快速：优先检查class，无需解析文本
+- ✅ 更可靠：避免文本包含歧义情况
+
+### 3️⃣ 新增正确答案选择器
+
+**修复前：**
+```python
+answer_selectors = [
+    "//*[contains(text(), '正确答案')]",
+    "//*[contains(text(), '正确选项')]",
+]
+```
+
+**修复后：**
+```python
+answer_selectors = [
+    "//p[contains(@class, 'answer')]",  # 【新增】知到平台 <p class="answer">
+    "//*[contains(text(), '正确答案')]",
+    "//*[contains(text(), '正确选项')]",
+]
+```
+
+### 4️⃣ 修复进度文件兼容性
+
+**问题：**
+旧版progress文件缺少 `total_quizzes` 键。
+
+**修复前：**
+```python
+def load_progress(self):
+    if os.path.exists(progress_file):
+        with open(progress_file, 'r') as f:
+            return json.load(f)  # 直接返回，不检查
+    return {...}
+```
+
+**修复后：**
+```python
+def load_progress(self):
+    if os.path.exists(progress_file):
+        with open(progress_file, 'r') as f:
+            progress = json.load(f)
+            
+            # 【向后兼容】确保必要的键存在
+            if 'total_quizzes' not in progress:
+                progress['total_quizzes'] = 0
+            if 'total_watched' not in progress:
+                progress['total_watched'] = 0
+            if 'completed_videos' not in progress:
+                progress['completed_videos'] = []
+            if 'last_run' not in progress:
+                progress['last_run'] = None
+                
+            return progress
+    return {...}
+```
+
+**优点：**
+- ✅ 兼容旧版progress文件
+- ✅ 避免 `KeyError` 异常
+- ✅ 自动补全缺失的键
+
+**修改对比表：**
+
+| 项目 | 修复前 | 修复后 |
+|------|----------|----------|
+| 正确标记选择器 | 无 `span.right` | `//span[contains(@class, 'right')]` ✅ |
+| 错误标记选择器 | 无 `span.error` | `//span[contains(@class, 'error')]` ✅ |
+| 正确答案选择器 | 无 `p.answer` | `//p[contains(@class, 'answer')]` ✅ |
+| 识别逻辑 | 只检查文本 | 先class再文本 ✅ |
+| progress兼容 | 无检查 | 自动补全键 ✅ |
+
+**技术亮点：**
+
+- ✅ **精准匹配** - 根据DevTools分析增加class选择器
+- ✅ **优先级优化** - 将新选择器置于最高优先级
+- ✅ **向后兼容** - 自动处理旧版progress文件
+- ✅ **异常处理** - 避免KeyError导致程序崩溃
+
+**修改文件：**
+
+📁 zhidao_web_auto_player_with_quiz.py
+  - check_answer_result(): 新增 `span.right` 和 `span.error` 选择器
+  - check_answer_result(): 优化识别逻辑（先class再文本）
+  - extract_correct_answer(): 新增 `p.answer` 选择器
+  - load_progress(): 添加向后兼容逻辑
+
+📁 版本更新日志.txt
+  - 记录v3.3版本详情
+
+**Git提交记录：**
+
+- `f2400b5` - 修复答案结果识别：1.新增span.right识别正确标记（绿色勾） 2.新增span.error识别错误标记（红色错误） 3.新增p.answer提取正确答案 4.优化识别逻辑先检查class再检查文本
+- `cd28e25` - 修复进度文件兼容性：确保旧版本progress文件包含total_quizzes等必要键，避免KeyError异常
+
+**代码统计：**
+
+- 新增选择器：3个
+- 优化逻辑：2处
+- 新增兼容检查：4个键
+- 总计新增：约29行
+
+**向后兼容：**
+
+✅ 完全兼容v3.2
+✅ 兼容旧版progress文件
+✅ 原有功能不受影响
+✅ 配置文件不需修改
+
+**重要说明：**
+
+⚠️ 修复题目答案结果识别失败
+⚠️ 修复KeyError异常导致弹窗无法关闭
+⚠️ 兼容旧版进度文件
+⚠️ 优化识别逻辑提高准确性
+
+**测试建议：**
+
+```bash
+conda activate study312
+python zhidao_launcher.py --account account.json
+```
+
+观察日志输出：
+- 应显示 "检测到正确标记: <span class='right'>"
+- 或显示 "检测到错误标记: <span class='error'>"
+- 答对后应显示 "✅ 已关闭题目弹窗" 或 "✅ 多选题已处理并关闭"
+- 不应出现 "ERROR - 尝试选项 A 失败: 'total_quizzes'"
+
+
 【v3.2】2025-11-19 🔧 题目选项识别修复版
 -------------------
 主题：修夏知到平台题目选项无法识别问题，添加调试机制
