@@ -2677,14 +2677,197 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 except Exception as e:
                     self.logger.warning(f"⚠️  JavaScript启动播放失败: {e}，继续监控")
             
-            # 主循环：观看视频并回答题目
+            # 【改进】主循环：每次播完一个视频后重新查找下一个
             self.logger.info("\n" + "="*60)
-            self.logger.info("🎬 开始自动播放（视频会自动连续播放）")
+            self.logger.info("🎬 开始自动播放（每次播完后重新查找下一个）")
             self.logger.info("="*60)
             
-            # 用于定时检查重复播放
-            check_counter = 0
-            check_interval = 6  # 每6次循环（约30秒）检查一次
+            videos_played = 0
+            attempt = 0
+            max_videos = 200  # 最多尝试200个视频
+            unwatched_videos = []  # 缓存查找到的视频列表
+            
+            while attempt < max_videos:
+                attempt += 1
+                self.logger.info(f"\n=== 第 {attempt} 轮播放 ===")
+                
+                # 智能刷新：每10次查找前刷新一次页面
+                if self.items_processed_since_refresh >= self.refresh_interval:
+                    self.logger.info(f"已处理{self.items_processed_since_refresh}个项目，刷新页面以更新状态...")
+                    self.driver.refresh()
+                    self.smart_wait(3)
+                    self.items_processed_since_refresh = 0
+                    unwatched_videos = []  # 清空缓存
+                elif self.items_processed_since_refresh > 0:
+                    self.logger.info(f"已处理{self.items_processed_since_refresh}个项目（每{self.refresh_interval}次刷新一次）")
+                
+                # 每10次查找一次（或缓存为空时重新查找）
+                if not unwatched_videos or (attempt - 1) % 10 == 0:
+                    self.logger.info("🔍 查找未观看的视频...")
+                    unwatched_videos = self.find_unwatched_videos()
+                    
+                    if not unwatched_videos:
+                        self.logger.info("✅ 没有找到更多未观看视频，所有视频已播放完成！")
+                        break
+                    
+                    self.logger.info(f"✅ 找到 {len(unwatched_videos)} 个未观看视频，将逐个播放")
+                else:
+                    self.logger.info(f"📦 使用缓存的视频列表（剩余 {len(unwatched_videos)} 个）")
+                
+                if not unwatched_videos:
+                    self.logger.info("✅ 没有更多视频，结束播放")
+                    break
+                
+                # 播放第一个未观看视频
+                video_to_play = unwatched_videos.pop(0)
+                self.logger.info(f"🎬 开始播放: {video_to_play['text'][:50]}")
+                
+                # 点击视频
+                try:
+                    video_to_play['element'].click()
+                    self.logger.info("✅ 普通点击成功")
+                except:
+                    try:
+                        self.driver.execute_script("arguments[0].click();", video_to_play['element'])
+                        self.logger.info("✅ JavaScript点击成功")
+                    except Exception as e:
+                        self.logger.error(f"❌ 点击视频失败: {e}")
+                        continue
+                
+                self.smart_wait(3)
+                
+                # 启动播放
+                try:
+                    play_result = self.driver.execute_script("""
+                        var video = document.querySelector('video');
+                        if (video) {
+                            var playPromise = video.play();
+                            if (playPromise !== undefined) {
+                                playPromise.then(function() {
+                                    return 'success';
+                                }).catch(function(error) {
+                                    return 'error: ' + error.message;
+                                });
+                            }
+                            return 'video found and play() called';
+                        } else {
+                            return 'video not found';
+                        }
+                    """)
+                    
+                    if play_result:
+                        self.logger.info(f"✅ JavaScript播放结果: {play_result}")
+                        self.smart_wait(2)
+                    else:
+                        self.logger.warning("⚠️  未找到video元素，可能需要等待")
+                        
+                except Exception as e:
+                    self.logger.warning(f"⚠️  JavaScript启动播放失败: {e}，继续监控")
+                
+                # 监控视频播放并回答题目
+                self.logger.info("⏰ 开始监控视频播放...")
+                
+                check_interval_seconds = 10  # 每10秒检查一次
+                max_wait_time = 60 * 60  # 最长等待1小时
+                elapsed_time = 0
+                
+                last_progress_check = 0
+                no_progress_count = 0
+                
+                video_completed = False
+                current_title = None
+                
+                while elapsed_time < max_wait_time:
+                    # 检查是否有题目弹窗
+                    if self.check_for_quiz():
+                        self.answer_quiz()
+                    
+                    # 检查视频是否还在播放
+                    if not self.ensure_video_playing():
+                        self.logger.warning("⚠️  视频似乎已停止，尝试恢复播放")
+                        self.recover_stuck_video()
+                    
+                    # 检查进度是否卡住
+                    current_progress = self.get_video_progress()
+                    
+                    if abs(current_progress - last_progress_check) < 1:
+                        no_progress_count += 1
+                        self.logger.warning(f"⚠️  视频进度无变化，连续{no_progress_count}次 ({current_progress:.0f}秒)")
+                        
+                        if no_progress_count >= 3:
+                            self.logger.warning(f"🔧 连续{no_progress_count}次进度无变化，可能触发防脚本机制，尝试恢复...")
+                            self.recover_stuck_video()
+                            self.smart_wait(2)
+                            no_progress_count = 0
+                    else:
+                        if no_progress_count > 0:
+                            self.logger.info(f"✅ 视频恢复正常，进度: {current_progress:.0f}秒")
+                        no_progress_count = 0
+                    
+                    last_progress_check = current_progress
+                    
+                    # 检查视频是否播放完成（检查绿色勾标记）
+                    try:
+                        # 查找当前视频标题
+                        if not current_title:
+                            current_title = self.get_current_video_title()
+                        
+                        if current_title:
+                            # 在右侧目录中查找对应视频，检查是否有绿色勾
+                            completed_selectors = [
+                                f"//li[contains(., '{current_title[:20]}')]//i[contains(@class, 'zhihuishu-wancheng')]",
+                                f"//div[contains(., '{current_title[:20]}')]//i[contains(@class, 'zhihuishu-wancheng')]",
+                            ]
+                            
+                            for selector in completed_selectors:
+                                try:
+                                    complete_icon = self.driver.find_element(By.XPATH, selector)
+                                    if complete_icon and complete_icon.is_displayed():
+                                        self.logger.info(f"✅ 检测到视频已完成（绿色勾）: {current_title[:30]}")
+                                        video_completed = True
+                                        break
+                                except:
+                                    continue
+                            
+                            if video_completed:
+                                break
+                    except:
+                        pass
+                    
+                    # 等待10秒
+                    time.sleep(10)
+                    elapsed_time += 10
+                    
+                    # 显示进度
+                    self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒")
+                
+                if video_completed:
+                    videos_played += 1
+                    self.items_processed_since_refresh += 1
+                    self.logger.info(f"✅ 成功播放第 {videos_played} 个视频")
+                    
+                    # 记录已观看视频
+                    if current_title and current_title not in self.progress['completed_videos']:
+                        self.progress['completed_videos'].append(current_title)
+                        self.progress['total_watched'] += 1
+                        self.save_progress()
+                else:
+                    self.logger.warning(f"⚠️  视频未检测到完成标记，可能超时")
+                
+                # 随机延迟
+                self.smart_wait()
+            
+            # 显示最终统计
+            self.logger.info("\n" + "="*60)
+            if videos_played > 0:
+                self.logger.info(f"✅ 自动播放程序完成，本次播放 {videos_played} 个视频")
+            else:
+                self.logger.info("✅ 所有视频已播放完成，无需播放")
+            self.logger.info(f"✅ 总计已观看: {self.progress['total_watched']} 个视频")
+            self.logger.info("="*60)
+            
+        except KeyboardInterrupt:
+
             
             # 由于是自动连续播放，这里主要是监控题目弹窗和重复播放
             while True:
