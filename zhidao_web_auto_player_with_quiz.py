@@ -129,7 +129,20 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         if os.path.exists(progress_file):
             with open(progress_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                progress = json.load(f)
+                
+                # 【向后兼容】确保必要的键存在
+                if 'total_quizzes' not in progress:
+                    progress['total_quizzes'] = 0
+                if 'total_watched' not in progress:
+                    progress['total_watched'] = 0
+                if 'completed_videos' not in progress:
+                    progress['completed_videos'] = []
+                if 'last_run' not in progress:
+                    progress['last_run'] = None
+                    
+                return progress
+                
         return {
             'total_watched': 0,
             'total_quizzes': 0,
