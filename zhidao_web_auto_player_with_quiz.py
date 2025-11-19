@@ -2213,6 +2213,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         try:
             # 检查是否有"正确"提示
             correct_selectors = [
+                "//span[contains(@class, 'right')]",  # 【新增】知到平台绿色勾标记
                 "//*[contains(text(), '回答正确')]",
                 "//*[contains(text(), '正确')]",
                 "//*[contains(@class, 'colorGreen')]",  # 知到平台绿色正确标记
@@ -2225,6 +2226,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     elements = self.driver.find_elements(By.XPATH, selector)
                     for elem in elements:
                         if elem.is_displayed():
+                            # 对于 class="right" 的 span，直接认为正确
+                            if 'right' in (elem.get_attribute('class') or ''):
+                                self.logger.debug(f"检测到正确标记: <span class='right'>")
+                                return 'correct'
+                            
+                            # 对于其他元素，检查文本
                             text = elem.text.strip()
                             if '正确' in text and '错误' not in text:
                                 self.logger.debug(f"检测到正确标记: {text}")
@@ -2234,6 +2241,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             
             # 检查是否有"错误"提示
             error_selectors = [
+                "//span[contains(@class, 'error')]",  # 【新增】知到平台红色错误标记
                 "//*[contains(text(), '回答错误')]",
                 "//*[contains(text(), '错误')]",
                 "//*[contains(@class, 'colorRed')]",  # 知到平台红色错误标记
@@ -2246,6 +2254,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     elements = self.driver.find_elements(By.XPATH, selector)
                     for elem in elements:
                         if elem.is_displayed():
+                            # 对于 class="error" 的 span，直接认为错误
+                            if 'error' in (elem.get_attribute('class') or ''):
+                                self.logger.debug(f"检测到错误标记: <span class='error'>")
+                                return 'wrong'
+                            
+                            # 对于其他元素，检查文本
                             text = elem.text.strip()
                             if '错误' in text:
                                 self.logger.debug(f"检测到错误标记: {text}")
@@ -2264,6 +2278,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         try:
             # 查找包含正确答案的元素
             answer_selectors = [
+                "//p[contains(@class, 'answer')]",  # 【新增】知到平台的 <p class="answer">
                 "//*[contains(text(), '正确答案')]",
                 "//*[contains(text(), '正确选项')]",
                 "//*[contains(@class, 'correct-answer')]",
