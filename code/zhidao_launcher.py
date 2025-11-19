@@ -9,6 +9,11 @@ import json
 import sys
 import os
 
+# 添加code文件夹到Python路径
+code_dir = os.path.dirname(os.path.abspath(__file__))
+if code_dir not in sys.path:
+    sys.path.insert(0, code_dir)
+
 
 def load_account_config(account_file):
     """加载账号配置"""
