@@ -1874,9 +1874,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # 查找所有选项元素（优先级从高到低）
             option_selectors = [
                 "//input[@type='radio']",  # 单选框（最优先）
+                "//input[@type='checkbox']",  # 多选框
                 "//label[contains(@class, 'el-radio')]",  # Element UI单选框标签
+                "//label[contains(@class, 'el-checkbox')]",  # Element UI多选框标签
                 "//div[contains(@class, 'el-radio')]",  # Element UI单选框容器
+                "//div[contains(@class, 'el-checkbox')]",  # Element UI多选框容器
                 "//span[contains(@class, 'el-radio__label')]",  # Element UI单选框文本
+                "//span[contains(@class, 'el-checkbox__label')]",  # Element UI多选框文本
             ]
             
             options = []
@@ -1896,6 +1900,20 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if not options:
                 self.logger.warning("⚠️  未找到题目选项")
                 return False
+            
+            # 检测题目类型（单选/多选）
+            is_multiple_choice = False
+            try:
+                # 检查是否有多选框
+                checkbox_inputs = self.driver.find_elements(By.XPATH, "//input[@type='checkbox']")
+                checkbox_labels = self.driver.find_elements(By.XPATH, "//label[contains(@class, 'el-checkbox')]")
+                if checkbox_inputs or checkbox_labels:
+                    is_multiple_choice = True
+                    self.logger.info("📝 检测到多选题")
+                else:
+                    self.logger.info("📝 检测到单选题")
+            except:
+                pass
             
             # 依次尝试每个选项，直到正确
             option_labels = ['A', 'B', 'C', 'D']
@@ -2006,8 +2024,99 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.error(f"尝试选项 {current_label} 失败: {e}")
                     continue
             
-            # 所有选项都尝试完了
-            self.logger.warning("⚠️  所有选项都尝试完毕")
+            # 所有选项都尝试完了，可能是多选题
+            self.logger.warning("⚠️  所有选项都尝试完毕，未找到单个正确答案")
+            
+            # 如果是多选题或者所有单选都尝试过了，选择所有选项ABCD后直接关闭
+            if is_multiple_choice or max_attempts >= 4:
+                self.logger.info("💡 疑似多选题或无法确定答案，选择所有选项ABCD后关闭...")
+                
+                # 选择所有选项
+                all_selected = True
+                for i in range(min(4, len(options))):
+                    try:
+                        option = options[i]
+                        label = option_labels[i] if i < len(option_labels) else f"选项{i+1}"
+                        
+                        # 检查是否已选中
+                        is_selected = False
+                        try:
+                            # 对于checkbox和radio，检查checked属性
+                            tag_name = option.tag_name.lower()
+                            if tag_name == 'input':
+                                is_selected = option.is_selected()
+                            else:
+                                # 对于label等元素，查找内部的input
+                                inner_input = option.find_element(By.XPATH, ".//input")
+                                is_selected = inner_input.is_selected()
+                        except:
+                            pass
+                        
+                        if not is_selected:
+                            self.logger.info(f"🎯 选择 {label}")
+                            try:
+                                option.click()
+                                self.smart_wait(0.3)
+                            except:
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", option)
+                                    self.smart_wait(0.3)
+                                except Exception as e:
+                                    self.logger.warning(f"⚠️  选择 {label} 失败: {e}")
+                                    all_selected = False
+                        else:
+                            self.logger.debug(f"✓ {label} 已选中")
+                            
+                    except Exception as e:
+                        self.logger.error(f"选择选项失败: {e}")
+                        all_selected = False
+                
+                # 尝试提交（可选）
+                submit_buttons = [
+                    "//span[contains(text(), '确定')]",
+                    "//button[contains(text(), '确定')]",
+                    "//span[contains(text(), '提交')]",
+                    "//button[contains(text(), '提交')]",
+                    "//div[contains(@class, 'popbtn_ok')]",
+                ]
+                
+                submit_clicked = False
+                for btn_selector in submit_buttons:
+                    try:
+                        submit_btns = self.driver.find_elements(By.XPATH, btn_selector)
+                        for submit_btn in submit_btns:
+                            if submit_btn.is_displayed() and submit_btn.is_enabled():
+                                try:
+                                    submit_btn.click()
+                                    self.logger.info("✅ 已点击提交")
+                                    submit_clicked = True
+                                    self.smart_wait(1)
+                                    break
+                                except:
+                                    try:
+                                        self.driver.execute_script("arguments[0].click();", submit_btn)
+                                        self.logger.info("✅ JavaScript点击提交")
+                                        submit_clicked = True
+                                        self.smart_wait(1)
+                                        break
+                                    except:
+                                        continue
+                        if submit_clicked:
+                            break
+                    except:
+                        continue
+                
+                # 直接关闭题目弹窗
+                self.logger.info("🔄 尝试关闭题目弹窗...")
+                if self.close_quiz_dialog():
+                    self.logger.info("✅ 多选题已处理并关闭")
+                    self.quizzes_answered_this_session += 1
+                    self.progress['total_quizzes'] += 1
+                    return True
+                else:
+                    self.logger.warning("⚠️  关闭题目弹窗失败")
+                    return False
+            
             return False
             
         except Exception as e:
