@@ -3,6 +3,218 @@
 知到自动播放脚本 - 版本更新日志
 ========================================
 
+【v3.2】2025-11-19 🔧 题目选项识别修复版
+-------------------
+主题：修夏知到平台题目选项无法识别问题，添加调试机制
+
+**问题现象：**
+
+用户反馈日志：
+```
+INFO - 🎯 检测到题目弹窗: //*[contains(text(), 'AI助教') or contains(text(), '出题')]
+INFO - 📝 开始回答题目...
+WARNING - ⚠️  未找到题目选项
+```
+
+循环无法找到选项，导致题目无法回答。
+
+**问题分析：**
+
+通过Chrome DevTools分析页面HTML结构：
+
+```html
+<li class="topic-item">
+  <div class="topic-option-item">
+    <span class="topic-option-item">A</span>
+    <div class="item-topic">已思考</div>
+  </div>
+</li>
+```
+
+**发现问题：**
+1. ✘ 旧选择器：`//div[contains(@class, 'topic-option')]` → **错误**！
+2. ✘ 实际HTML：`<li class="topic-item">` → **不匹配**
+3. ✘ 缺少 `li` 元素选择器
+
+**解决方案：**
+
+### 1️⃣ 更正选项选择器
+
+**修复前：**
+```python
+option_selectors = [
+    "//input[@type='radio']",
+    "//input[@type='checkbox']",
+    "//label[contains(@class, 'el-radio')]",
+    "//label[contains(@class, 'el-checkbox')]",
+    # ...
+    "//div[contains(@class, 'topic-option')]",  # ❌ 错误
+]
+```
+
+**修复后：**
+```python
+option_selectors = [
+    "//input[@type='radio']",
+    "//input[@type='checkbox']",
+    "//label[contains(@class, 'el-radio')]",
+    "//label[contains(@class, 'el-checkbox')]",
+    # ...
+    "//li[contains(@class, 'topic-item')]",  # ✅ 正确！（最高优先级）
+    "//div[contains(@class, 'topic-option-item')]",  # ✅ 备用
+]
+```
+
+### 2️⃣ 优化XPath表达式
+
+**修夏前：**
+```python
+"//span[contains(text(), 'A.') or contains(text(), 'B.')]/parent::*"
+```
+
+**问题：**
+- `parent::*` 只能获取直接父元素
+- 如果 `<span>` 外层有多层嵌套，无法匹配到 `<li>`
+
+**修夏后：**
+```python
+"//span[contains(text(), 'A') or contains(text(), 'B')]/ancestor::li"
+```
+
+**优点：**
+- `ancestor::li` 能向上查找所有祖先元素中的 `<li>`
+- 支持多层嵌套结构
+- 更准确匹配知到平台的题目结构
+
+### 3️⃣ 新增调试机制
+
+**未找到选项时自动保存：**
+
+```python
+if not options:
+    logger.warning("⚠️  未找到题目选项")
+    
+    # 【新增】保存调试信息
+    debug_dir = 'debug_quiz'
+    os.makedirs(debug_dir, exist_ok=True)
+    
+    # 保存完整HTML
+    html_path = f'debug_quiz/quiz_no_options_{timestamp}.html'
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(driver.page_source)
+    logger.info(f"💾 已保存题目HTML到: {html_path}")
+    
+    # 保存截图
+    screenshot_path = f'debug_quiz/quiz_no_options_{timestamp}.png'
+    driver.save_screenshot(screenshot_path)
+    logger.info(f"📸 已保存题目截图到: {screenshot_path}")
+```
+
+**调试文件结构：**
+```
+zhidao/
+├─ debug_quiz/
+│   ├─ quiz_no_options_1732032198.html  # 完整HTML
+│   └─ quiz_no_options_1732032198.png   # 页面截图
+```
+
+### 4️⃣ 增强选择器查找日志
+
+**修夏前：**
+```python
+except:
+    continue  # 静默失败，无日志
+```
+
+**修夏后：**
+```python
+except Exception as e:
+    logger.debug(f"选择器 {selector} 查找失败: {e}")
+    continue
+```
+
+**优点：**
+- 记录每个选择器的失败原因
+- 方便排查选择器问题
+- 更好的调试体验
+
+**修改对比表：**
+
+| 项目 | 修复前 | 修复后 |
+|------|----------|----------|
+| 知到选项选择器 | `//div[contains(@class, 'topic-option')]` ❌ | `//li[contains(@class, 'topic-item')]` ✅ |
+| XPath父元素查找 | `parent::*` | `ancestor::li` ✅ |
+| 选项匹配模式 | `'A.'` / `'B.'` | `'A'` / `'B'` ✅ |
+| 失败日志 | 无 | `debug()记录` ✅ |
+| 调试支持 | 无 | HTML+截图保存 ✅ |
+
+**技术亮点：**
+
+- ✅ **精准匹配** - 根据DevTools分析修正选择器
+- ✅ **增强XPath** - `ancestor::li` 支持多层嵌套
+- ✅ **自动调试** - 失败时保存HTML和截图
+- ✅ **详细日志** - 记录每个选择器失败原因
+- ✅ **灵活匹配** - 去除 `.` 支持更多格式
+
+**修改文件：**
+
+📁 zhidao_web_auto_player_with_quiz.py
+  - 更正选择器：`topic-option` → `topic-item`
+  - 新增选择器：`topic-option-item`
+  - 优化XPath：`parent::*` → `ancestor::li`
+  - 新增调试：保存HTML和截图
+  - 增强日志：记录选择器失败原因
+
+📁 版本更新日志.txt
+  - 记录v3.2版本详情
+
+**Git提交记录：**
+
+- `fd82cc8` - 增强题目选项识别：1.新增5个知到平台通用选择器 2.增加选择器查找失败的调试日志 3.未找到选项时自动保存HTML和截图用于调试
+- `f72f42e` - 修复题目选项识别：1.根据DevTools分析更正选择器为li.topic-item 2.添加topic-option-item选择器 3.优化XPath使用ancestor代替parent提高准确性
+
+**代码统计：**
+
+- 新增选择器：2个
+- 修正选择器：3个
+- 新增调试代码：约20行
+- 总计新增：约30行
+
+**向后兼容：**
+
+✅ 完全兼容v3.1
+✅ Element UI选项选择器保留
+✅ 原有功能不受影响
+✅ 配置文件不需修改
+
+**重要说明：**
+
+⚠️ 修复知到平台题目选项识别问题
+⚠️ 支持多层HTML嵌套结构
+⚠️ 失败时自动保存调试信息
+⚠️ 增强选择器查找的日志输出
+
+**测试建议：**
+
+```bash
+conda activate study312
+python zhidao_launcher.py --account account.json
+```
+
+观察日志输出：
+- 应显示 "🔍 找到 2 个选项: //li[contains(@class, 'topic-item')]"
+- 选项识别后应正常答题（尝试A/B/C/D）
+- 如果仍无法识别，检查 `debug_quiz/` 文件夹中的HTML和截图
+
+**问题排查：**
+
+如果仍然无法识别题目选项：
+1. 检查 `debug_quiz/` 文件夹
+2. 打开最新的 `.html` 文件
+3. 查找 `topic-item` 或 `option` 关键词
+4. 将HTML结构反馈给开发者
+
+
 【v3.1】2025-11-19 ✅ 多选题支持版
 -------------------
 主题：支持多选题处理，无正确答案时选择所有选项ABCD后关闭
