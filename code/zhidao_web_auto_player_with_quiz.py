@@ -871,14 +871,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     shared_tab.click()
                     self.logger.info("✅ 点击成功")
                 except Exception as e:
-                    self.logger.warning(f"普通点击失败，尝试ActionChains: {e}")
+                    self.logger.warning(f"普通点击失败，尝试JavaScript点击: {e}")
                     try:
-                        from selenium.webdriver.common.action_chains import ActionChains
-                        actions = ActionChains(self.driver)
-                        actions.move_to_element(shared_tab)
-                        actions.click()
-                        actions.perform()
-                        self.logger.info("✅ ActionChains点击成功")
+                        # 课程列表页的标签点击可以使用JS
+                        self.driver.execute_script("arguments[0].click();", shared_tab)
+                        self.logger.info("✅ JavaScript点击成功")
                     except Exception as e2:
                         self.logger.error(f"❌ 所有点击方式都失败: {e2}")
                         return False
@@ -1052,20 +1049,17 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             # 如果没有链接，尝试点击卡片本身
                             link = card
                         
-                        # 多策略点击
+                        # 多策略点击（在课程列表页可以使用JS）
                         try:
                             link.click()
                             self.logger.info("✅ 普通点击成功")
                         except:
                             try:
-                                from selenium.webdriver.common.action_chains import ActionChains
-                                actions = ActionChains(self.driver)
-                                actions.move_to_element(link)
-                                actions.click()
-                                actions.perform()
-                                self.logger.info("✅ ActionChains点击成功")
+                                # 使用JavaScript点击（课程列表页不涉及视频播放器，可以用JS）
+                                self.driver.execute_script("arguments[0].click();", link)
+                                self.logger.info("✅ JavaScript点击成功")
                             except Exception as e:
-                                self.logger.error(f"点击失败: {e}")
+                                self.logger.error(f"所有点击方式都失败: {e}")
                                 continue
                         
                         # 等待页面跳转
@@ -1200,7 +1194,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             if elem_href and ('studycenter' in elem_href or 'course' in elem_href or 'learning' in elem_href):
                                 self.logger.info("✅ 这是有效的课程链接")
                                 
-                                # 【改进4】多策略点击：普通点击 → ActionChains点击
+                                # 【改进4】多策略点击：普通点击 → JavaScript点击（课程列表页可以用JS）
                                 try:
                                     self.logger.debug("尝试普通点击...")
                                     element.click()
@@ -1208,14 +1202,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     self.smart_wait(5)
                                     return True
                                 except Exception as click_err:
-                                    self.logger.debug(f"普通点击失败: {click_err}，尝试ActionChains点击...")
+                                    self.logger.debug(f"普通点击失败: {click_err}，尝试JavaScript点击...")
                                     try:
-                                        from selenium.webdriver.common.action_chains import ActionChains
-                                        actions = ActionChains(self.driver)
-                                        actions.move_to_element(element)
-                                        actions.click()
-                                        actions.perform()
-                                        self.logger.info("✅ ActionChains点击成功")
+                                        self.driver.execute_script("arguments[0].click();", element)
+                                        self.logger.info("✅ JavaScript点击成功")
                                         self.smart_wait(5)
                                         return True
                                     except Exception as ac_err:
