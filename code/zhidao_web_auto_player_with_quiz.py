@@ -1999,56 +1999,63 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
     
     def recover_stuck_video(self):
-        """恢复卡停的视频（点击中央+暂停再播放）"""
+        """恢复卡停的视频（使用ActionChains模拟真实点击）"""
         try:
             self.logger.warning("🔧 检测到视频卡停，开始恢复...")
             
-            # 策略1：点击视频中央区域（最有效，防止自动暂停）
+            # 策略1：使用ActionChains点击视频中央区域（模拟真实用户操作）
             try:
                 self.logger.info("📍 尝试点击视频中央区域恢复播放...")
                 video = self.driver.find_element(By.XPATH, "//video")
-                # 点击视频中心
-                self.driver.execute_script("""
-                    var video = arguments[0];
-                    var rect = video.getBoundingClientRect();
-                    var centerX = rect.left + rect.width / 2;
-                    var centerY = rect.top + rect.height / 2;
-                    
-                    // 创建点击事件
-                    var clickEvent = new MouseEvent('click', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: centerX,
-                        clientY: centerY
-                    });
-                    
-                    // 获取中心位置的元素并点击
-                    var elem = document.elementFromPoint(centerX, centerY);
-                    if (elem) {
-                        elem.dispatchEvent(clickEvent);
-                        console.log('Clicked video center to resume');
-                    }
-                """, video)
-                self.logger.info("✅ 已点击视频中央")
+                
+                # 使用ActionChains模拟真实点击，添加随机偏移
+                import random
+                from selenium.webdriver.common.action_chains import ActionChains
+                
+                # 获取视频元素的大小
+                size = video.size
+                width = size['width']
+                height = size['height']
+                
+                # 计算中央位置，添加小范围随机偏移（避免每次点击完全相同的位置）
+                offset_x = width // 2 + random.randint(-20, 20)
+                offset_y = height // 2 + random.randint(-20, 20)
+                
+                # 使用ActionChains移动到视频中央并点击
+                actions = ActionChains(self.driver)
+                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
+                actions.click()
+                actions.perform()
+                
+                self.logger.info(f"✅ 已点击视频中央 (偏移: {offset_x}, {offset_y})")
                 self.smart_wait(1)
             except Exception as e:
                 self.logger.warning(f"点击视频中央失败: {e}")
             
-            # 策略2：暂停再播放刷新缓冲
+            # 策略2：再次点击确保播放恢复（模拟用户双击行为）
             try:
-                self.driver.execute_script("""
-                    var video = document.querySelector('video');
-                    if (video) {
-                        video.pause();
-                        setTimeout(function() {
-                            video.play();
-                        }, 500);
-                    }
-                """)
-                self.logger.info("✅ 执行了暂停-播放操作")
+                self.logger.info("🔄 再次点击视频确保播放...")
+                video = self.driver.find_element(By.XPATH, "//video")
+                
+                import random
+                from selenium.webdriver.common.action_chains import ActionChains
+                
+                size = video.size
+                width = size['width']
+                height = size['height']
+                
+                # 第二次点击使用不同的偏移
+                offset_x = width // 2 + random.randint(-15, 15)
+                offset_y = height // 2 + random.randint(-15, 15)
+                
+                actions = ActionChains(self.driver)
+                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
+                actions.click()
+                actions.perform()
+                
+                self.logger.info(f"✅ 第二次点击完成 (偏移: {offset_x}, {offset_y})")
             except Exception as e:
-                self.logger.warning(f"暂停-播放操作失败: {e}")
+                self.logger.warning(f"第二次点击失败: {e}")
             
             self.smart_wait(2)
             return True
