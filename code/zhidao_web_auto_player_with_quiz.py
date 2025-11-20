@@ -644,12 +644,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
             login_btn.click()
             self.logger.info("已点击登录按钮")
         except Exception as e:
-            self.logger.warning(f"点击登录按钮失败，尝试JavaScript点击: {e}")
+            self.logger.warning(f"点击登录按钮失败，尝试ActionChains点击: {e}")
             try:
-                self.driver.execute_script("arguments[0].click();", login_btn)
-                self.logger.info("已通过JavaScript点击登录按钮")
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(self.driver)
+                actions.move_to_element(login_btn)
+                actions.click()
+                actions.perform()
+                self.logger.info("已通过ActionChains点击登录按钮")
             except Exception as e2:
-                self.logger.error(f"JavaScript点击也失败: {e2}")
+                self.logger.error(f"ActionChains点击也失败: {e2}")
                 return False
         
         self.smart_wait(3)
@@ -827,7 +831,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 try:
                     shared_tab.click()
                 except:
-                    self.driver.execute_script("arguments[0].click();", shared_tab)
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(shared_tab)
+                    actions.click()
+                    actions.perform()
                 self.smart_wait(2)
             else:
                 self.logger.info("✅ '共享课'标签已激活")
@@ -1004,8 +1012,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.logger.info("✅ 普通点击成功")
                         except:
                             try:
-                                self.driver.execute_script("arguments[0].click();", link)
-                                self.logger.info("✅ JavaScript点击成功")
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element(link)
+                                actions.click()
+                                actions.perform()
+                                self.logger.info("✅ ActionChains点击成功")
                             except Exception as e:
                                 self.logger.error(f"点击失败: {e}")
                                 continue
@@ -1142,7 +1154,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             if elem_href and ('studycenter' in elem_href or 'course' in elem_href or 'learning' in elem_href):
                                 self.logger.info("✅ 这是有效的课程链接")
                                 
-                                # 【改进4】多策略点击：普通点击 → JavaScript点击
+                                # 【改进4】多策略点击：普通点击 → ActionChains点击
                                 try:
                                     self.logger.debug("尝试普通点击...")
                                     element.click()
@@ -1150,14 +1162,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     self.smart_wait(5)
                                     return True
                                 except Exception as click_err:
-                                    self.logger.debug(f"普通点击失败: {click_err}，尝试JavaScript点击...")
+                                    self.logger.debug(f"普通点击失败: {click_err}，尝试ActionChains点击...")
                                     try:
-                                        self.driver.execute_script("arguments[0].click();", element)
-                                        self.logger.info("✅ JavaScript点击成功")
+                                        from selenium.webdriver.common.action_chains import ActionChains
+                                        actions = ActionChains(self.driver)
+                                        actions.move_to_element(element)
+                                        actions.click()
+                                        actions.perform()
+                                        self.logger.info("✅ ActionChains点击成功")
                                         self.smart_wait(5)
                                         return True
-                                    except Exception as js_err:
-                                        self.logger.warning(f"JavaScript点击也失败: {js_err}")
+                                    except Exception as ac_err:
+                                        self.logger.warning(f"ActionChains点击也失败: {ac_err}")
                                         continue
                             else:
                                 self.logger.debug(f"⚠️  <a>标签但href无效: {elem_href}")
@@ -1198,8 +1214,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                                 return True
                                             except:
                                                 try:
-                                                    self.driver.execute_script("arguments[0].click();", inner_link)
-                                                    self.logger.info("✅ 内部链接JavaScript点击成功")
+                                                    from selenium.webdriver.common.action_chains import ActionChains
+                                                    actions = ActionChains(self.driver)
+                                                    actions.move_to_element(inner_link)
+                                                    actions.click()
+                                                    actions.perform()
+                                                    self.logger.info("✅ 内部链接ActionChains点击成功")
                                                     self.smart_wait(5)
                                                     return True
                                                 except Exception as e:
@@ -1652,8 +1672,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.logger.info("✅ 普通点击成功")
                     except:
                         try:
-                            self.driver.execute_script("arguments[0].click();", first_video['element'])
-                            self.logger.info("✅ JavaScript点击成功")
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(first_video['element'])
+                            actions.click()
+                            actions.perform()
+                            self.logger.info("✅ ActionChains点击成功")
                         except Exception as e:
                             self.logger.error(f"❌ 点击视频失败: {e}")
                     
@@ -1879,10 +1903,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.smart_wait(1)
                             break
                         except:
-                            # 普通点击失败，尝试JavaScript点击
+                            # 普通点击失败，尝试ActionChains点击
                             try:
-                                self.driver.execute_script("arguments[0].click();", btn)
-                                self.logger.info(f"✅ 关闭弹窗(JS): {selector[:60]}")
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element(btn)
+                                actions.click()
+                                actions.perform()
+                                self.logger.info(f"✅ 关闭弹窗(ActionChains): {selector[:60]}")
                                 closed_this_round = True
                                 self.smart_wait(1)
                                 break
@@ -2220,8 +2248,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         current_option.click()
                         self.smart_wait(0.5)
                     except:
-                        # 如果直接点击失败，尝试用JavaScript点击
-                        self.driver.execute_script("arguments[0].click();", current_option)
+                        # 如果直接点击失败，尝试用ActionChains点击
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(current_option)
+                        actions.click()
+                        actions.perform()
                         self.smart_wait(0.5)
                     
                     # 查找并点击确定/提交按钮
@@ -2256,8 +2288,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                         break
                                     except:
                                         try:
-                                            self.driver.execute_script("arguments[0].click();", submit_btn)
-                                            self.logger.info("✅ JavaScript点击提交")
+                                            from selenium.webdriver.common.action_chains import ActionChains
+                                            actions = ActionChains(self.driver)
+                                            actions.move_to_element(submit_btn)
+                                            actions.click()
+                                            actions.perform()
+                                            self.logger.info("✅ ActionChains点击提交")
                                             submit_clicked = True
                                             break
                                         except:
@@ -2457,7 +2493,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.smart_wait(0.3)
                             except:
                                 try:
-                                    self.driver.execute_script("arguments[0].click();", option)
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    actions = ActionChains(self.driver)
+                                    actions.move_to_element(option)
+                                    actions.click()
+                                    actions.perform()
                                     self.smart_wait(0.3)
                                 except Exception as e:
                                     self.logger.warning(f"⚠️  选择 {label} 失败: {e}")
@@ -2492,8 +2532,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     break
                                 except:
                                     try:
-                                        self.driver.execute_script("arguments[0].click();", submit_btn)
-                                        self.logger.info("✅ JavaScript点击提交")
+                                        from selenium.webdriver.common.action_chains import ActionChains
+                                        actions = ActionChains(self.driver)
+                                        actions.move_to_element(submit_btn)
+                                        actions.click()
+                                        actions.perform()
+                                        self.logger.info("✅ ActionChains点击提交")
                                         submit_clicked = True
                                         self.smart_wait(1)
                                         break
@@ -2755,7 +2799,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     return True
                 except:
                     try:
-                        self.driver.execute_script("arguments[0].click();", correct_option)
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(correct_option)
+                        actions.click()
+                        actions.perform()
                         self.smart_wait(0.5)
                         return True
                     except:
@@ -2798,10 +2846,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.smart_wait(1)
                                 return True
                             except:
-                                # 如果普通点击失败，尝试JavaScript点击
+                                # 如果普通点击失败，尝试ActionChains点击
                                 try:
-                                    self.driver.execute_script("arguments[0].click();", close_btn)
-                                    self.logger.info(f"✅ 已关闭题目弹窗(JS): {selector[:60]}")
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    actions = ActionChains(self.driver)
+                                    actions.move_to_element(close_btn)
+                                    actions.click()
+                                    actions.perform()
+                                    self.logger.info(f"✅ 已关闭题目弹窗(ActionChains): {selector[:60]}")
                                     self.smart_wait(1)
                                     return True
                                 except:
@@ -2925,9 +2977,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.info("✅ 普通点击成功")
                 except:
                     try:
-                        # 如果普通点击失败，尝试JavaScript点击
-                        self.driver.execute_script("arguments[0].click();", first_video['element'])
-                        self.logger.info("✅ JavaScript点击成功")
+                        # 如果普通点击失败，尝试ActionChains点击
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(first_video['element'])
+                        actions.click()
+                        actions.perform()
+                        self.logger.info("✅ ActionChains点击成功")
                     except Exception as e:
                         self.logger.error(f"❌ 点击视频失败: {e}")
                 
@@ -3028,8 +3084,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.info("✅ 普通点击成功")
                 except:
                     try:
-                        self.driver.execute_script("arguments[0].click();", video_to_play['element'])
-                        self.logger.info("✅ JavaScript点击成功")
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(video_to_play['element'])
+                        actions.click()
+                        actions.perform()
+                        self.logger.info("✅ ActionChains点击成功")
                     except Exception as e:
                         self.logger.error(f"❌ 点击视频失败: {e}")
                         continue
