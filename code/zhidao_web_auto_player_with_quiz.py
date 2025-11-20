@@ -835,11 +835,22 @@ class ZhidaoWebAutoPlayerWithQuiz:
             for tab_selector in tab_selectors:
                 try:
                     tabs = self.driver.find_elements(By.XPATH, tab_selector)
-                    if tabs:
-                        shared_tab = tabs[0]
-                        self.logger.info(f"✅ 找到'共享课'标签: {tab_selector}")
+                    # 过滤出可见且可交互的元素
+                    for tab in tabs:
+                        try:
+                            if tab.is_displayed() and tab.is_enabled():
+                                # 检查元素尺寸（确保不是0x0的隐藏元素）
+                                size = tab.size
+                                if size['width'] > 0 and size['height'] > 0:
+                                    shared_tab = tab
+                                    self.logger.info(f"✅ 找到'共享课'标签: {tab_selector}")
+                                    break
+                        except:
+                            continue
+                    if shared_tab:
                         break
-                except:
+                except Exception as e:
+                    self.logger.debug(f"选择器失败 {tab_selector}: {e}")
                     continue
             
             if not shared_tab:
@@ -854,13 +865,23 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if not is_active:
                 self.logger.info("点击激活'共享课'标签...")
                 try:
+                    # 滚动到元素可见位置
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", shared_tab)
+                    self.smart_wait(0.5)
                     shared_tab.click()
-                except:
-                    from selenium.webdriver.common.action_chains import ActionChains
-                    actions = ActionChains(self.driver)
-                    actions.move_to_element(shared_tab)
-                    actions.click()
-                    actions.perform()
+                    self.logger.info("✅ 点击成功")
+                except Exception as e:
+                    self.logger.warning(f"普通点击失败，尝试ActionChains: {e}")
+                    try:
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(shared_tab)
+                        actions.click()
+                        actions.perform()
+                        self.logger.info("✅ ActionChains点击成功")
+                    except Exception as e2:
+                        self.logger.error(f"❌ 所有点击方式都失败: {e2}")
+                        return False
                 self.smart_wait(2)
             else:
                 self.logger.info("✅ '共享课'标签已激活")
