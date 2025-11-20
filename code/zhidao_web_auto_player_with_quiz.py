@@ -21,6 +21,64 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.action_chains import ActionChains
+
+
+def bezier_curve(start, end, control1=None, control2=None, steps=20):
+    """
+    生成贝塞尔曲线路径点（带随机偏差）
+    
+    Args:
+        start: 起点 (x, y)
+        end: 终点 (x, y)
+        control1: 控制点1 (x, y)，如果为None则自动生成
+        control2: 控制点2 (x, y)，如果为None则自动生成
+        steps: 路径点数量
+    
+    Returns:
+        路径点列表 [(x1, y1), (x2, y2), ...]
+    """
+    x0, y0 = start
+    x3, y3 = end
+    
+    # 自动生成控制点，创建自然的曲线
+    if control1 is None:
+        # 控制点1在起点和终点之间偏移
+        offset_x = random.uniform(-50, 50)
+        offset_y = random.uniform(-30, 30)
+        x1 = x0 + (x3 - x0) * 0.25 + offset_x
+        y1 = y0 + (y3 - y0) * 0.25 + offset_y
+    else:
+        x1, y1 = control1
+    
+    if control2 is None:
+        # 控制点2在起点和终点之间偏移
+        offset_x = random.uniform(-50, 50)
+        offset_y = random.uniform(-30, 30)
+        x2 = x0 + (x3 - x0) * 0.75 + offset_x
+        y2 = y0 + (y3 - y0) * 0.75 + offset_y
+    else:
+        x2, y2 = control2
+    
+    # 生成贝塞尔曲线路径点
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        # 三次贝塞尔曲线公式
+        x = (1-t)**3 * x0 + 3*(1-t)**2*t * x1 + 3*(1-t)*t**2 * x2 + t**3 * x3
+        y = (1-t)**3 * y0 + 3*(1-t)**2*t * y1 + 3*(1-t)*t**2 * y2 + t**3 * y3
+        
+        # 【反检测优化】为每个路径点添加随机像素偏差（5-10像素）
+        # 注意：最后一个点（终点）不添加偏差，确保准确到达目标
+        if i < steps:  # 不是终点
+            deviation_x = random.uniform(-10, 10)  # 上下偏差
+            deviation_y = random.uniform(-10, 10)  # 左右偏差
+            x += deviation_x
+            y += deviation_y
+        
+        points.append((int(x), int(y)))
+    
+    return points
 
 
 class ZhidaoWebAutoPlayerWithQuiz:
@@ -242,6 +300,83 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """智能等待（随机波动）"""
         actual_wait = seconds + random.uniform(-0.5, 0.5)
         time.sleep(max(0.5, actual_wait))
+    
+    def move_to_element_with_curve(self, element):
+        """
+        使用贝塞尔曲线移动鼠标到元素并点击
+        
+        Args:
+            element: 目标元素
+        
+        Returns:
+            bool: 是否成功
+        """
+        try:
+            # 获取元素位置和尺寸
+            element_location = element.location
+            element_size = element.size
+            
+            # 计算目标位置（元素中心点）
+            target_x = element_location['x'] + element_size['width'] / 2
+            target_y = element_location['y'] + element_size['height'] / 2
+            
+            # 获取当前鼠标位置（简化处理，使用窗口中心作为起点）
+            window_size = self.driver.get_window_size()
+            start_x = window_size['width'] / 2
+            start_y = window_size['height'] / 2
+            
+            # 生成贝塞尔曲线路径（15-25个点之间随机）
+            steps = random.randint(15, 25)
+            curve_points = bezier_curve(
+                start=(start_x, start_y),
+                end=(target_x, target_y),
+                steps=steps
+            )
+            
+            # 使用ActionChains沿曲线移动
+            actions = ActionChains(self.driver)
+            
+            # 移动到起点
+            actions.move_by_offset(curve_points[0][0] - start_x, curve_points[0][1] - start_y)
+            
+            # 沿曲线移动，每次移动添加随机延时
+            for i in range(1, len(curve_points)):
+                prev_x, prev_y = curve_points[i-1]
+                curr_x, curr_y = curve_points[i]
+                
+                # 计算相对偏移
+                offset_x = curr_x - prev_x
+                offset_y = curr_y - prev_y
+                
+                # 移动到下一个点
+                actions.move_by_offset(offset_x, offset_y)
+                
+                # 【反检测】随机暂停时间（0.01-0.05秒）
+                if random.random() < 0.3:  # 30%概率暂停
+                    actions.pause(random.uniform(0.01, 0.05))
+            
+            # 移动到目标元素
+            actions.move_to_element(element)
+            
+            # 【反检测】到达目标后短暂停顿（模拟人类瞄准）
+            actions.pause(random.uniform(0.1, 0.3))
+            
+            # 点击
+            actions.click()
+            
+            # 执行动作链
+            actions.perform()
+            
+            self.logger.debug(f"✅ 曲线移动并点击成功（路径点数: {steps}）")
+            return True
+            
+        except Exception as e:
+            self.logger.debug(f"曲线移动失败: {e}，使用普通点击")
+            try:
+                element.click()
+                return True
+            except:
+                return False
     
     def login(self, username=None, password=None):
         """登录知到网站（完全模仿原版本）"""
@@ -1677,14 +1812,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     except:
                         pass
                     
-                    # 【建议3】模拟用户行为：移动鼠标到按钮上再点击
+                    # 【建议3】模拟用户行为：使用贝塞尔曲线移动鼠标到按钮上再点击
                     try:
-                        from selenium.webdriver.common.action_chains import ActionChains
-                        ActionChains(self.driver).move_to_element(btn).click().perform()
-                        self.logger.info(f"✅ 关闭弹窗(鼠标移动): {selector[:60]}")
-                        closed_this_round = True
-                        self.smart_wait(1)  # 等待弹窗关闭动画完成
-                        break
+                        # 【P2 - 反检测优化】使用曲线轨迹移动鼠标
+                        if self.move_to_element_with_curve(btn):
+                            self.logger.info(f"✅ 关闭弹窗(曲线移动): {selector[:60]}")
+                            closed_this_round = True
+                            self.smart_wait(1)  # 等待弹窗关闭动画完成
+                            break
                     except:
                         # 如果鼠标移动点击失败，尝试普通点击
                         try:
@@ -1914,22 +2049,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
         try:
             self.logger.info("📝 开始回答题目...")
             
+            # 【P0 - 反检测优化】添加"阅读题目"时间，模拟用户看题干
+            import random
+            reading_time = random.uniform(5, 10)
+            self.logger.info(f"📖 模拟阅读题目时间: {reading_time:.2f} 秒")
+            self.smart_wait(reading_time)
+            
             # 查找所有选项元素（优先级从高到低）
+            # 【P1 - 反检测优化】减少选择器数量，只保留最常用的3个
             option_selectors = [
                 "//input[@type='radio']",  # 单选框（最优先）
                 "//input[@type='checkbox']",  # 多选框
                 "//label[contains(@class, 'el-radio')]",  # Element UI单选框标签
-                "//label[contains(@class, 'el-checkbox')]",  # Element UI多选框标签
-                "//div[contains(@class, 'el-radio')]",  # Element UI单选框容器
-                "//div[contains(@class, 'el-checkbox')]",  # Element UI多选框容器
-                "//span[contains(@class, 'el-radio__label')]",  # Element UI单选框文本
-                "//span[contains(@class, 'el-checkbox__label')]",  # Element UI多选框文本
-                # 【新增】知到平台题目选项的通用选择器
-                "//li[contains(@class, 'topic-item')]",  # 知到题目选项（最准确）
-                "//div[contains(@class, 'topic-option-item')]",  # 知到题目选项内容
-                "//div[contains(@class, 'option-item')]",  # 选项项
-                "//div[contains(@class, 'answer-option')]",  # 答案选项
-                "//span[contains(text(), 'A') or contains(text(), 'B') or contains(text(), 'C') or contains(text(), 'D')]/ancestor::li",  # 包含A/B/C/D的选项父li元素
             ]
             
             options = []
@@ -1989,10 +2120,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
             option_labels = ['A', 'B', 'C', 'D']
             max_attempts = min(len(options), 4)  # 最多尝试4个选项
             
-            for attempt in range(max_attempts):
-                current_label = option_labels[attempt] if attempt < len(option_labels) else f"选项{attempt+1}"
+            # 【P0 - 反检测优化】打乱选项尝试顺序，不再固定A→B→C→D
+            attempt_indices = list(range(max_attempts))
+            random.shuffle(attempt_indices)  # 随机打乱顺序
+            self.logger.info(f"🎲 选项尝试顺序: {[option_labels[i] for i in attempt_indices]}")
+            
+            for attempt_idx in attempt_indices:
+                current_label = option_labels[attempt_idx] if attempt_idx < len(option_labels) else f"选项{attempt_idx+1}"
                 try:
-                    current_option = options[attempt]
+                    current_option = options[attempt_idx]
                     
                     self.logger.info(f"🎯 尝试选择 {current_label}...")
                     
@@ -2012,13 +2148,23 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.smart_wait(0.5)
                     
                     # 查找并点击确定/提交按钮
+                    # 【P1 - 反检测优化】减少选择器数量，只保疙3个最常用
                     submit_buttons = [
                         "//span[contains(text(), '确定')]",
                         "//button[contains(text(), '确定')]",
-                        "//span[contains(text(), '提交')]",
-                        "//button[contains(text(), '提交')]",
                         "//div[contains(@class, 'popbtn_ok')]",  # 知到平台的确定按钮
                     ]
+                    
+                    # 【P1 - 反检测优化】扩大提交延时范围到2-6秒
+                    submit_delay = random.uniform(2, 6)
+                    self.logger.info(f"⏰ 提交前随机等待 {submit_delay:.2f} 秒")
+                    self.smart_wait(submit_delay)
+                    
+                    # 【反检测优化】模拟犹豫，50%概率额外延时0.5-1秒
+                    if random.random() < 0.5:
+                        hesitation = random.uniform(0.5, 1)
+                        self.logger.info(f"🤔 模拟犹豫 {hesitation:.2f} 秒")
+                        self.smart_wait(hesitation)
                     
                     submit_clicked = False
                     for btn_selector in submit_buttons:
@@ -2055,8 +2201,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.quizzes_answered_this_session += 1
                         self.progress['total_quizzes'] += 1
                         
-                        # 等待一下确保结果显示完毕
-                        self.smart_wait(2)
+                        # 【P0 - 反检测优化】答对后查看结果时间，2-4秒
+                        result_view_time = random.uniform(2, 4)
+                        self.logger.info(f"📊 查看答题结果 {result_view_time:.2f} 秒")
+                        self.smart_wait(result_view_time)
                         
                         # 点击关闭按钮关闭题目弹窗
                         if self.close_quiz_dialog():
@@ -2125,7 +2273,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 
                                 self.quizzes_answered_this_session += 1
                                 self.progress['total_quizzes'] += 1
-                                self.smart_wait(2)
+                                
+                                # 【P0 - 反检测优化】答错后查看正确答案解析，2-4秒
+                                answer_review_time = random.uniform(2, 4)
+                                self.logger.info(f"💡 查看正确答案解析 {answer_review_time:.2f} 秒")
+                                self.smart_wait(answer_review_time)
                                 
                                 # 点击关闭按钮关闭题目弹窗
                                 if self.close_quiz_dialog():
@@ -2183,12 +2335,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if is_multiple_choice or max_attempts >= 4:
                 self.logger.info("💡 疑似多选题或无法确定答案，选择所有选项ABCD后关闭...")
                 
+                # 【P1 - 反检测优化】多选题选项也要随机打乱顺序
+                option_count = min(4, len(options))
+                select_indices = list(range(option_count))
+                random.shuffle(select_indices)  # 随机打乱选择顺序
+                self.logger.info(f"🎲 多选题选项顺序: {[option_labels[i] for i in select_indices]}")
+                
                 # 选择所有选项
                 all_selected = True
-                for i in range(min(4, len(options))):
+                for idx in select_indices:
                     try:
-                        option = options[i]
-                        label = option_labels[i] if i < len(option_labels) else f"选项{i+1}"
+                        option = options[idx]
+                        label = option_labels[idx] if idx < len(option_labels) else f"选项{idx+1}"
                         
                         # 检查是否已选中
                         is_selected = False
@@ -2528,24 +2686,20 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def close_quiz_dialog(self):
         """关闭题目对话框"""
         try:
+            # 【P0 - 反检测优化】关闭题目弹窗前延长等待时间到2-5秒
+            import random
+            close_delay = random.uniform(2, 5)
+            self.logger.info(f"⏳ 关闭弹窗前等待 {close_delay:.2f} 秒")
+            self.smart_wait(close_delay)
+            
+            # 【P1 - 反检测优化】减少选择器数量，只保疙4个最常用
             close_selectors = [
-                # 【最高优先级】知到平台题目弹窗的关闭按钮（根据实际HTML结构）
-                "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and text()='关闭']",  # 精确匹配文本为"关闭"的按钮
-                "//div[@class='el-dialog__footer']//span[@class='dialog-footer']//div[@class='btn']",  # 精确路径
+                # 知到平台题目弹窗的关闭按钮
+                "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and text()='关闭']",  # 精确匹配
                 "//span[@class='dialog-footer']//div[@class='btn']",  # 直接找footer下的btn
-                "//div[contains(@class, 'el-dialog__footer')]//div[contains(@class, 'btn') and contains(text(), '关闭')]",
-                
                 # Element UI标准关闭按钮
-                "//button[contains(@class, 'el-dialog__headerbtn')]",  # Element UI头部关闭按钮
-                "//button[contains(@class, 'el-dialog__close')]",  # Element UI对话框关闭
-                "//i[contains(@class, 'el-icon-close')]",  # Element UI close图标
-                
-                # 通用关闭按钮（降低优先级）
+                "//button[contains(@class, 'el-dialog__headerbtn')]",  # 头部关闭按钮
                 "//button[contains(text(), '关闭')]",  # 文本为"关闭"的按钮
-                "//div[contains(@class, 'el-icon-close')]",  # Element UI关闭图标div
-                "//i[contains(@class, 'close')]",  # 通用close图标
-                "//*[@title='关闭']",  # title属性为"关闭"的元素
-                "//button[contains(@class, 'close')]",  # class包含close的按钮
             ]
             
             for selector in close_selectors:
@@ -2582,7 +2736,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """等待当前视频播放完成（带卡停检测）"""
         self.logger.info("⏰ 开始监控视频播放...")
         
-        check_interval = 10  # 每10秒检查一次
+        # 【反检测优化】检查间隔随机化，不再固定10秒
+        import random
+        check_interval = random.uniform(8, 15)  # 8-15秒随机间隔
         max_wait_time = max_wait_minutes * 60  # 最长等待时间（秒）
         elapsed_time = 0
         
@@ -2625,7 +2781,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # TODO: 添加视频完成检测逻辑
             # 可以通过检测视频总时长和当前进度来判断
             
+            # 【反检测优化】每次等待后重新生成下次检查间隔
             self.smart_wait(check_interval)
+            check_interval = random.uniform(8, 15)  # 下次检查间隔随机化
             elapsed_time = time.time() - start_time
             
             # 每分钟输出一次日志
