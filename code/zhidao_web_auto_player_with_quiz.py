@@ -154,7 +154,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         self.logger.addHandler(console_handler)
     
     def check_and_cleanup_logs(self):
-        """检查并清理日志文件"""
+        """检查并清理日志文件（启动时调用）"""
         # 获取项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
@@ -165,15 +165,45 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         log_file = os.path.join(project_root, 'log', f'zhidao_account{account_num}_quiz.log')
         
-        # 检查日志文件大小
+        # 检查日志文件大小，如果超过20MB则清理
         if os.path.exists(log_file):
             file_size = os.path.getsize(log_file) / (1024 * 1024)  # MB
             if file_size > 20:
                 try:
-                    os.remove(log_file)
-                    print(f"✅ 日志文件超过20MB，已清理: {log_file}")
+                    # 读取现有日志
+                    with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                    
+                    # 如果超过10000行，保留最后5000行
+                    if len(lines) > 10000:
+                        # 添加清理标记
+                        cleanup_header = [
+                            "="*60 + "\n",
+                            "🧹 日志文件已清理\n",
+                            f"清理时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+                            f"清理说明: 日志文件超过{file_size:.1f}MB，已清理并保留最近5000行\n",
+                            f"删除行数: {len(lines) - 5000}\n",
+                            f"保留行数: 5000\n",
+                            "="*60 + "\n\n"
+                        ]
+                        
+                        # 保留最后5000行
+                        new_content = cleanup_header + lines[-5000:]
+                        
+                        # 写回文件
+                        with open(log_file, 'w', encoding='utf-8') as f:
+                            f.writelines(new_content)
+                        
+                        new_size = os.path.getsize(log_file) / (1024 * 1024)
+                        print(f"✅ 日志文件已清理: {log_file}")
+                        print(f"   原大小: {file_size:.2f}MB -> 新大小: {new_size:.2f}MB")
+                        print(f"   节省空间: {file_size - new_size:.2f}MB ({(file_size - new_size) / file_size * 100:.1f}%)")
+                    else:
+                        print(f"ℹ️  日志文件大小: {file_size:.2f}MB，行数: {len(lines)}，无需清理")
                 except Exception as e:
                     print(f"清理日志失败: {e}")
+            else:
+                print(f"✅ 日志文件大小: {file_size:.2f}MB，无需清理")
     
     def load_config(self):
         """加载全局配置"""
@@ -2058,6 +2088,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # 查找所有选项元素（优先级从高到低）
             # 【P1 - 反检测优化】减少选择器数量，只保留最常用的选择器
             # 【修复】添加知到平台专用选择器 li.topic-item（最高优先级）
+            # 【修复2】添加显式等待，确保选项元素已加载
             option_selectors = [
                 "//li[contains(@class, 'topic-item')]",  # 知到平台题目选项（最高优先级）
                 "//input[@type='radio']",  # 单选框
@@ -2069,6 +2100,22 @@ class ZhidaoWebAutoPlayerWithQuiz:
             options = []
             for selector in option_selectors:
                 try:
+                    # 【新增】添加显式等待，等待选项元素出现
+                    from selenium.webdriver.support.ui import WebDriverWait
+                    from selenium.webdriver.support import expected_conditions as EC
+                    
+                    # 等待至少一个选项元素可见（最多等待5秒）
+                    try:
+                        WebDriverWait(self.driver, 5).until(
+                            EC.presence_of_element_located((By.XPATH, selector))
+                        )
+                    except:
+                        # 如果等待超时，继续尝试下一个选择器
+                        continue
+                    
+                    # 再等待一小段时间确保元素完全渲染
+                    self.smart_wait(0.5)
+                    
                     found_options = self.driver.find_elements(By.XPATH, selector)
                     if found_options:
                         # 过滤出可见的选项
@@ -3112,34 +3159,48 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.cleanup()
     
     def cleanup(self):
-        """清理资源"""
-        # 清空已观看视频列表（任务结束时清空）
-        if hasattr(self, 'watched_video_list'):
-            self.watched_video_list = []
-            self.logger.debug("✅ 已清空已观看视频列表")
-        
-        self.logger.info("\n" + "="*60)
-        self.logger.info("📊 本次运行统计")
-        self.logger.info("="*60)
-        self.logger.info(f"回答题目数: {self.quizzes_answered_this_session}")
-        
-        # 安全访问progress
-        if hasattr(self, 'progress') and self.progress:
-            self.logger.info(f"总计回答题目: {self.progress.get('total_quizzes', 0)}")
-        
-        self.logger.info("="*60)
-        
-        # 保存进度
-        if hasattr(self, 'progress'):
-            self.save_progress()
-        
-        # 关闭浏览器
+        """清理资源（关闭时调用）"""
+        # 【优先级最高】关闭浏览器（确保不被中断）
         if hasattr(self, 'driver'):
             try:
                 self.driver.quit()
-                self.logger.info("✅ 浏览器已关闭")
-            except:
-                pass
+                print("✅ 浏览器已关闭")  # 使用print确保显示
+            except Exception as e:
+                print(f"关闭浏览器失败: {e}")
+        
+        # 以下操作可能被中断，但不影响浏览器关闭
+        try:
+            # 清空已观看视频列表
+            if hasattr(self, 'watched_video_list'):
+                self.watched_video_list = []
+                if hasattr(self, 'logger'):
+                    self.logger.debug("✅ 已清空已观看视频列表")
+            
+            if hasattr(self, 'logger'):
+                self.logger.info("\n" + "="*60)
+                self.logger.info("📊 本次运行统计")
+                self.logger.info("="*60)
+                self.logger.info(f"回答题目数: {self.quizzes_answered_this_session}")
+                
+                # 安全访问progress
+                if hasattr(self, 'progress') and self.progress:
+                    self.logger.info(f"总计回答题目: {self.progress.get('total_quizzes', 0)}")
+                
+                self.logger.info("="*60)
+            
+            # 保存进度
+            if hasattr(self, 'progress'):
+                self.save_progress()
+            
+            # 【新增】关闭时清理日志（可能被中断，但不影响浏览器关闭）
+            if hasattr(self, 'logger'):
+                self.logger.info("🧹 检查并清理日志文件...")
+            self.check_and_cleanup_logs()
+            
+        except KeyboardInterrupt:
+            print("⚠️  清理过程被中断，但浏览器已关闭")
+        except Exception as e:
+            print(f"清理过程异常: {e}")
 
 
 def main():
