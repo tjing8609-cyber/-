@@ -2899,39 +2899,47 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 
                 self.smart_wait(3)  # 等待视频加载
                 
-                # 使用JavaScript直接启动视频播放（支持后台运行）
-                self.logger.info("🎯 使用JavaScript启动视频播放...")
+                # 【改进】点击视频中央区域启动播放（避免被检测）
+                self.logger.info("🎯 点击视频中央区域启动播放...")
                 try:
-                    # 方案2：直接操作video元素触发播放
-                    play_result = self.driver.execute_script("""
-                        // 查找video元素
-                        var video = document.querySelector('video');
-                        if (video) {
-                            // 尝试播放
-                            var playPromise = video.play();
-                            
-                            if (playPromise !== undefined) {
-                                playPromise.then(function() {
-                                    return 'success';
-                                }).catch(function(error) {
-                                    return 'error: ' + error.message;
-                                });
-                            }
-                            
-                            return 'video found and play() called';
-                        } else {
-                            return 'video not found';
-                        }
-                    """)
-                    
-                    if play_result:
-                        self.logger.info(f"✅ JavaScript播放结果: {play_result}")
+                    # 查找video元素并点击中央（添加随机偏移）
+                    video_element = self.driver.find_element(By.TAG_NAME, 'video')
+                    if video_element:
+                        # 获取视频元素的位置和大小
+                        location = video_element.location
+                        size = video_element.size
+                        
+                        # 计算中心点
+                        center_x = location['x'] + size['width'] // 2
+                        center_y = location['y'] + size['height'] // 2
+                        
+                        # 添加随机偏移（±50像素）
+                        import random
+                        offset_x = random.randint(-50, 50)
+                        offset_y = random.randint(-50, 50)
+                        
+                        target_x = center_x + offset_x
+                        target_y = center_y + offset_y
+                        
+                        self.logger.info(f"📍 视频中心坐标: ({center_x}, {center_y})")
+                        self.logger.info(f"📍 随机偏移: ({offset_x:+d}, {offset_y:+d}) 像素")
+                        self.logger.info(f"📍 实际点击坐标: ({target_x}, {target_y})")
+                        
+                        # 使用ActionChains点击指定坐标
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        # 移动到视频元素
+                        actions.move_to_element_with_offset(video_element, offset_x, offset_y)
+                        actions.click()
+                        actions.perform()
+                        
+                        self.logger.info("✅ 已点击视频区域（含随机偏移）")
                         self.smart_wait(2)
                     else:
-                        self.logger.warning("⚠️  未找到video元素，可能需要等待")
+                        self.logger.warning("⚠️  未找到video元素")
                         
                 except Exception as e:
-                    self.logger.warning(f"⚠️  JavaScript启动播放失败: {e}，继续监控")
+                    self.logger.warning(f"⚠️  点击视频失败: {e}，继续监控")
             
             # 【改进】主循环：每次播完一个视频后重新查找下一个
             self.logger.info("\n" + "="*60)
@@ -2994,33 +3002,47 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 
                 self.smart_wait(3)
                 
-                # 启动播放
+                # 【改进】点击视频中央区域启动播放（避免被检测）
+                self.logger.info("🎯 点击视频中央区域启动播放...")
                 try:
-                    play_result = self.driver.execute_script("""
-                        var video = document.querySelector('video');
-                        if (video) {
-                            var playPromise = video.play();
-                            if (playPromise !== undefined) {
-                                playPromise.then(function() {
-                                    return 'success';
-                                }).catch(function(error) {
-                                    return 'error: ' + error.message;
-                                });
-                            }
-                            return 'video found and play() called';
-                        } else {
-                            return 'video not found';
-                        }
-                    """)
-                    
-                    if play_result:
-                        self.logger.info(f"✅ JavaScript播放结果: {play_result}")
+                    # 查找video元素并点击中央（添加随机偏移）
+                    video_element = self.driver.find_element(By.TAG_NAME, 'video')
+                    if video_element:
+                        # 获取视频元素的位置和大小
+                        location = video_element.location
+                        size = video_element.size
+                        
+                        # 计算中心点
+                        center_x = location['x'] + size['width'] // 2
+                        center_y = location['y'] + size['height'] // 2
+                        
+                        # 添加随机偏移（±50像素）
+                        import random
+                        offset_x = random.randint(-50, 50)
+                        offset_y = random.randint(-50, 50)
+                        
+                        target_x = center_x + offset_x
+                        target_y = center_y + offset_y
+                        
+                        self.logger.info(f"📍 视频中心坐标: ({center_x}, {center_y})")
+                        self.logger.info(f"📍 随机偏移: ({offset_x:+d}, {offset_y:+d}) 像素")
+                        self.logger.info(f"📍 实际点击坐标: ({target_x}, {target_y})")
+                        
+                        # 使用ActionChains点击指定坐标
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        # 移动到视频元素
+                        actions.move_to_element_with_offset(video_element, offset_x, offset_y)
+                        actions.click()
+                        actions.perform()
+                        
+                        self.logger.info("✅ 已点击视频区域（含随机偏移）")
                         self.smart_wait(2)
                     else:
-                        self.logger.warning("⚠️  未找到video元素，可能需要等待")
+                        self.logger.warning("⚠️  未找到video元素")
                         
                 except Exception as e:
-                    self.logger.warning(f"⚠️  JavaScript启动播放失败: {e}，继续监控")
+                    self.logger.warning(f"⚠️  点击视频失败: {e}，继续监控")
                 
                 # 监控视频播放并回答题目
                 self.logger.info("⏰ 开始监控视频播放...")
