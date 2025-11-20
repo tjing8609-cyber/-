@@ -3156,7 +3156,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.warning(f"⚠️  视频未检测到完成标记，可能超时")
                 
                 # 随机延迟
-                self.smart_wait()
+                import random
+                delay = random.uniform(5, 10)
+                self.smart_wait(delay)
             
             # 显示最终统计
             self.logger.info("\n" + "="*60)
