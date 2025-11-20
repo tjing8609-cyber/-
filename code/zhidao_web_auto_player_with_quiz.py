@@ -1,6 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
+Copyright (c) 2025 景潼
+Zhidao Auto is licensed under Mulan PSL v2.
+You can use this software according to the terms and conditions of the Mulan PSL v2.
+You may obtain a copy of Mulan PSL v2 at:
+         http://license.coscl.org.cn/MulanPSL2
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+See the Mulan PSL v2 for more details.
+
 知到网页版自动播放脚本 - 有题目版本 (v2.0)
 支持自动播放、题目弹窗处理、侧边栏导航、新版布局支持
 """
@@ -2109,34 +2119,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 actions.perform()
                 
                 self.logger.info(f"✅ 已点击视频中央 (偏移: {offset_x}, {offset_y})")
-                self.smart_wait(1)
             except Exception as e:
                 self.logger.warning(f"点击视频中央失败: {e}")
-            
-            # 策略2：再次点击确保播放恢复（模拟用户双击行为）
-            try:
-                self.logger.info("🔄 再次点击视频确保播放...")
-                video = self.driver.find_element(By.XPATH, "//video")
-                
-                import random
-                from selenium.webdriver.common.action_chains import ActionChains
-                
-                size = video.size
-                width = size['width']
-                height = size['height']
-                
-                # 第二次点击使用不同的偏移
-                offset_x = width // 2 + random.randint(-15, 15)
-                offset_y = height // 2 + random.randint(-15, 15)
-                
-                actions = ActionChains(self.driver)
-                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
-                actions.click()
-                actions.perform()
-                
-                self.logger.info(f"✅ 第二次点击完成 (偏移: {offset_x}, {offset_y})")
-            except Exception as e:
-                self.logger.warning(f"第二次点击失败: {e}")
             
             self.smart_wait(2)
             return True

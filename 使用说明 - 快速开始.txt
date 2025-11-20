@@ -61,6 +61,8 @@ zhidao/
 
 【方式2】命令行启动
 -------------------
+环境配置参考文档中的requirements.txt
+
 在项目根目录（zhidao文件夹）执行：
 ```
 python code\zhidao_launcher.py --account 启动\account1.json
