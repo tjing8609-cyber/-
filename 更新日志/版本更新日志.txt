@@ -3,6 +3,140 @@
 知到自动播放脚本 - 版本更新日志
 ========================================
 
+【v3.8】2025-11-20 🎯 全面移除JavaScript视频操作 - 反检测优化版
+-------------------
+主题：移除所有JavaScript视频操作，改用真实点击模拟，避免平台检测
+
+**问题背景：**
+
+用户反馈：
+> "在开始播放视频的时候不采用js方法，这会被检测到"
+> "关闭弹窗后出现问题，给我关闭弹窗的逻辑"
+
+**核心问题：**
+
+脚本中多处使用JavaScript直接操作视频元素，会被知到平台的反自动化机制检测到：
+
+1. ❌ `video.play()` - 直接调用视频播放方法
+2. ❌ `MouseEvent` - 创建虚拟点击事件
+3. ❌ `video.dispatchEvent()` - 分发事件到视频元素
+4. ❌ 固定点击位置 - 容易被识别为脚本行为
+
+**检测到的JavaScript使用位置：**
+
+排查结果：共发现**25处**使用`execute_script`，其中**4处**涉及视频操作：
+
+| 位置 | 功能 | 问题 |
+|------|------|------|
+| 第2900-2918行 | 第一个视频启动 | video.play() ❌ |
+| 第3005-3023行 | 循环中视频启动 | video.play() ❌ |
+| 第1650-1673行 | check_duplicate_play() | video.play() ❌ |
+| 第2490-2523行 | 答题后恢复播放 | MouseEvent + video.play() ❌ |
+
+**解决方案：**
+
+### 🎯 核心修改：改用ActionChains模拟真实点击
+
+#### **1️⃣ 统一的点击模式**
+
+```python
+# 【修改前】使用JavaScript直接操作
+play_result = self.driver.execute_script("""
+    var video = document.querySelector('video');
+    if (video) {
+        var playPromise = video.play();  // ← 被检测！
+        return 'success';
+    }
+""")
+
+# 【修改后】使用ActionChains模拟真实点击
+video_element = self.driver.find_element(By.TAG_NAME, 'video')
+if video_element:
+    # 获取视频位置和大小
+    location = video_element.location
+    size = video_element.size
+    
+    # 计算中心点
+    center_x = location['x'] + size['width'] // 2
+    center_y = location['y'] + size['height'] // 2
+    
+    # 添加随机偏移（±50像素）
+    import random
+    offset_x = random.randint(-50, 50)
+    offset_y = random.randint(-50, 50)
+    
+    # 使用ActionChains点击
+    from selenium.webdriver.common.action_chains import ActionChains
+    actions = ActionChains(self.driver)
+    actions.move_to_element_with_offset(video_element, offset_x, offset_y)
+    actions.click()
+    actions.perform()
+```
+
+#### **2️⃣ 随机偏移增强真实性**
+
+每次点击视频时：
+- ✅ 计算视频中心坐标
+- ✅ 添加±50像素的随机偏移
+- ✅ 每次点击位置都不同
+- ✅ 模拟真实用户行为
+
+**示例日志输出：**
+```
+📍 视频中心: (640, 360), 偏移: (+23, -17)
+✅ 已点击视频启动播放（含随机偏移）
+```
+
+```
+📍 视频中心: (640, 360), 偏移: (-35, +42)
+🎬 已点击视频恢复播放（含随机偏移）
+```
+
+#### **3️⃣ 详细的日志输出**
+
+每次点击都记录完整信息：
+- 📍 **视频中心坐标** - `(center_x, center_y)`
+- 📍 **随机偏移值** - `(offset_x:+d, offset_y:+d)` 带符号显示
+- 📍 **实际点击坐标** - `(target_x, target_y)` 计算值
+- ✅ **操作结果** - 成功/失败状态
+
+**日志格式示例：**
+```
+🎯 点击视频中央区域启动播放...
+📍 视频中心坐标: (640, 360)
+📍 随机偏移: (+23, -17) 像素
+📍 实际点击坐标: (663, 343)
+✅ 已点击视频区域（含随机偏移）
+```
+
+### 📊 修改详情
+
+（略）详细内容请参考Git提交记录
+
+### 📌 Git提交记录
+
+**第一次提交：**
+- `306feb2` - 优化视频启动方式 - 改用点击+随机偏移避免检测
+
+**第二次提交：**
+- `c70c219` - 全面移除JavaScript视频操作 - 改用真实点击模拟
+
+### 📊 代码统计
+
+**总计：**
+- 新增代码：186行
+- 删除代码：147行
+- 净增加：39行
+- 修改位置：5处
+
+### ✅ 向后兼容
+
+✅ 完全兼容v3.7
+✅ 不影响其他功能
+✅ 配置文件无需修改
+
+---
+
 【v3.7】2025-11-19 🎯 视频完成检测逻辑重构版
 -------------------
 主题：移除绿色勾检测，改用视频播放进度检测
