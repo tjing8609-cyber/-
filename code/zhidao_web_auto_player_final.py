@@ -750,12 +750,16 @@ class ZhidaoWebAutoPlayerFinal:
             login_btn.click()
             self.logger.info("已点击登录按钮")
         except Exception as e:
-            self.logger.warning(f"点击登录按钮失败，尝试JavaScript点击: {e}")
+            self.logger.warning(f"点击登录按钮失败，尝试ActionChains点击: {e}")
             try:
-                self.driver.execute_script("arguments[0].click();", login_btn)
-                self.logger.info("已通过JavaScript点击登录按钮")
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(self.driver)
+                actions.move_to_element(login_btn)
+                actions.click()
+                actions.perform()
+                self.logger.info("已通过ActionChains点击登录按钮")
             except Exception as e2:
-                self.logger.error(f"JavaScript点击也失败: {e2}")
+                self.logger.error(f"ActionChains点击也失败: {e2}")
                 return False
         
         self.smart_wait(3)
@@ -861,15 +865,19 @@ class ZhidaoWebAutoPlayerFinal:
                             self.smart_wait(5)
                             return True
                         except Exception as click_err:
-                            # 如果常规点击失败，尝试 JavaScript 点击
-                            self.logger.info(f"常规点击失败，尝试JavaScript点击")
+                            # 如果常规点击失败，尝试 ActionChains 点击
+                            self.logger.info(f"常规点击失败，尝试ActionChains点击")
                             try:
-                                self.driver.execute_script("arguments[0].click();", element)
-                                self.logger.info(f"通过JavaScript成功点击'{course_name}'课程")
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element(element)
+                                actions.click()
+                                actions.perform()
+                                self.logger.info(f"通过ActionChains成功点击'{course_name}'课程")
                                 self.smart_wait(5)
                                 return True
-                            except Exception as js_err:
-                                self.logger.warning(f"JavaScript点击也失败: {js_err}")
+                            except Exception as ac_err:
+                                self.logger.warning(f"ActionChains点击也失败: {ac_err}")
                                 continue
                     
                     except Exception as elem_err:
@@ -1582,15 +1590,19 @@ class ZhidaoWebAutoPlayerFinal:
             except Exception as e:
                 self.logger.warning(f"常规点击失败: {e}")
             
-            # 策略2：JavaScript执行click
+            # 策略2：ActionChains执行click
             if not click_success:
                 try:
-                    self.logger.info("策略2: 尝试JavaScript点击")
-                    self.driver.execute_script("arguments[0].click();", element)
-                    self.logger.info("✅ JavaScript点击成功")
+                    self.logger.info("策略2: 尝试ActionChains点击")
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(element)
+                    actions.click()
+                    actions.perform()
+                    self.logger.info("✅ ActionChains点击成功")
                     click_success = True
                 except Exception as e:
-                    self.logger.warning(f"JavaScript点击失败: {e}")
+                    self.logger.warning(f"ActionChains点击失败: {e}")
             
             # 策略3：中心坐标位置点击
             if not click_success:
@@ -1834,8 +1846,12 @@ class ZhidaoWebAutoPlayerFinal:
                                     self.smart_wait(1)
                                     break
                                 except:
-                                    self.driver.execute_script("arguments[0].click();", btn)
-                                    self.logger.info("✅ JavaScript点击了播放按钮")
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    actions = ActionChains(self.driver)
+                                    actions.move_to_element(btn)
+                                    actions.click()
+                                    actions.perform()
+                                    self.logger.info("✅ ActionChains点击了播放按钮")
                                     self.smart_wait(1)
                                     break
                     except:
