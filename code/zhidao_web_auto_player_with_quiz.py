@@ -2056,11 +2056,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.smart_wait(reading_time)
             
             # 查找所有选项元素（优先级从高到低）
-            # 【P1 - 反检测优化】减少选择器数量，只保留最常用的3个
+            # 【P1 - 反检测优化】减少选择器数量，只保留最常用的选择器
+            # 【修复】添加知到平台专用选择器 li.topic-item（最高优先级）
             option_selectors = [
-                "//input[@type='radio']",  # 单选框（最优先）
+                "//li[contains(@class, 'topic-item')]",  # 知到平台题目选项（最高优先级）
+                "//input[@type='radio']",  # 单选框
                 "//input[@type='checkbox']",  # 多选框
                 "//label[contains(@class, 'el-radio')]",  # Element UI单选框标签
+                "//label[contains(@class, 'el-checkbox')]",  # Element UI多选框标签
             ]
             
             options = []
