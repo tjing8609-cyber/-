@@ -91,10 +91,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 加载配置
         self.config = self.load_config()
         self.account_config = self.load_account_config()
-        self.progress = self.load_progress()
         
-        # 设置日志（必须在check_and_cleanup_logs之前）
+        # 【重要】先设置日志，因为后续方法会使用logger
         self.setup_logging()
+        
+        # 加载进度（需要使用logger）
+        self.progress = self.load_progress()
         
         # 运行次数计数器（每20次清理一次日志）
         self.check_and_cleanup_logs()
