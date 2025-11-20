@@ -251,6 +251,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     progress['completed_videos'] = []
                 if 'last_run' not in progress:
                     progress['last_run'] = None
+                
+                # 【重要】每次任务开始时，清空本次任务的视频记录列表
+                # 保留累计统计数据，但清空completed_videos作为本次任务的中间变量
+                self.logger.info("")
+                self.logger.info("="*60)
+                self.logger.info("🗑️  已清空本次任务的视频记录")
+                self.logger.info("🎯 本次任务将重新扫描所有视频")
+                self.logger.info("✅ 避免之前播放失败的视频被跳过")
+                self.logger.info("="*60)
+                progress['completed_videos'] = []  # 清空视频记录，作为本次任务的临时变量
                     
                 return progress
                 
