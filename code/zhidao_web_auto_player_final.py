@@ -776,16 +776,27 @@ class ZhidaoWebAutoPlayerFinal:
         if (usernameInputs.length > 0 && passwordInputs.length > 0) {{
             usernameInputs[0].value = '{username}';
             passwordInputs[0].value = '{password}';
-            if (loginButtons.length > 0) {{
-                loginButtons[0].click();
-                return true;
-            }}
+            return loginButtons.length > 0;
         }}
         return false;
         """
 
         result = self.driver.execute_script(script)
-        return result
+        if result:
+            # 找到输入框和按钮，使用ActionChains模拟真实点击
+            try:
+                login_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), '登录')] | //button[@type='submit'] | //input[@type='submit']")
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(self.driver)
+                actions.move_to_element(login_btn)
+                actions.click()
+                actions.perform()
+                self.logger.info("已通过ActionChains点击登录按钮")
+                return True
+            except Exception as e:
+                self.logger.error(f"ActionChains点击登录按钮失败: {e}")
+                return False
+        return False
 
     def find_chinese_history_course(self, course_name=None):
         """查找并点击课程"""
@@ -1544,17 +1555,32 @@ class ZhidaoWebAutoPlayerFinal:
             return 0
     
     def ensure_video_playing(self):
-        """确保视频正在播放"""
+        """确保视频正在播放（使用ActionChains点击视频）"""
         try:
             if not self.is_video_playing():
-                self.logger.info("视频未播放，尝试点击播放按钮")
-                # 在当前上下文尝试播放
-                self.driver.execute_script("""
-                    var video = document.querySelector('video');
-                    if (video) {
-                        video.play().catch(e => console.log('Play failed:', e));
-                    }
-                """)
+                self.logger.info("视频未播放，尝试点击视频启动")
+                # 使用ActionChains点击视频中央启动播放
+                try:
+                    video = self.driver.find_element(By.XPATH, "//video")
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    import random
+                    
+                    size = video.size
+                    width = size['width']
+                    height = size['height']
+                    
+                    offset_x = width // 2 + random.randint(-20, 20)
+                    offset_y = height // 2 + random.randint(-20, 20)
+                    
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
+                    actions.click()
+                    actions.perform()
+                    
+                    self.logger.info("✅ 已点击视频启动播放")
+                except Exception as e:
+                    self.logger.warning(f"点击视频失败: {e}")
+                
                 self.smart_wait(2)
                 return self.is_video_playing()
             return True
@@ -1604,26 +1630,9 @@ class ZhidaoWebAutoPlayerFinal:
                 except Exception as e:
                     self.logger.warning(f"ActionChains点击失败: {e}")
             
-            # 策略3：中心坐标位置点击
-            if not click_success:
-                try:
-                    self.logger.info("策略3: 尝试点击元素中心坐标")
-                    location = element.location
-                    size = element.size
-                    center_x = location['x'] + size['width'] / 2
-                    center_y = location['y'] + size['height'] / 2
-                    
-                    # 使用JavaScript点击坐标
-                    self.driver.execute_script(f"""
-                        var element = document.elementFromPoint({center_x}, {center_y});
-                        if (element) {{
-                            element.click();
-                        }}
-                    """)
-                    self.logger.info("✅ 中心坐标点击成功")
-                    click_success = True
-                except Exception as e:
-                    self.logger.warning(f"中心坐标点击失败: {e}")
+            # 策略3：删除（不再使用JavaScript点击坐标）
+            # 如果前两个策略都失败，直接返回失败
+            # JavaScript点击会触发防脚本检测
             
             if not click_success:
                 self.logger.error("❌ 所有点击策略均失败")
@@ -1795,31 +1804,24 @@ class ZhidaoWebAutoPlayerFinal:
                 video = self.driver.find_element(By.XPATH, "//video")
                 self.logger.info("找到video元素，点击中央区域")
                 
-                # 使用JavaScript点击视频中心
-                self.driver.execute_script("""
-                    var video = arguments[0];
-                    var rect = video.getBoundingClientRect();
-                    var centerX = rect.left + rect.width / 2;
-                    var centerY = rect.top + rect.height / 2;
-                    
-                    // 创建点击事件
-                    var clickEvent = new MouseEvent('click', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: centerX,
-                        clientY: centerY
-                    });
-                    
-                    // 获取中心位置的元素并点击
-                    var elem = document.elementFromPoint(centerX, centerY);
-                    if (elem) {
-                        elem.dispatchEvent(clickEvent);
-                        console.log('Clicked video center');
-                    }
-                """, video)
+                # 使用ActionChains模拟真实点击视频中心（避免JS触发防脚本检测）
+                from selenium.webdriver.common.action_chains import ActionChains
+                import random
                 
-                self.logger.info("✅ 成功点击视频中央区域")
+                size = video.size
+                width = size['width']
+                height = size['height']
+                
+                # 添加随机偏移
+                offset_x = width // 2 + random.randint(-30, 30)
+                offset_y = height // 2 + random.randint(-30, 30)
+                
+                actions = ActionChains(self.driver)
+                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
+                actions.click()
+                actions.perform()
+                
+                self.logger.info(f"✅ 成功点击视频中央区域(偏移: {offset_x}, {offset_y})")
                 self.smart_wait(2)
                 
             except Exception as e:
@@ -1859,18 +1861,29 @@ class ZhidaoWebAutoPlayerFinal:
             except Exception as e:
                 self.logger.debug(f"查找播放按钮时出错（不影响）: {e}")
             
-            # 策略3：使用JavaScript直接播放（兜底方案）
-            self.logger.info("使用JavaScript确保视频播放")
-            self.driver.execute_script("""
-                var video = document.querySelector('video');
-                if (video) {
-                    video.play().then(() => {
-                        console.log('Video playing');
-                    }).catch(e => {
-                        console.log('Play failed:', e);
-                    });
-                }
-            """)
+            # 策略3：使用ActionChains点击视频中央确保播放
+            self.logger.info("使用ActionChains点击视频中央启动播放")
+            try:
+                video = self.driver.find_element(By.TAG_NAME, 'video')
+                from selenium.webdriver.common.action_chains import ActionChains
+                import random
+                
+                size = video.size
+                width = size['width']
+                height = size['height']
+                
+                offset_x = width // 2 + random.randint(-30, 30)
+                offset_y = height // 2 + random.randint(-30, 30)
+                
+                actions = ActionChains(self.driver)
+                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
+                actions.click()
+                actions.perform()
+                
+                self.logger.info(f"✅ 已点击视频中央 (偏移: {offset_x}, {offset_y})")
+            except Exception as e:
+                self.logger.warning(f"点击视频失败: {e}")
+            
             self.smart_wait(2)
             
             self.logger.info("✅ 视频启动流程完成")
@@ -1945,52 +1958,30 @@ class ZhidaoWebAutoPlayerFinal:
                         if no_progress_count >= 4:
                             self.logger.warning(f"⚠️ 连续{no_progress_count}次进度无变化，可能触发防脚本机制，尝试恢复...")
                             
-                            # 策略1：点击视频中央区域（最有效，防止自动暂停）
+                            # 策略：使用ActionChains点击视频中央恢复播放（避免JS触发防脚本检测）
                             try:
                                 self.logger.info("尝试点击视频中央区域恢复播放...")
                                 video = self.driver.find_element(By.XPATH, "//video")
-                                # 点击视频中心
-                                self.driver.execute_script("""
-                                    var video = arguments[0];
-                                    var rect = video.getBoundingClientRect();
-                                    var centerX = rect.left + rect.width / 2;
-                                    var centerY = rect.top + rect.height / 2;
-                                    
-                                    // 创建点击事件
-                                    var clickEvent = new MouseEvent('click', {
-                                        view: window,
-                                        bubbles: true,
-                                        cancelable: true,
-                                        clientX: centerX,
-                                        clientY: centerY
-                                    });
-                                    
-                                    // 获取中心位置的元素并点击
-                                    var elem = document.elementFromPoint(centerX, centerY);
-                                    if (elem) {
-                                        elem.dispatchEvent(clickEvent);
-                                        console.log('Clicked video center to resume');
-                                    }
-                                """, video)
-                                self.logger.info("✅ 已点击视频中央")
-                                self.smart_wait(1)
+                                
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                import random
+                                
+                                size = video.size
+                                width = size['width']
+                                height = size['height']
+                                
+                                offset_x = width // 2 + random.randint(-30, 30)
+                                offset_y = height // 2 + random.randint(-30, 30)
+                                
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
+                                actions.click()
+                                actions.perform()
+                                
+                                self.logger.info(f"✅ 已点击视频中央(偏移: {offset_x}, {offset_y})")
+                                self.smart_wait(2)
                             except Exception as e:
                                 self.logger.warning(f"点击视频中央失败: {e}")
-                            
-                            # 策略2：暂停再播放刷新缓冲
-                            try:
-                                self.driver.execute_script("""
-                                    var video = document.querySelector('video');
-                                    if (video) {
-                                        video.pause();
-                                        setTimeout(function() {
-                                            video.play();
-                                        }, 500);
-                                    }
-                                """)
-                                self.logger.info("✅ 执行了暂停-播放操作")
-                            except Exception as e:
-                                self.logger.warning(f"暂停-播放操作失败: {e}")
                             
                             self.smart_wait(2)
                             no_progress_count = 0  # 重置计数

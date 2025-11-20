@@ -670,16 +670,27 @@ class ZhidaoWebAutoPlayerWithQuiz:
         if (usernameInputs.length > 0 && passwordInputs.length > 0) {{
             usernameInputs[0].value = '{username}';
             passwordInputs[0].value = '{password}';
-            if (loginButtons.length > 0) {{
-                loginButtons[0].click();
-                return true;
-            }}
+            return loginButtons.length > 0;
         }}
         return false;
         """
 
         result = self.driver.execute_script(script)
-        return result
+        if result:
+            # 找到输入框和按钮，使用ActionChains模拟真实点击
+            try:
+                login_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), '登录')] | //button[@type='submit'] | //input[@type='submit']")
+                from selenium.webdriver.common.action_chains import ActionChains
+                actions = ActionChains(self.driver)
+                actions.move_to_element(login_btn)
+                actions.click()
+                actions.perform()
+                self.logger.info("已通过ActionChains点击登录按钮")
+                return True
+            except Exception as e:
+                self.logger.error(f"ActionChains点击登录按钮失败: {e}")
+                return False
+        return False
     
     def check_captcha(self):
         """检查是否有人机验证"""
@@ -1789,16 +1800,17 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     
                                     if (closeBtn) {
                                         try {
-                                            closeBtn.click();
+                                            // 标记按钮需要点击（由Selenium在外部处理）
+                                            closeBtn.setAttribute('data-needs-click', 'true');
                                             closedCount++;
                                             closedInfo.push({
                                                 keyword: keyword,
                                                 btnSelector: closeBtn.tagName + '.' + (closeBtn.className || 'no-class'),
                                                 containerClass: container.className
                                             });
-                                            console.log('点击关闭按钮:', keyword, closeBtn.className || closeBtn.tagName);
+                                            console.log('标记关闭按钮待点击:', keyword, closeBtn.className || closeBtn.tagName);
                                         } catch(e) {
-                                            console.error('点击关闭按钮失败:', e);
+                                            console.error('标记关闭按钮失败:', e);
                                         }
                                         break;
                                     }
@@ -1814,7 +1826,23 @@ class ZhidaoWebAutoPlayerWithQuiz:
             """)
             
             if result and result.get('count', 0) > 0:
-                self.logger.info(f"✅ 已点击关闭 {result['count']} 个弹窗")
+                # JS已标记按钮，现在用ActionChains点击（避免JS点击触发防脚本检测）
+                try:
+                    marked_buttons = self.driver.find_elements(By.XPATH, "//*[@data-needs-click='true']")
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    for btn in marked_buttons:
+                        try:
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(btn)
+                            actions.click()
+                            actions.perform()
+                            self.smart_wait(0.5)
+                        except:
+                            pass
+                except:
+                    pass
+                
+                self.logger.info(f"✅ 已关闭 {result['count']} 个弹窗")
                 for info in result.get('info', []):
                     self.logger.debug(f"  - 关键词: {info['keyword']}, 按钮: {info.get('btnSelector', 'unknown')}")
                 self.smart_wait(1)  # 等待弹窗关闭动画完成
