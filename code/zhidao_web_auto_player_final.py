@@ -106,8 +106,18 @@ class ZhidaoWebAutoPlayerFinal:
         """加载进度记录"""
         if os.path.exists(self.progress_file):
             try:
-                with open(self.progress_file, 'r', encoding='utf-8') as f:
+                # 使用utf-8-sig编码自动处理BOM（字节顺序标记）
+                with open(self.progress_file, 'r', encoding='utf-8-sig') as f:
                     return json.load(f)
+            except json.JSONDecodeError as e:
+                print(f"⚠️  进度文件解析失败: {e}")
+                print(f"⚠️  将使用默认进度，原文件将被覆盖")
+                # 删除损坏的文件
+                try:
+                    os.remove(self.progress_file)
+                    print("✅ 已删除损坏的进度文件")
+                except:
+                    pass
             except Exception as e:
                 print(f"加载进度文件失败: {e}")
         

@@ -239,30 +239,42 @@ class ZhidaoWebAutoPlayerWithQuiz:
         progress_file = os.path.join(project_root, 'log', f'progress_account{account_num}.json')
         
         if os.path.exists(progress_file):
-            with open(progress_file, 'r', encoding='utf-8') as f:
-                progress = json.load(f)
-                
-                # 【向后兼容】确保必要的键存在
-                if 'total_quizzes' not in progress:
-                    progress['total_quizzes'] = 0
-                if 'total_watched' not in progress:
-                    progress['total_watched'] = 0
-                if 'completed_videos' not in progress:
-                    progress['completed_videos'] = []
-                if 'last_run' not in progress:
-                    progress['last_run'] = None
-                
-                # 【重要】每次任务开始时，清空本次任务的视频记录列表
-                # 保留累计统计数据，但清空completed_videos作为本次任务的中间变量
-                self.logger.info("")
-                self.logger.info("="*60)
-                self.logger.info("🗑️  已清空本次任务的视频记录")
-                self.logger.info("🎯 本次任务将重新扫描所有视频")
-                self.logger.info("✅ 避免之前播放失败的视频被跳过")
-                self.logger.info("="*60)
-                progress['completed_videos'] = []  # 清空视频记录，作为本次任务的临时变量
+            try:
+                # 使用utf-8-sig编码自动处理BOM（字节顺序标记）
+                with open(progress_file, 'r', encoding='utf-8-sig') as f:
+                    progress = json.load(f)
                     
-                return progress
+                    # 【向后兼容】确保必要的键存在
+                    if 'total_quizzes' not in progress:
+                        progress['total_quizzes'] = 0
+                    if 'total_watched' not in progress:
+                        progress['total_watched'] = 0
+                    if 'completed_videos' not in progress:
+                        progress['completed_videos'] = []
+                    if 'last_run' not in progress:
+                        progress['last_run'] = None
+                    
+                    # 【重要】每次任务开始时，清空本次任务的视频记录列表
+                    # 保留累计统计数据，但清空completed_videos作为本次任务的中间变量
+                    self.logger.info("")
+                    self.logger.info("="*60)
+                    self.logger.info("🗑️  已清空本次任务的视频记录")
+                    self.logger.info("🎯 本次任务将重新扫描所有视频")
+                    self.logger.info("✅ 避免之前播放失败的视频被跳过")
+                    self.logger.info("="*60)
+                    progress['completed_videos'] = []  # 清空视频记录，作为本次任务的临时变量
+                        
+                    return progress
+            except json.JSONDecodeError as e:
+                # JSON解析错误，记录日志并返回默认值
+                self.logger.warning(f"⚠️  进度文件解析失败: {e}")
+                self.logger.warning(f"⚠️  将使用默认进度，原文件将被覆盖")
+                # 删除损坏的文件
+                try:
+                    os.remove(progress_file)
+                    self.logger.info("✅ 已删除损坏的进度文件")
+                except:
+                    pass
                 
         return {
             'total_watched': 0,
