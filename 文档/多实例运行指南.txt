@@ -16,33 +16,33 @@
 # course_type = 2: 有题目课程（使用 zhidao_web_auto_player_with_quiz.py）
 
 # 单账号运行
-python zhidao_launcher.py --account account.json
+python code/zhidao_launcher.py --account 启动/account.json
 
 # 多账号运行
-python zhidao_launcher.py --account account1.json  # 终端1
-python zhidao_launcher.py --account account2.json  # 终端2
-python zhidao_launcher.py --account account3.json  # 终端3
+python code/zhidao_launcher.py --account 启动/account1.json  # 终端1
+python code/zhidao_launcher.py --account 启动/account2.json  # 终端2
+python code/zhidao_launcher.py --account 启动/account3.json  # 终端3
 ```
 
 ### 方式2：直接运行无题目课程版本
 
 ```bash
-# 编辑 account.json 填写账号密码，确保 course_type = 1
-python zhidao_web_auto_player_final.py
+# 编辑 启动/account.json 填写账号密码，确保 course_type = 1
+python code/zhidao_web_auto_player_final.py
 
 # 或指定账号文件
-python zhidao_web_auto_player_final.py --account account1.json
+python code/zhidao_web_auto_player_final.py --account 启动/account1.json
 ```
 
 ### 方式3：直接运行有题目课程版本
 
 ```bash
-# 编辑 account.json 填写账号密码，确保 course_type = 2
-python zhidao_web_auto_player_with_quiz.py --account account.json
+# 编辑 启动/account.json 填写账号密码，确保 course_type = 2
+python code/zhidao_web_auto_player_with_quiz.py --account 启动/account.json
 
 # 或多账号运行
-python zhidao_web_auto_player_with_quiz.py --account account1.json  # 终端1
-python zhidao_web_auto_player_with_quiz.py --account account2.json  # 终端2
+python code/zhidao_web_auto_player_with_quiz.py --account 启动/account1.json  # 终端1
+python code/zhidao_web_auto_player_with_quiz.py --account 启动/account2.json  # 终端2
 ```
 
 ---
@@ -53,23 +53,34 @@ python zhidao_web_auto_player_with_quiz.py --account account2.json  # 终端2
 
 ```
 zhidao/
-├── zhidao_web_auto_player_final.py   # 主程序
-├── config.json                        # 程序配置（共享）
+├── code/                                      # 代码文件夹
+│   ├── zhidao_launcher.py                    # 智能启动器
+│   ├── zhidao_web_auto_player_final.py       # 无题目版本
+│   └── zhidao_web_auto_player_with_quiz.py   # 有题目版本
 │
-├── account.json                       # 默认账号配置
-├── account1.json                      # 账号1配置
-├── account2.json                      # 账号2配置
-├── account3.json                      # 账号3配置
+├── 启动/                                      # 启动配置文件夹
+│   ├── account.json                          # 默认账号配置
+│   ├── account1.json                         # 账号1配置
+│   ├── account2.json                         # 账号2配置
+│   ├── account3.json                         # 账号3配置
+│   ├── 运行账号1.bat                         # 账号1启动脚本
+│   ├── 运行账号2.bat                         # 账号2启动脚本
+│   └── 运行账号3.bat                         # 账号3启动脚本
 │
-├── progress_account.json              # 默认账号进度（自动生成）
-├── progress_account1.json             # 账号1进度（自动生成）
-├── progress_account2.json             # 账号2进度（自动生成）
-├── progress_account3.json             # 账号3进度（自动生成）
+├── log/                                       # 日志和进度文件夹（自动生成）
+│   ├── progress_account.json                 # 默认账号进度
+│   ├── progress_account1.json                # 账号1进度
+│   ├── progress_account2.json                # 账号2进度
+│   ├── progress_account3.json                # 账号3进度
+│   ├── zhidao_account.log                    # 默认账号日志
+│   ├── zhidao_account1.log                   # 账号1日志
+│   ├── zhidao_account2.log                   # 账号2日志
+│   └── zhidao_account3.log                   # 账号3日志
 │
-├── zhidao_account.log                 # 默认账号日志（自动生成）
-├── zhidao_account1.log                # 账号1日志（自动生成）
-├── zhidao_account2.log                # 账号2日志（自动生成）
-└── zhidao_account3.log                # 账号3日志（自动生成）
+├── 文档/                                      # 文档文件夹
+│   └── 多实例运行指南.txt
+│
+└── 更新日志/                                  # 版本更新记录
 ```
 
 ---
@@ -128,7 +139,7 @@ zhidao/
 ### 基本用法
 
 ```bash
-python zhidao_web_auto_player_final.py [选项]
+python code/zhidao_web_auto_player_final.py [选项]
 ```
 
 ### 可用选项
@@ -144,16 +155,16 @@ python zhidao_web_auto_player_final.py [选项]
 
 ```bash
 # 查看帮助
-python zhidao_web_auto_player_final.py --help
+python code/zhidao_web_auto_player_final.py --help
 
 # 使用账号1配置
-python zhidao_web_auto_player_final.py --account account1.json
+python code/zhidao_web_auto_player_final.py --account 启动/account1.json
 
 # 使用无头模式运行
-python zhidao_web_auto_player_final.py --account account1.json --headless
+python code/zhidao_web_auto_player_final.py --account 启动/account1.json --headless
 
 # 自定义所有配置文件
-python zhidao_web_auto_player_final.py --account my_account.json --config my_config.json
+python code/zhidao_web_auto_player_final.py --account 启动/my_account.json --config config.json
 ```
 
 ---
@@ -164,12 +175,15 @@ python zhidao_web_auto_player_final.py --account my_account.json --config my_con
 
 ```bash
 # 1. 复制账号配置模板
-# 已有 account1.json, account2.json, account3.json
+# 已有 启动/account1.json, 启动/account2.json, 启动/account3.json
 
 # 2. 编辑每个配置文件，填写对应账号信息
 # 用记事本或VS Code打开编辑
 
-# 3. 确保电脑资源充足
+# 3. 确保已安装依赖
+# pip install selenium webdriver-manager
+
+# 4. 确保电脑资源充足
 # 建议：8GB内存以上，同时运行不超过3个实例
 ```
 
@@ -179,95 +193,53 @@ python zhidao_web_auto_player_final.py --account my_account.json --config my_con
 ```bash
 # 终端1
 cd C:\Users\16224\Desktop\zhidao
-conda activate study312
-python zhidao_launcher.py --account account1.json
+python code/zhidao_launcher.py --account 启动/account1.json
 
 # 终端2（按Win+R，输入powershell，新开窗口）
 cd C:\Users\16224\Desktop\zhidao
-conda activate study312
-python zhidao_launcher.py --account account2.json
+python code/zhidao_launcher.py --account 启动/account2.json
 
 # 终端3
 cd C:\Users\16224\Desktop\zhidao
-conda activate study312
-python zhidao_launcher.py --account account3.json
+python code/zhidao_launcher.py --account 启动/account3.json
 ```
 
 **方法2：直接运行无题目版本**
 ```bash
-# 终端1 - 确保 account1.json 中 course_type = 1
+# 终端1 - 确保 启动/account1.json 中 course_type = 1
 cd C:\Users\16224\Desktop\zhidao
-conda activate study312
-python zhidao_web_auto_player_final.py --account account1.json
+python code/zhidao_web_auto_player_final.py --account 启动/account1.json
 
 # 终端2
 cd C:\Users\16224\Desktop\zhidao
-conda activate study312
-python zhidao_web_auto_player_final.py --account account2.json
+python code/zhidao_web_auto_player_final.py --account 启动/account2.json
 ```
 
 **方法3：直接运行有题目版本**
 ```bash
-# 终端1 - 确保 account1.json 中 course_type = 2
+# 终端1 - 确保 启动/account1.json 中 course_type = 2
 cd C:\Users\16224\Desktop\zhidao
-conda activate study312
-python zhidao_web_auto_player_with_quiz.py --account account1.json
+python code/zhidao_web_auto_player_with_quiz.py --account 启动/account1.json
 
 # 终端2
 cd C:\Users\16224\Desktop\zhidao
-conda activate study312
-python zhidao_web_auto_player_with_quiz.py --account account2.json
+python code/zhidao_web_auto_player_with_quiz.py --account 启动/account2.json
 ```
 
-**方法4：创建批处理文件**
+**方法4：使用批处理文件（最简单）**
 
-**智能启动器方式（推荐）：**
+直接双击运行 `启动/` 文件夹中的批处理文件：
+- `启动/运行账号1.bat` - 运行账号1
+- `启动/运行账号2.bat` - 运行账号2
+- `启动/运行账号3.bat` - 运行账号3
 
-创建 `运行账号1.bat`:
-```batch
-@echo off
-REM 知到自动播放 - 账号1（智能启动器）
-cd /d C:\Users\16224\Desktop\zhidao
-call conda activate study312
-python zhidao_launcher.py --account account1.json
-pause
-```
+批处理文件会自动：
+1. 切换到项目目录
+2. 启动对应账号的脚本
+3. 显示运行日志
+4. 出错时提示错误信息
 
-创建 `运行账号2.bat`:
-```batch
-@echo off
-REM 知到自动播放 - 账号2（智能启动器）
-cd /d C:\Users\16224\Desktop\zhidao
-call conda activate study312
-python zhidao_launcher.py --account account2.json
-pause
-```
-
-**无题目版本方式：**
-
-创建 `运行账号1_无题目.bat`:
-```batch
-@echo off
-REM 知到自动播放 - 账号1（无题目版本）
-cd /d C:\Users\16224\Desktop\zhidao
-call conda activate study312
-python zhidao_web_auto_player_final.py --account account1.json
-pause
-```
-
-**有题目版本方式：**
-
-创建 `运行账号1_有题目.bat`:
-```batch
-@echo off
-REM 知到自动播放 - 账号1（有题目版本）
-cd /d C:\Users\16224\Desktop\zhidao
-call conda activate study312
-python zhidao_web_auto_player_with_quiz.py --account account1.json
-pause
-```
-
-然后双击运行各个批处理文件。
+**注意：** 请确保已配置好Python环境和依赖包。
 
 ### 3. 时间错开启动
 
@@ -307,10 +279,13 @@ pause
 
 ```bash
 # 查看账号1的日志
-type zhidao_account1.log
+type log\zhidao_account1.log
 
 # 实时监控日志（PowerShell）
-Get-Content zhidao_account1.log -Wait -Tail 20
+Get-Content log\zhidao_account1.log -Wait -Tail 20
+
+# 查看账号2的日志（有题目版本）
+type log\zhidao_account2_quiz.log
 ```
 
 ---
@@ -357,11 +332,11 @@ rm -r ~/.wdm
 正在清理 0 个旧的调试文件...
 ✅ 无需清理，没有找到旧的调试文件
 
-2025-10-29 12:00:00 - INFO - 日志系统初始化完成，日志文件: zhidao_account1.log
+2025-10-29 12:00:00 - INFO - 日志系统初始化完成，日志文件: log/zhidao_account1.log
 2025-10-29 12:00:00 - INFO - 配置文件: config.json
-2025-10-29 12:00:00 - INFO - 账号配置: account1.json
-2025-10-29 12:00:00 - INFO - 进度文件: progress_account1.json
-2025-10-29 12:00:00 - INFO - 日志文件: zhidao_account1.log
+2025-10-29 12:00:00 - INFO - 账号配置: 启动/account1.json
+2025-10-29 12:00:00 - INFO - 进度文件: log/progress_account1.json
+2025-10-29 12:00:00 - INFO - 日志文件: log/zhidao_account1.log
 2025-10-29 12:00:05 - INFO - 浏览器驱动初始化完成
 2025-10-29 12:00:10 - INFO - ✅ 已加载账号: 152****79
 ...

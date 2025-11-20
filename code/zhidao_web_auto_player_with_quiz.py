@@ -41,6 +41,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 运行次数计数器（每20次清理一次日志）
         self.check_and_cleanup_logs()
         
+        # 初始化刷新计数器（每10次才刷新一次）
+        self.items_processed_since_refresh = 0
+        self.refresh_interval = 10  # 每10个项目刷新一次
+        
+        # 初始化累计观看时间（秒）
+        self.total_watch_time_seconds = 0
+        
         # 初始化浏览器
         self.setup_driver(headless)
         
@@ -57,8 +64,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 获取项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        # 从account文件名提取账号编号
-        account_num = self.account_file.replace('account', '').replace('.json', '')
+        # 从account文件名提取账号编号（只取文件名，去除路径）
+        account_filename = os.path.basename(self.account_file)
+        account_num = account_filename.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
@@ -92,7 +100,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 获取项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        account_num = self.account_file.replace('account', '').replace('.json', '')
+        account_filename = os.path.basename(self.account_file)
+        account_num = account_filename.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
@@ -110,8 +119,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def load_config(self):
         """加载全局配置"""
+        # 获取项目根目录
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        config_path = os.path.join(project_root, '启动', 'config.json')
+        
         try:
-            with open('config.json', 'r', encoding='utf-8') as f:
+            with open(config_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except FileNotFoundError:
             return {
@@ -130,7 +143,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 获取项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        account_num = self.account_file.replace('account', '').replace('.json', '')
+        account_filename = os.path.basename(self.account_file)
+        account_num = account_filename.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
@@ -164,7 +178,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 获取项目根目录
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
-        account_num = self.account_file.replace('account', '').replace('.json', '')
+        account_filename = os.path.basename(self.account_file)
+        account_num = account_filename.replace('account', '').replace('.json', '')
         if not account_num:
             account_num = '1'
         
@@ -1218,10 +1233,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if len(unique_elements) == 0:
                 try:
                     debug_html = sidebar.get_attribute('outerHTML')
-                    with open('debug_sidebar.html', 'w', encoding='utf-8') as f:
+                    # 保存到log文件夹，避免污染根目录
+                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    debug_file = os.path.join(project_root, 'log', 'debug_sidebar.html')
+                    with open(debug_file, 'w', encoding='utf-8') as f:
                         f.write(debug_html)
-                    self.logger.warning("⚠️  未找到任何视频元素，已保存侧边栏HTML到 debug_sidebar.html")
-                    self.logger.info("🔍 请检查 debug_sidebar.html 文件，查看实际的HTML结构")
+                    self.logger.warning(f"⚠️  未找到任何视频元素，已保存侧边栏HTML到 {debug_file}")
+                    self.logger.info("🔍 请检查 log/debug_sidebar.html 文件，查看实际的HTML结构")
                 except Exception as e:
                     self.logger.debug(f"保存HTML失败: {e}")
             
@@ -1978,6 +1996,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     
                     self.logger.info(f"🎯 尝试选择 {current_label}...")
                     
+                    # 【反检测】随机延时0-3秒后再点击选项
+                    import random
+                    random_delay = random.uniform(0, 3)
+                    self.logger.info(f"⏰ 随机延时 {random_delay:.2f} 秒（避免检测）")
+                    self.smart_wait(random_delay)
+                    
                     # 点击选项
                     try:
                         current_option.click()
@@ -2034,14 +2058,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         # 等待一下确保结果显示完毕
                         self.smart_wait(2)
                         
-                        # 按ESC键关闭题目弹窗
-                        try:
-                            from selenium.webdriver.common.keys import Keys
-                            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-                            self.logger.info("✅ 已按ESC键关闭题目弹窗")
-                            self.smart_wait(1)
-                        except Exception as e:
-                            self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                        # 点击关闭按钮关闭题目弹窗
+                        if self.close_quiz_dialog():
+                            self.logger.info("✅ 已点击关闭按钮关闭题目弹窗")
+                        else:
+                            self.logger.warning("⚠️  关闭题目弹窗失败")
                         
                         # 【新增】点击视频中央恢复播放
                         try:
@@ -2106,14 +2127,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.progress['total_quizzes'] += 1
                                 self.smart_wait(2)
                                 
-                                # 按ESC键关闭题目弹窗
-                                try:
-                                    from selenium.webdriver.common.keys import Keys
-                                    self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-                                    self.logger.info("✅ 已按ESC键关闭题目弹窗")
-                                    self.smart_wait(1)
-                                except Exception as e:
-                                    self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                                # 点击关闭按钮关闭题目弹窗
+                                if self.close_quiz_dialog():
+                                    self.logger.info("✅ 已点击关闭按钮关闭题目弹窗")
+                                else:
+                                    self.logger.warning("⚠️  关闭题目弹窗失败")
                                 
                                 # 【新增】点击视频中央恢复播放
                                 try:
@@ -2188,6 +2206,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         
                         if not is_selected:
                             self.logger.info(f"🎯 选择 {label}")
+                            
+                            # 【反检测】随机延时0-3秒后再点击选项
+                            import random
+                            random_delay = random.uniform(0, 3)
+                            self.logger.info(f"⏰ 随机延时 {random_delay:.2f} 秒（避免检测）")
+                            self.smart_wait(random_delay)
+                            
                             try:
                                 option.click()
                                 self.smart_wait(0.3)
@@ -2240,17 +2265,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     except:
                         continue
                 
-                # 按ESC键关闭题目弹窗
-                self.logger.info("🔄 按ESC键关闭题目弹窗...")
-                try:
-                    from selenium.webdriver.common.keys import Keys
-                    self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
+                # 点击关闭按钮关闭题目弹窗
+                self.logger.info("🔄 点击关闭按钮关闭题目弹窗...")
+                if self.close_quiz_dialog():
                     self.logger.info("✅ 多选题已处理并关闭")
                     self.quizzes_answered_this_session += 1
                     self.progress['total_quizzes'] += 1
                     self.smart_wait(1)
-                except Exception as e:
-                    self.logger.warning(f"⚠️  按ESC键关闭失败: {e}")
+                else:
+                    self.logger.warning("⚠️  关闭题目弹窗失败")
                     return False
                 
                 # 【新增】点击视频中央恢复播放
@@ -2506,36 +2529,49 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """关闭题目对话框"""
         try:
             close_selectors = [
-                "//button[contains(text(), '关闭')]",  # 关闭按钮
-                "//div[contains(@class, 'el-icon-close')]",  # Element UI关闭图标
+                # 【最高优先级】知到平台题目弹窗的关闭按钮（根据实际HTML结构）
+                "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and text()='关闭']",  # 精确匹配文本为"关闭"的按钮
+                "//div[@class='el-dialog__footer']//span[@class='dialog-footer']//div[@class='btn']",  # 精确路径
+                "//span[@class='dialog-footer']//div[@class='btn']",  # 直接找footer下的btn
+                "//div[contains(@class, 'el-dialog__footer')]//div[contains(@class, 'btn') and contains(text(), '关闭')]",
+                
+                # Element UI标准关闭按钮
+                "//button[contains(@class, 'el-dialog__headerbtn')]",  # Element UI头部关闭按钮
                 "//button[contains(@class, 'el-dialog__close')]",  # Element UI对话框关闭
                 "//i[contains(@class, 'el-icon-close')]",  # Element UI close图标
-                "//i[contains(@class, 'close')]",
-                "//*[@title='关闭']",
-                "//button[contains(@class, 'close')]",  # 通用关闭按钮
+                
+                # 通用关闭按钮（降低优先级）
+                "//button[contains(text(), '关闭')]",  # 文本为"关闭"的按钮
+                "//div[contains(@class, 'el-icon-close')]",  # Element UI关闭图标div
+                "//i[contains(@class, 'close')]",  # 通用close图标
+                "//*[@title='关闭']",  # title属性为"关闭"的元素
+                "//button[contains(@class, 'close')]",  # class包含close的按钮
             ]
             
             for selector in close_selectors:
                 try:
-                    close_btn = self.driver.find_element(By.XPATH, selector)
-                    if close_btn.is_displayed():
-                        close_btn.click()
-                        self.logger.info("✅ 已关闭题目弹窗")
-                        self.smart_wait(1)
-                        return True
+                    close_btns = self.driver.find_elements(By.XPATH, selector)
+                    for close_btn in close_btns:
+                        if close_btn.is_displayed():
+                            # 尝试普通点击
+                            try:
+                                close_btn.click()
+                                self.logger.info(f"✅ 已关闭题目弹窗: {selector[:60]}")
+                                self.smart_wait(1)
+                                return True
+                            except:
+                                # 如果普通点击失败，尝试JavaScript点击
+                                try:
+                                    self.driver.execute_script("arguments[0].click();", close_btn)
+                                    self.logger.info(f"✅ 已关闭题目弹窗(JS): {selector[:60]}")
+                                    self.smart_wait(1)
+                                    return True
+                                except:
+                                    continue
                 except:
                     continue
             
-            # 如果找不到关闭按钮，尝试按ESC键
-            try:
-                from selenium.webdriver.common.keys import Keys
-                self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.ESCAPE)
-                self.logger.info("✅ 已按ESC键关闭弹窗")
-                self.smart_wait(1)
-                return True
-            except:
-                pass
-            
+            self.logger.warning("⚠️  未找到题目弹窗的关闭按钮")
             return False
             
         except Exception as e:
@@ -2697,7 +2733,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
             videos_played = 0
             attempt = 0
             max_videos = 200  # 最多尝试200个视频
-            unwatched_videos = []  # 缓存查找到的视频列表
+            # 使用已经查找到的视频列表（避免第一轮重复查找）
+            # unwatched_videos 已经在上面的 find_unwatched_videos() 中填充
             
             while attempt < max_videos:
                 attempt += 1
@@ -2714,7 +2751,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.info(f"已处理{self.items_processed_since_refresh}个项目（每{self.refresh_interval}次刷新一次）")
                 
                 # 每10次查找一次（或缓存为空时重新查找）
-                if not unwatched_videos or (attempt - 1) % 10 == 0:
+                # 注意：attempt从1开始，第一轮不需要查找（已经在入口处查找过）
+                if not unwatched_videos or (attempt > 1 and (attempt - 1) % 10 == 0):
                     self.logger.info("🔍 查找未观看的视频...")
                     unwatched_videos = self.find_unwatched_videos()
                     

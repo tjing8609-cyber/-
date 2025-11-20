@@ -81,9 +81,12 @@ class ZhidaoWebAutoPlayerFinal:
             "enable_notifications": True
         }
         
-        if os.path.exists(self.config_file):
+        # 获取项目根目录
+        config_path = os.path.join(self.project_root, '启动', 'config.json')
+        
+        if os.path.exists(config_path):
             try:
-                with open(self.config_file, 'r', encoding='utf-8') as f:
+                with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     default_config.update(config)
             except Exception as e:
@@ -91,9 +94,9 @@ class ZhidaoWebAutoPlayerFinal:
         else:
             # 创建默认配置文件
             try:
-                with open(self.config_file, 'w', encoding='utf-8') as f:
+                with open(config_path, 'w', encoding='utf-8') as f:
                     json.dump(default_config, f, ensure_ascii=False, indent=2)
-                print(f"已创建默认配置文件: {self.config_file}")
+                print(f"已创建默认配置文件: {config_path}")
             except Exception as e:
                 print(f"创建配置文件失败: {e}")
         
@@ -2117,9 +2120,17 @@ class ZhidaoWebAutoPlayerFinal:
             # 循环处理视频，直到所有视频播放完成或达到时间限制
             videos_played = 0
             attempt = 0
-            unwatched_videos = []  # 缓存查找到的视频列表
             
-            while attempt < max_videos:
+            # 第一次查找未观看视频（入口处查找）
+            self.logger.info("🔍 查找未观看的视频...")
+            unwatched_videos = self.find_unwatched_videos()
+            
+            if not unwatched_videos:
+                self.logger.info("✅ 没有找到更多未观看视频，所有视频已播放完成！")
+            else:
+                self.logger.info(f"✅ 找到 {len(unwatched_videos)} 个未观看视频，将逐个播放")
+            
+            while attempt < max_videos and unwatched_videos:
                 # 检查是否达到最大观看时长
                 if hasattr(self, 'max_watch_minutes') and self.max_watch_minutes > 0:
                     total_minutes = self.total_watch_time_seconds / 60
@@ -2143,7 +2154,8 @@ class ZhidaoWebAutoPlayerFinal:
                     self.logger.info(f"已处理{self.items_processed_since_refresh}个项目（每{self.refresh_interval}次刷新一次）")
 
                 # 每10次查找一次（或缓存为空时重新查找）
-                if not unwatched_videos or (attempt - 1) % 10 == 0:
+                # 注意：attempt从1开始，第一轮不需要查找（已经在入口处查找过）
+                if not unwatched_videos or (attempt > 1 and (attempt - 1) % 10 == 0):
                     self.logger.info("🔍 查找未观看的视频...")
                     unwatched_videos = self.find_unwatched_videos()
                     
