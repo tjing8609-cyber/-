@@ -1649,27 +1649,37 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     
                     self.smart_wait(3)
                     
-                    # 启动播放
+                    # 【改进】点击视频中央区域启动播放（模拟真实点击+随机偏移）
                     try:
-                        play_result = self.driver.execute_script("""
-                            var video = document.querySelector('video');
-                            if (video) {
-                                var playPromise = video.play();
-                                if (playPromise !== undefined) {
-                                    playPromise.then(function() {
-                                        return 'success';
-                                    }).catch(function(error) {
-                                        return 'error: ' + error.message;
-                                    });
-                                }
-                                return 'video found and play() called';
-                            } else {
-                                return 'video not found';
-                            }
-                        """)
-                        self.logger.info(f"✅ JavaScript播放结果: {play_result}")
+                        video_element = self.driver.find_element(By.TAG_NAME, 'video')
+                        if video_element:
+                            # 获取视频元素的位置和大小
+                            location = video_element.location
+                            size = video_element.size
+                            
+                            # 计算中心点
+                            center_x = location['x'] + size['width'] // 2
+                            center_y = location['y'] + size['height'] // 2
+                            
+                            # 添加随机偏移（±50像素）
+                            import random
+                            offset_x = random.randint(-50, 50)
+                            offset_y = random.randint(-50, 50)
+                            
+                            self.logger.info(f"📍 视频中心: ({center_x}, {center_y}), 偏移: ({offset_x:+d}, {offset_y:+d})")
+                            
+                            # 使用ActionChains点击指定坐标
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element_with_offset(video_element, offset_x, offset_y)
+                            actions.click()
+                            actions.perform()
+                            
+                            self.logger.info("✅ 已点击视频启动播放（含随机偏移）")
+                        else:
+                            self.logger.warning("⚠️  未找到video元素")
                     except Exception as e:
-                        self.logger.warning(f"⚠️  JavaScript启动播放失败: {e}")
+                        self.logger.warning(f"⚠️  点击视频失败: {e}")
                     
                     self.smart_wait(2)
                     return True
@@ -2262,34 +2272,36 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         else:
                             self.logger.warning("⚠️  关闭题目弹窗失败")
                         
-                        # 【新增】点击视频中央恢复播放
+                        # 【新增】点击视频中央恢复播放（模拟真实点击+随机偏移）
                         try:
-                            video_script = """
-                            var video = document.querySelector('video');
-                            if (video) {
-                                // 点击视频中央区域
-                                var rect = video.getBoundingClientRect();
-                                var centerX = rect.left + rect.width / 2;
-                                var centerY = rect.top + rect.height / 2;
+                            video_element = self.driver.find_element(By.TAG_NAME, 'video')
+                            if video_element:
+                                # 获取视频元素的位置和大小
+                                location = video_element.location
+                                size = video_element.size
                                 
-                                var clickEvent = new MouseEvent('click', {
-                                    view: window,
-                                    bubbles: true,
-                                    cancelable: true,
-                                    clientX: centerX,
-                                    clientY: centerY
-                                });
-                                video.dispatchEvent(clickEvent);
+                                # 计算中心点
+                                center_x = location['x'] + size['width'] // 2
+                                center_y = location['y'] + size['height'] // 2
                                 
-                                // 确保播放
-                                video.play();
-                                return 'video clicked and playing';
-                            }
-                            return 'video not found';
-                            """
-                            result = self.driver.execute_script(video_script)
-                            self.logger.info(f"🎬 已点击视频中央恢复播放: {result}")
-                            self.smart_wait(1)
+                                # 添加随机偏移（±50像素）
+                                import random
+                                offset_x = random.randint(-50, 50)
+                                offset_y = random.randint(-50, 50)
+                                
+                                self.logger.info(f"📍 视频中心: ({center_x}, {center_y}), 偏移: ({offset_x:+d}, {offset_y:+d})")
+                                
+                                # 使用ActionChains点击指定坐标
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element_with_offset(video_element, offset_x, offset_y)
+                                actions.click()
+                                actions.perform()
+                                
+                                self.logger.info("🎬 已点击视频恢复播放（含随机偏移）")
+                                self.smart_wait(1)
+                            else:
+                                self.logger.warning("⚠️  未找到video元素")
                         except Exception as e:
                             self.logger.warning(f"⚠️  点击视频中央失败: {e}")
                         
@@ -2335,34 +2347,36 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 else:
                                     self.logger.warning("⚠️  关闭题目弹窗失败")
                                 
-                                # 【新增】点击视频中央恢复播放
+                                # 【新增】点击视频中央恢复播放（模拟真实点击+随机偏移）
                                 try:
-                                    video_script = """
-                                    var video = document.querySelector('video');
-                                    if (video) {
-                                        // 点击视频中央区域
-                                        var rect = video.getBoundingClientRect();
-                                        var centerX = rect.left + rect.width / 2;
-                                        var centerY = rect.top + rect.height / 2;
+                                    video_element = self.driver.find_element(By.TAG_NAME, 'video')
+                                    if video_element:
+                                        # 获取视频元素的位置和大小
+                                        location = video_element.location
+                                        size = video_element.size
                                         
-                                        var clickEvent = new MouseEvent('click', {
-                                            view: window,
-                                            bubbles: true,
-                                            cancelable: true,
-                                            clientX: centerX,
-                                            clientY: centerY
-                                        });
-                                        video.dispatchEvent(clickEvent);
+                                        # 计算中心点
+                                        center_x = location['x'] + size['width'] // 2
+                                        center_y = location['y'] + size['height'] // 2
                                         
-                                        // 确保播放
-                                        video.play();
-                                        return 'video clicked and playing';
-                                    }
-                                    return 'video not found';
-                                    """
-                                    result = self.driver.execute_script(video_script)
-                                    self.logger.info(f"🎬 已点击视频中央恢复播放: {result}")
-                                    self.smart_wait(1)
+                                        # 添加随机偏移（±50像素）
+                                        import random
+                                        offset_x = random.randint(-50, 50)
+                                        offset_y = random.randint(-50, 50)
+                                        
+                                        self.logger.info(f"📍 视频中心: ({center_x}, {center_y}), 偏移: ({offset_x:+d}, {offset_y:+d})")
+                                        
+                                        # 使用ActionChains点击指定坐标
+                                        from selenium.webdriver.common.action_chains import ActionChains
+                                        actions = ActionChains(self.driver)
+                                        actions.move_to_element_with_offset(video_element, offset_x, offset_y)
+                                        actions.click()
+                                        actions.perform()
+                                        
+                                        self.logger.info("🎬 已点击视频恢复播放（含随机偏移）")
+                                        self.smart_wait(1)
+                                    else:
+                                        self.logger.warning("⚠️  未找到video元素")
                                 except Exception as e:
                                     self.logger.warning(f"⚠️  点击视频中央失败: {e}")
                                 
@@ -2484,35 +2498,38 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.warning("⚠️  关闭题目弹窗失败")
                     return False
                 
-                # 【新增】点击视频中央恢复播放
+                # 【新增】点击视频中央恢复播放（模拟真实点击+随机偏移）
                 try:
-                    video_script = """
-                    var video = document.querySelector('video');
-                    if (video) {
-                        // 点击视频中央区域
-                        var rect = video.getBoundingClientRect();
-                        var centerX = rect.left + rect.width / 2;
-                        var centerY = rect.top + rect.height / 2;
+                    video_element = self.driver.find_element(By.TAG_NAME, 'video')
+                    if video_element:
+                        # 获取视频元素的位置和大小
+                        location = video_element.location
+                        size = video_element.size
                         
-                        var clickEvent = new MouseEvent('click', {
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: centerX,
-                            clientY: centerY
-                        });
-                        video.dispatchEvent(clickEvent);
+                        # 计算中心点
+                        center_x = location['x'] + size['width'] // 2
+                        center_y = location['y'] + size['height'] // 2
                         
-                        // 确保播放
-                        video.play();
-                        return 'video clicked and playing';
-                    }
-                    return 'video not found';
-                    """
-                    result = self.driver.execute_script(video_script)
-                    self.logger.info(f"🎬 已点击视频中央恢复播放: {result}")
-                    self.smart_wait(1)
-                    return True
+                        # 添加随机偏移（±50像素）
+                        import random
+                        offset_x = random.randint(-50, 50)
+                        offset_y = random.randint(-50, 50)
+                        
+                        self.logger.info(f"📍 视频中心: ({center_x}, {center_y}), 偏移: ({offset_x:+d}, {offset_y:+d})")
+                        
+                        # 使用ActionChains点击指定坐标
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element_with_offset(video_element, offset_x, offset_y)
+                        actions.click()
+                        actions.perform()
+                        
+                        self.logger.info("🎬 已点击视频恢复播放（含随机偏移）")
+                        self.smart_wait(1)
+                        return True
+                    else:
+                        self.logger.warning("⚠️  未找到video元素")
+                        return True  # 即使点击失败也返回True，因为题目已处理
                 except Exception as e:
                     self.logger.warning(f"⚠️  点击视频中央失败: {e}")
                     return True  # 即使点击失败也返回True，因为题目已处理
