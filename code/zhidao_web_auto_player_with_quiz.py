@@ -3292,18 +3292,19 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     elapsed_time += 10
                     
                     # 显示进度
-                    # 【优化】同时显示视频总时长和已播放时间
+                    # 【优化】同时显示视频总时长和已播放时间（包含当前视频已播放部分）
                     try:
                         video_duration = self.driver.execute_script(
                             "return document.querySelector('video') ? document.querySelector('video').duration : 0"
                         )
-                        total_minutes = self.total_watch_time_seconds / 60
+                        # 【修改】已播放时间 = 已完成视频的累计时长 + 当前视频已播放时长
+                        total_minutes = (self.total_watch_time_seconds + current_progress) / 60
                         if video_duration and video_duration > 0:
                             self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 视频总长: {video_duration:.0f}秒 | 已播放时间: {total_minutes:.1f}分钟")
                         else:
                             self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {total_minutes:.1f}分钟")
                     except:
-                        total_minutes = self.total_watch_time_seconds / 60
+                        total_minutes = (self.total_watch_time_seconds + current_progress) / 60
                         self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {total_minutes:.1f}分钟")
                 
                 if video_completed:
