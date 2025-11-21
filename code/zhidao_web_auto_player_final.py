@@ -1930,6 +1930,7 @@ class ZhidaoWebAutoPlayerFinal:
             start_total_watch_time = self.total_watch_time_seconds
             
             self.logger.info(f"模拟观看视频，预计时间: {watch_time}秒 ({watch_time/60:.1f}分钟)")
+            self.logger.info(f"🎯 目标播放进度: {watch_time}秒，视频总时长: {video_duration if video_duration else '未知'}秒")
 
             start_time = time.time()
             last_progress_check = 0
@@ -1942,6 +1943,11 @@ class ZhidaoWebAutoPlayerFinal:
                 
                 # 获取当前视频实际播放进度
                 video_progress = self.get_video_progress()
+                
+                # 【新增】检查视频是否已经播放完成（达到视频总时长的98%）
+                if video_duration and video_progress >= video_duration * 0.98:
+                    self.logger.info(f"✅ 视频已播放完成（进度: {video_progress:.0f}秒 >= 总时长98%: {video_duration * 0.98:.0f}秒）")
+                    break
                 
                 # 以实际播放进度为准，达到目标时长就结束
                 if video_progress >= watch_time:
@@ -2024,7 +2030,7 @@ class ZhidaoWebAutoPlayerFinal:
 
                 # 显示进度（以实际播放进度为准）
                 progress_percentage = min(100, int((video_progress / watch_time) * 100))
-                self.logger.info(f"观看进度: {progress_percentage}% ({video_progress:.0f}/{watch_time}秒) | 等待时间: {int(elapsed)}秒")
+                self.logger.info(f"观看进度: {progress_percentage}% ({video_progress:.0f}/{watch_time}秒) | 等待时间: {int(elapsed)}秒 | 视频总长: {video_duration if video_duration else '未知'}秒")
 
             # 累加本次实际播放时间到总观看时间
             actual_watch_time = self.get_video_progress()
