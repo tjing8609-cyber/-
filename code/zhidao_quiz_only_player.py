@@ -561,14 +561,15 @@ class ZhidaoQuizOnlyPlayer:
                 'messages': [
                     {
                         'role': 'user',
-                        'content': '测试连接，请回复“OK”'
+                        'content': '今天是几月几日星期几？请简洁回答。'
                     }
                 ],
-                'max_tokens': 5
+                'max_tokens': 50
             }
             
             self.logger.info(f"📡 请求URL: {url}")
             self.logger.info(f"🤖 使用模型: {self.api_model}")
+            self.logger.info(f"💬 发送问题: 今天是几月几日星期几？")
             
             # 发送测试请求
             response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -576,15 +577,24 @@ class ZhidaoQuizOnlyPlayer:
             # 检查响应
             if response.status_code == 200:
                 result = response.json()
-                self.logger.info(f"📊 完整响应: {result}")
                 
                 if 'choices' in result and len(result['choices']) > 0:
                     message = result['choices'][0].get('message', {})
-                    reply = message.get('content', '')
+                    reply = message.get('content', '').strip()
                     
                     self.logger.info(f"✅ API连接成功！")
                     if reply:
-                        self.logger.info(f"💬 API回复: {reply}")
+                        self.logger.info(f"💬 AI回答: {reply}")
+                        # 验证回答是否合理
+                        from datetime import datetime
+                        now = datetime.now()
+                        weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
+                        current_weekday = weekdays[now.weekday()]
+                        expected_date = f"{now.month}月{now.day}日"
+                        if str(now.month) in reply or str(now.day) in reply or current_weekday in reply:
+                            self.logger.info(f"✅ AI回答正确（期望包含: {expected_date} {current_weekday}）")
+                        else:
+                            self.logger.warning(f"⚠️  AI回答可能不准确（期望: {expected_date} {current_weekday}）")
                     else:
                         self.logger.warning(f"⚠️  API回复为空，但连接成功")
                         self.logger.info(f"📊 消息结构: {message}")
