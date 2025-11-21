@@ -791,11 +791,20 @@ class ZhidaoQuizOnlyPlayer:
     def find_start_button(self, container):
         """在测试容器内查找开始按钮"""
         try:
-            # 在容器内查找开始按钮
+            # 【优化】在容器内查找"开始做题"按钮（不要点击题目标题）
             button_selectors = [
-                ".//div[contains(@class, 'btn') and contains(@class, 'do')]",
+                # 优先查找精确包含"开始做题"的按钮
+                ".//button[contains(text(), '开始做题')]",
                 ".//div[contains(text(), '开始做题')]",
+                ".//a[contains(text(), '开始做题')]",
+                ".//span[contains(text(), '开始做题')]",
+                # 绿色按钮的class
+                ".//div[contains(@class, 'btn') and contains(@class, 'start')]",
+                ".//div[contains(@class, 'btn') and contains(@class, 'do')]",
+                ".//button[contains(@class, 'start')]",
+                # 其他开始相关
                 ".//button[contains(text(), '开始')]",
+                ".//div[contains(text(), '开始')]",
                 ".//span[contains(text(), '开始')]",
                 ".//a[contains(text(), '开始')]",
             ]
@@ -804,19 +813,54 @@ class ZhidaoQuizOnlyPlayer:
                 try:
                     buttons = container.find_elements(By.XPATH, selector)
                     for btn in buttons:
-                        if '开始' in btn.text or 'do' in btn.get_attribute('class'):
-                            self.logger.info(f"找到开始按钮: {btn.text}")
+                        btn_text = btn.text.strip()
+                        btn_class = btn.get_attribute('class') or ''
+                        
+                        # 【优化】精确匹配"开始做题"按钮
+                        if '开始做题' in btn_text:
+                            self.logger.info(f"✅ 找到'开始做题'按钮: {btn_text}")
+                            return btn
+                        # 其他"开始"按钮
+                        elif '开始' in btn_text and ('测试' in btn_text or '考试' in btn_text):
+                            self.logger.info(f"✅ 找到开始按钮: {btn_text}")
+                            return btn
+                        # 根据class匹配
+                        elif 'do' in btn_class.lower() or 'start' in btn_class.lower():
+                            if btn.is_displayed() and btn.is_enabled():
+                                self.logger.info(f"✅ 找到按钮class: {btn_class[:50]}")
+                                return btn
+                except:
+                    continue
+            
+            # 【修改】如果没找到具体按钮，记录警告但不返回容器
+            self.logger.warning("⚠️  未找到'开始做题'按钮，尝试在全页面查找...")
+            
+            # 尝试在全页面查找
+            global_selectors = [
+                "//button[contains(text(), '开始做题')]",
+                "//div[contains(text(), '开始做题')]",
+                "//a[contains(text(), '开始做题')]",
+            ]
+            
+            for selector in global_selectors:
+                try:
+                    buttons = self.driver.find_elements(By.XPATH, selector)
+                    for btn in buttons:
+                        if '开始做题' in btn.text and btn.is_displayed():
+                            self.logger.info(f"✅ 全页面找到'开始做题'按钮: {btn.text}")
                             return btn
                 except:
                     continue
             
-            # 如果没找到具体按钮，就点击容器本身
-            self.logger.info("未找到具体按钮，将点击测试容器")
-            return container
+            # 如果还是没找到，返回None而不是容器
+            self.logger.error("❌ 未找到'开始做题'按钮")
+            return None
             
         except Exception as e:
             self.logger.error(f"查找开始按钮失败: {e}")
-            return container
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
     
     def check_quiz_completed(self):
         """检查测试是否已完成"""
