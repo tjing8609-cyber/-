@@ -1038,9 +1038,15 @@ class ZhidaoQuizOnlyPlayer:
                 # 调用API获取答案
                 answer = self.get_answer_from_api(question_data)
                 
+                # 【修改】如果API返回空答案，退出程序而不是随机选择
                 if not answer:
-                    self.logger.warning("⚠️  API返回空答案，随机选择")
-                    answer = self.random_answer(question_data)
+                    self.logger.error("❌ API返回空答案，纯答题模式要求准确答题，程序退出")
+                    self.logger.error("⚠️  请检查:")
+                    self.logger.error("   1. API密钥是否正确")
+                    self.logger.error("   2. API连接是否正常")
+                    self.logger.error("   3. 题目是否提取完整")
+                    self.logger.error("   4. 模型是否支持中文问答")
+                    return  # 直接退出答题循环，结束程序
                 
                 # 选择答案
                 if self.select_answer(answer, question_data):
