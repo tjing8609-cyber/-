@@ -61,6 +61,9 @@ class ZhidaoWebAutoPlayerFinal:
         # 初始化累计观看时间（秒）
         self.total_watch_time_seconds = 0
         
+        # 【新增】预设观看时间限制（将在load_account时设置）
+        self.max_watch_minutes = 0
+        
         # 加载配置
         self.config = self.load_config()
         self.progress = self.load_progress()
@@ -1719,6 +1722,25 @@ class ZhidaoWebAutoPlayerFinal:
                 self.progress['completed_videos'].append(text)
                 self.progress['total_watched'] += 1
                 self.save_progress()
+            
+            # 【新增】检查是否达到预设观看时间
+            if self.max_watch_minutes > 0:
+                total_minutes = self.total_watch_time_seconds / 60
+                if total_minutes >= self.max_watch_minutes:
+                    self.logger.info("\n" + "="*60)
+                    self.logger.info(f"✅ 已达到预设观看时间 {self.max_watch_minutes} 分钟")
+                    self.logger.info(f"✅ 已播放时间: {total_minutes:.1f} 分钟 ({self.total_watch_time_seconds:.0f} 秒)")
+                    self.logger.info("="*60)
+                    self.logger.info("🚫 结束播放，跳出循环")
+                    # 关闭视频窗口并返回原窗口
+                    if len(current_windows) > len(original_windows):
+                        self.driver.close()
+                        self.driver.switch_to.window(original_window)
+                    else:
+                        self.go_back_to_course()
+                    # 设置标志，在外层循环检查
+                    self.reach_time_limit = True
+                    return True
 
             # 关闭视频窗口并返回原窗口
             if len(current_windows) > len(original_windows):
@@ -2039,7 +2061,8 @@ class ZhidaoWebAutoPlayerFinal:
 
                 # 显示进度（以实际播放进度为准）
                 progress_percentage = min(100, int((video_progress / watch_time) * 100))
-                self.logger.info(f"观看进度: {progress_percentage}% ({video_progress:.0f}/{watch_time}秒) | 等待时间: {int(elapsed)}秒 | 视频总长: {video_duration if video_duration else '未知'}秒")
+                total_minutes = self.total_watch_time_seconds / 60
+                self.logger.info(f"观看进度: {progress_percentage}% ({video_progress:.0f}/{watch_time}秒) | 等待时间: {int(elapsed)}秒 | 视频总长: {video_duration if video_duration else '未知'}秒 | 已播放时间: {total_minutes:.1f}分钟")
 
             # 累加本次实际播放时间到总观看时间
             actual_watch_time = self.get_video_progress()
@@ -2048,7 +2071,7 @@ class ZhidaoWebAutoPlayerFinal:
             # 显示累计观看时间
             total_minutes = self.total_watch_time_seconds / 60
             self.logger.info(f"视频观看完成，本次播放: {actual_watch_time:.0f}秒 ({actual_watch_time/60:.1f}分钟)")
-            self.logger.info(f"累计观看时间: {total_minutes:.1f}分钟 ({self.total_watch_time_seconds:.0f}秒)")
+            self.logger.info(f"📊 已播放时间: {total_minutes:.1f}分钟 ({self.total_watch_time_seconds:.0f}秒)")
 
         except Exception as e:
             self.logger.error(f"模拟观看时出错: {e}")
@@ -2127,6 +2150,11 @@ class ZhidaoWebAutoPlayerFinal:
                 self.course_name = course_name
                 self.course_type = course_type
                 self.max_watch_minutes = max_watch_minutes
+                # 显示时间限制配置
+                if self.max_watch_minutes > 0:
+                    self.logger.info(f"⏰ 预设观看时间限制: {self.max_watch_minutes} 分钟")
+                else:
+                    self.logger.info("⏰ 未设置观看时间限制，将播放所有视频")
             except Exception as e:
                 self.logger.error(f"加载账号失败: {e}")
                 self.logger.error("请在 account.json 中配置账号密码后重试")
@@ -2162,6 +2190,9 @@ class ZhidaoWebAutoPlayerFinal:
             # 循环处理视频，直到所有视频播放完成或达到时间限制
             videos_played = 0
             attempt = 0
+            
+            # 【新增】初始化时间限制标志
+            self.reach_time_limit = False
             
             # 第一次查找未观看视频（入口处查找）
             self.logger.info("🔍 查找未观看的视频...")
@@ -2221,6 +2252,11 @@ class ZhidaoWebAutoPlayerFinal:
                     videos_played += 1
                     self.items_processed_since_refresh += 1
                     self.logger.info(f"✅ 成功播放第 {videos_played} 个视频")
+                    
+                    # 【新增】检查是否达到时间限制
+                    if self.reach_time_limit:
+                        self.logger.info("🚫 已达到预设观看时间，退出播放循环")
+                        break
                 else:
                     self.logger.warning(f"⚠️ 播放第 {attempt} 个视频失败")
 
@@ -2234,6 +2270,9 @@ class ZhidaoWebAutoPlayerFinal:
             else:
                 self.logger.info("✅ 所有视频已播放完成，无需播放")
             self.logger.info(f"✅ 总计已观看: {self.progress['total_watched']} 个视频")
+            # 【新增】显示总播放时间
+            total_minutes = self.total_watch_time_seconds / 60
+            self.logger.info(f"📊 本次总播放时间: {total_minutes:.1f}分钟 ({self.total_watch_time_seconds:.0f}秒)")
             self.logger.info("="*60)
 
             # ========== 新增：PPT处理部分 ==========

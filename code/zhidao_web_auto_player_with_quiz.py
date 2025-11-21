@@ -118,6 +118,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 初始化累计观看时间（秒）
         self.total_watch_time_seconds = 0
         
+        # 【新增】读取预设观看时间限制（分钟）
+        self.max_watch_minutes = self.account_config.get('max_watch_minutes', 0)
+        if self.max_watch_minutes > 0:
+            self.logger.info(f"⏰ 预设观看时间限制: {self.max_watch_minutes} 分钟")
+        else:
+            self.logger.info("⏰ 未设置观看时间限制，将播放所有视频")
+        
         # 初始化浏览器
         self.setup_driver(headless)
         
@@ -3188,6 +3195,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 video_completed = False
                 current_title = None
                 
+                # 【新增】记录本次视频开始时的累计播放时间
+                video_start_total_time = self.total_watch_time_seconds
+                
                 while elapsed_time < max_wait_time:
                     # 检查是否有题目弹窗
                     if self.check_for_quiz():
@@ -3246,6 +3256,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             
                             if ended or (duration > 0 and currentTime >= duration - 5):
                                 self.logger.info(f"✅ 检测到视频播放完成: {currentTime:.0f}/{duration:.0f}秒")
+                                
+                                # 【新增】累加本次视频的实际播放时长
+                                video_watch_time = currentTime
+                                self.total_watch_time_seconds += video_watch_time
+                                total_minutes = self.total_watch_time_seconds / 60
+                                self.logger.info(f"📊 本次视频播放: {video_watch_time:.0f}秒 ({video_watch_time/60:.1f}分钟)")
+                                self.logger.info(f"📊 已播放时间: {total_minutes:.1f}分钟 ({self.total_watch_time_seconds:.0f}秒)")
+                                
                                 video_completed = True
                                 break
                             else:
@@ -3258,17 +3276,19 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     elapsed_time += 10
                     
                     # 显示进度
-                    # 【优化】同时显示视频总时长
+                    # 【优化】同时显示视频总时长和已播放时间
                     try:
                         video_duration = self.driver.execute_script(
                             "return document.querySelector('video') ? document.querySelector('video').duration : 0"
                         )
+                        total_minutes = self.total_watch_time_seconds / 60
                         if video_duration and video_duration > 0:
-                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 视频总长: {video_duration:.0f}秒")
+                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 视频总长: {video_duration:.0f}秒 | 已播放时间: {total_minutes:.1f}分钟")
                         else:
-                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒")
+                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {total_minutes:.1f}分钟")
                     except:
-                        self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒")
+                        total_minutes = self.total_watch_time_seconds / 60
+                        self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {total_minutes:.1f}分钟")
                 
                 if video_completed:
                     videos_played += 1
@@ -3280,6 +3300,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.progress['completed_videos'].append(current_title)
                         self.progress['total_watched'] += 1
                         self.save_progress()
+                    
+                    # 【新增】检查是否达到预设观看时间
+                    if self.max_watch_minutes > 0:
+                        total_minutes = self.total_watch_time_seconds / 60
+                        if total_minutes >= self.max_watch_minutes:
+                            self.logger.info("\n" + "="*60)
+                            self.logger.info(f"✅ 已达到预设观看时间 {self.max_watch_minutes} 分钟")
+                            self.logger.info(f"✅ 已播放时间: {total_minutes:.1f} 分钟 ({self.total_watch_time_seconds:.0f} 秒)")
+                            self.logger.info(f"✅ 本次播放 {videos_played} 个视频")
+                            self.logger.info("="*60)
+                            self.logger.info("🚫 结束播放并退出程序")
+                            return  # 直接退出run方法，结束程序
                 else:
                     self.logger.warning(f"⚠️  视频未检测到完成标记，可能超时")
                 
