@@ -336,12 +336,86 @@ class ZhidaoQuizOnlyPlayer:
                 if login_btn:
                     login_btn.click()
                     self.logger.info("已点击登录按钮")
-                    self.smart_wait(5)
+                    self.smart_wait(3)
                 
-                self.logger.info("登录成功！")
-                return True
+                # 【新增】等待并持续检测登录状态（最多30秒）
+                max_wait = 30
+                check_interval = 2
+                elapsed = 0
+                
+                while elapsed < max_wait:
+                    self.smart_wait(check_interval)
+                    elapsed += check_interval
+                    
+                    self.logger.info(f"检查登录状态... ({elapsed}/{max_wait}秒)")
+                    
+                    # 检查是否有人机验证
+                    if self.check_captcha():
+                        self.logger.info("检测到人机验证，等待用户手动完成")
+                        if not self.wait_for_captcha_completion():
+                            self.logger.warning("人机验证等待超时或失败")
+                            return False
+                        # 验证完成后直接跳出循环，不再重复检查
+                        self.logger.info("✅ 人机验证已完成，跳过剩余检查")
+                        break
+                    
+                    # 检查登录是否成功
+                    if self.check_login_success():
+                        self.logger.info("登录成功！")
+                        self.logger.info("⏳ 等待10秒，确保页面完全加载且无第二次人机验证...")
+                        time.sleep(10)  # 【修改】5秒改为10秒，防止多重人机验证
+                        
+                        # 再次检查是否有新的人机验证
+                        if self.check_captcha():
+                            self.logger.warning("⚠️  检测到第二次人机验证！")
+                            if not self.wait_for_captcha_completion():
+                                self.logger.warning("第二次人机验证等待超时或失败")
+                                return False
+                            self.logger.info("✅ 第二次人机验证已完成")
+                            # 再等待10秒确认没有第三次验证
+                            time.sleep(10)
+                        
+                        self.logger.info("✅ 页面加载完成，继续执行")
+                        return True
+                    
+                    # 检查是否还在登录页面
+                    current_url = self.driver.current_url
+                    if "login" not in current_url.lower():
+                        self.logger.info("已离开登录页面，检查最终状态...")
+                        self.smart_wait(2)
+                        if self.check_login_success():
+                            self.logger.info("登录成功！")
+                            self.logger.info("⏳ 等待10秒，确保页面完全加载且无第二次人机验证...")
+                            time.sleep(10)
+                            
+                            # 再次检查是否有新的人机验证
+                            if self.check_captcha():
+                                self.logger.warning("⚠️  检测到第二次人机验证！")
+                                if not self.wait_for_captcha_completion():
+                                    self.logger.warning("第二次人机验证等待超时或失败")
+                                    return False
+                                self.logger.info("✅ 第二次人机验证已完成")
+                                time.sleep(10)
+                            
+                            self.logger.info("✅ 页面加载完成，继续执行")
+                            return True
+                
+                self.logger.warning(f"等待{max_wait}秒后登录状态仍未确认")
+                # 最后再检查一次
+                if self.check_login_success():
+                    self.logger.info("最终检查：登录成功！")
+                    self.logger.info("⏳ 等待10秒，确保页面完全加载...")
+                    time.sleep(10)
+                    self.logger.info("✅ 页面加载完成，继续执行")
+                    return True
+                else:
+                    self.logger.warning("最终检查：登录状态不确定")
+                    return False
             else:
                 self.logger.info("当前已登录或无需登录")
+                self.logger.info("⏳ 等待10秒，确保页面完全加载...")
+                time.sleep(10)
+                self.logger.info("✅ 页面加载完成，继续执行")
                 return True
 
         except Exception as e:
@@ -356,6 +430,93 @@ class ZhidaoQuizOnlyPlayer:
                 self.logger.info("浏览器已关闭")
         except Exception as e:
             self.logger.error(f"清理资源失败: {e}")
+    
+    def check_captcha(self):
+        """检查是否存在人机验证"""
+        try:
+            page_source = self.driver.page_source
+            # 检查常见的人机验证关键词
+            captcha_keywords = [
+                'captcha',
+                '验证码',
+                '人机验证',
+                '点击验证',
+                '滑动验证',
+                'geetest',
+                'verify',
+            ]
+            
+            for keyword in captcha_keywords:
+                if keyword in page_source.lower():
+                    return True
+            
+            return False
+        except Exception as e:
+            self.logger.error(f"检查人机验证时出错: {e}")
+            return False
+    
+    def check_login_success(self):
+        """检查是否登录成功"""
+        try:
+            # 检查是否在课程页面或主页
+            current_url = self.driver.current_url
+            if "onlinestuh5" in current_url and "login" not in current_url:
+                return True
+
+            # 检查页面内容
+            page_source = self.driver.page_source
+            if "我的课程" in page_source or "课程列表" in page_source:
+                return True
+
+            return False
+        except Exception as e:
+            self.logger.error(f"检查登录状态时出错: {e}")
+            return False
+    
+    def wait_for_captcha_completion(self, timeout=60):
+        """等待用户完成人机验证"""
+        self.logger.info("检测到人机验证，请手动完成验证...")
+        
+        # 硬等待20秒，但每2秒检查一次是否已完成
+        self.logger.info("⏳ 等待20秒，期间每2秒检查一次验证状态...")
+        for i in range(10):  # 20秒分成10次，每次2秒
+            time.sleep(2)
+            
+            # 检查是否已登录（验证通过）
+            if self.check_login_success():
+                self.logger.info("✅ 登录成功，立即继续执行")
+                return True
+            
+            # 检查是否还有人机验证
+            if not self.check_captcha():
+                self.logger.info("✅ 人机验证已消失，立即继续执行")
+                return True
+        
+        # 20秒后，开始正常的循环检查
+        self.logger.info("⏰ 20秒已过，开始正常检查流程...")
+        start_time = time.time()
+        check_interval = 5  # 每5秒检查一次
+
+        while time.time() - start_time < timeout:
+            # 检查是否还有人机验证
+            if not self.check_captcha():
+                self.logger.info("人机验证已完成，继续执行程序")
+                return True
+
+            # 检查是否已登录（验证通过）
+            if self.check_login_success():
+                self.logger.info("登录成功，继续执行程序")
+                return True
+
+            # 显示等待信息
+            elapsed = int(time.time() - start_time)
+            remaining = int(timeout - elapsed)
+            self.logger.info(f"等待人机验证完成... 已等待 {elapsed} 秒，剩余 {remaining} 秒")
+
+            time.sleep(check_interval)
+
+        self.logger.error("人机验证等待超时")
+        return False
     
     def verify_api_connection(self):
         """验证DeepSeek API连接"""
