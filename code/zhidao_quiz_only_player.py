@@ -253,6 +253,72 @@ class ZhidaoQuizOnlyPlayer:
         actual_wait = seconds + random.uniform(-0.5, 0.5)
         time.sleep(max(0.5, actual_wait))
     
+    def handle_api_error(self, error, context="API调用"):
+        """处理DeepSeek API错误，根据官方文档提供详细提示"""
+        error_str = str(error)
+        
+        self.logger.error(f"❌ {context}失败: {error}")
+        
+        # 检测并处理常见错误
+        if '400' in error_str:
+            self.logger.error("🚫 错误类型: 400 - 格式错误")
+            self.logger.error("💡 原因: 请求体格式错误")
+            self.logger.error("🔧 解决方法: 请检查请求参数是否符合API规范")
+        elif '401' in error_str:
+            self.logger.error("🚫 错误类型: 401 - 认证失败")
+            self.logger.error("💡 原因: API Key 错误，认证失败")
+            self.logger.error("🔧 解决方法:")
+            self.logger.error("   1. 检查环境变量 ANTHROPIC_AUTH_TOKEN 是否正确")
+            self.logger.error("   2. 确认API Key来自 https://platform.deepseek.com/api_keys")
+            self.logger.error("   3. 检查API Key是否有多余空格或换行")
+        elif '402' in error_str:
+            self.logger.error("🚫 错误类型: 402 - 余额不足")
+            self.logger.error("💡 原因: 账号余额不足")
+            self.logger.error("🔧 解决方法:")
+            self.logger.error("   1. 前往 https://platform.deepseek.com/usage 查看余额")
+            self.logger.error("   2. 前往 https://platform.deepseek.com/top_up 进行充值")
+        elif '422' in error_str:
+            self.logger.error("🚫 错误类型: 422 - 参数错误")
+            self.logger.error("💡 原因: 请求体参数错误")
+            self.logger.error("🔧 解决方法:")
+            self.logger.error("   1. 检查model参数是否为 'deepseek-chat' 或 'deepseek-reasoner'")
+            self.logger.error("   2. 检查max_tokens、temperature等参数是否在有效范围内")
+        elif '429' in error_str:
+            self.logger.error("🚫 错误类型: 429 - 请求速率达到上限")
+            self.logger.error("💡 原因: 请求速率（TPM 或 RPM）达到上限")
+            self.logger.error("🔧 解决方法:")
+            self.logger.error("   1. 稍后重试，等待几秒再发起请求")
+            self.logger.error("   2. 调整答题间隔时间，降低请求频率")
+            self.logger.error("   3. 检查是否有多个程序同时使用同一API Key")
+        elif '500' in error_str:
+            self.logger.error("🚫 错误类型: 500 - 服务器故障")
+            self.logger.error("💡 原因: 服务器内部故障")
+            self.logger.error("🔧 解决方法:")
+            self.logger.error("   1. 稍后重试")
+            self.logger.error("   2. 若问题持续存在，请联系DeepSeek官方支持")
+        elif '503' in error_str:
+            self.logger.error("🚫 错误类型: 503 - 服务器繁忙")
+            self.logger.error("💡 原因: 服务器负载过高")
+            self.logger.error("🔧 解决方法:")
+            self.logger.error("   1. 稍后重试您的请求")
+            self.logger.error("   2. 建议等待30-60秒后再次尝试")
+        else:
+            # 其他错误，显示详细堆栈
+            self.logger.error("🚫 未知错误类型")
+            self.logger.error("💡 可能原因:")
+            self.logger.error("   1. 网络连接问题")
+            self.logger.error("   2. API地址错误")
+            self.logger.error("   3. OpenAI SDK版本问题")
+            import traceback
+            self.logger.error(f"📑 详细堆栈:\n{traceback.format_exc()}")
+        
+        # 通用检查建议
+        self.logger.error("\n🔍 通用检查步骤:")
+        self.logger.error(f"   1. API Base URL: {self.api_base_url}")
+        self.logger.error(f"   2. API Model: {self.api_model}")
+        self.logger.error("   3. 检查网络连接是否正常")
+        self.logger.error("   4. 确认已安装 openai 库: pip install openai")
+    
     def login(self):
         """登录知到网站"""
         username = self.account_config.get('username')
@@ -586,9 +652,7 @@ class ZhidaoQuizOnlyPlayer:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ API验证过程出错: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
+            self.handle_api_error(e, "API连接验证")
             return False
     
     def find_and_enter_quiz(self):
@@ -1303,9 +1367,7 @@ class ZhidaoQuizOnlyPlayer:
             return answer
             
         except Exception as e:
-            self.logger.error(f"API调用失败: {e}")
-            import traceback
-            self.logger.error(traceback.format_exc())
+            self.handle_api_error(e, "API答题调用")
             return None
     
     def parse_answer(self, answer_text):
