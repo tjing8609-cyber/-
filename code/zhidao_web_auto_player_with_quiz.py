@@ -3203,23 +3203,39 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     if self.check_for_quiz():
                         self.answer_quiz()
                     
-                    # 检查视频是否还在播放
-                    if not self.ensure_video_playing():
-                        self.logger.warning("⚠️  视频似乎已停止，尝试恢复播放")
-                        self.recover_stuck_video()
-                    
-                    # 检查进度是否卡住
+                    # 【优化】获取视频进度和时长，用于判断是否接近结束
                     current_progress = self.get_video_progress()
+                    try:
+                        video_duration = self.driver.execute_script(
+                            "return document.querySelector('video') ? document.querySelector('video').duration : 0"
+                        )
+                        # 计算播放进度百分比
+                        progress_percentage = (current_progress / video_duration * 100) if video_duration > 0 else 0
+                    except:
+                        video_duration = 0
+                        progress_percentage = 0
                     
+                    # 【优化】只在视频进度低于95%时才检查卡停
+                    if progress_percentage < 95:
+                        # 检查视频是否还在播放
+                        if not self.ensure_video_playing():
+                            self.logger.warning("⚠️  视频似乎已停止，尝试恢复播放")
+                            self.recover_stuck_video()
+                    else:
+                        self.logger.debug(f"🎯 视频已接近结束 ({progress_percentage:.1f}%)，跳过卡停检测")
+                    # 检查进度是否卡住
                     if abs(current_progress - last_progress_check) < 1:
                         no_progress_count += 1
                         self.logger.warning(f"⚠️  视频进度无变化，连续{no_progress_count}次 ({current_progress:.0f}秒)")
                         
-                        if no_progress_count >= 3:
+                        # 【优化】只在进度低于95%时才尝试恢复
+                        if no_progress_count >= 3 and progress_percentage < 95:
                             self.logger.warning(f"🔧 连续{no_progress_count}次进度无变化，可能触发防脚本机制，尝试恢复...")
                             self.recover_stuck_video()
                             self.smart_wait(2)
                             no_progress_count = 0
+                        elif progress_percentage >= 95:
+                            self.logger.debug(f"🎯 视频已接近结束 ({progress_percentage:.1f}%)，跳过恢复操作，等待自然结束")
                     else:
                         if no_progress_count > 0:
                             self.logger.info(f"✅ 视频恢复正常，进度: {current_progress:.0f}秒")
