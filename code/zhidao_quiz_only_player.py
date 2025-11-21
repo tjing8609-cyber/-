@@ -21,10 +21,10 @@ import os
 import sys
 import random
 import logging
-import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential
+from openai import OpenAI  # 【新增】使用OpenAI SDK调用DeepSeek API
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -61,17 +61,20 @@ class ZhidaoQuizOnlyPlayer:
         self.api_key = self.account_config.get('deepseek_api_key', '').strip()
         self.api_base_url = None
         self.api_model = None
+        self.api_client = None  # 【新增】OpenAI客户端
         
         if not self.api_key:
             # 尝试从系统环境变量加载
             self.api_key = os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
             self.api_base_url = os.getenv('ANTHROPIC_BASE_URL', '').strip()
-            self.api_model = os.getenv('ANTHROPIC_MODEL', 'deepseek-reasoner').strip()
+            self.api_model = os.getenv('ANTHROPIC_MODEL', 'deepseek-chat').strip()  # 【修改】默认改为deepseek-chat
             
             if self.api_key:
                 self.logger.info("✅ 从系统环境变量加载API配置成功")
                 self.logger.info(f"📡 API Base URL: {self.api_base_url}")
                 self.logger.info(f"🤖 API Model: {self.api_model}")
+                # 【新增】创建OpenAI客户端
+                self.api_client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
             else:
                 self.logger.warning("⚠️  未配置API密钥（账号配置和环境变量均未找到），答题功能将受限")
         else:
@@ -79,6 +82,8 @@ class ZhidaoQuizOnlyPlayer:
             # 用户自定义API，使用默认配置
             self.api_base_url = self.account_config.get('api_base_url', 'https://api.deepseek.com').strip()
             self.api_model = self.account_config.get('api_model', 'deepseek-chat').strip()
+            # 【新增】创建OpenAI客户端
+            self.api_client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
         
         # 【新增】验证API连接
         if self.api_key:
@@ -550,75 +555,36 @@ class ZhidaoQuizOnlyPlayer:
             self.logger.info("🔍 验证DeepSeek API连接...")
             self.logger.info("="*60)
             
-            # 构造简单的测试请求
-            url = f"{self.api_base_url}/v1/chat/completions"
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-            data = {
-                'model': self.api_model,
-                'messages': [
-                    {
-                        'role': 'user',
-                        'content': 'sin30°等于多少？请直接回答数值。'
-                    }
-                ],
-                'max_tokens': 50
-            }
-            
-            self.logger.info(f"📡 请求URL: {url}")
+            self.logger.info(f"📡 API Base URL: {self.api_base_url}")
             self.logger.info(f"🤖 使用模型: {self.api_model}")
             self.logger.info(f"💬 发送问题: sin30°等于多少？")
             
-            # 发送测试请求
-            response = requests.post(url, headers=headers, json=data, timeout=30)
+            # 【修改】使用OpenAI SDK调用API
+            response = self.api_client.chat.completions.create(
+                model=self.api_model,
+                messages=[
+                    {"role": "user", "content": "sin30°等于多少？请直接回答数值。"}
+                ],
+                max_tokens=50,
+                stream=False
+            )
             
-            # 检查响应
-            if response.status_code == 200:
-                result = response.json()
-                
-                if 'choices' in result and len(result['choices']) > 0:
-                    message = result['choices'][0].get('message', {})
-                    # 【修改】先尝试获取content，如果为空则获取reasoning_content
-                    reply = message.get('content', '').strip()
-                    reasoning = message.get('reasoning_content', '').strip()
-                    
-                    # 如果content为空但reasoning_content有内容，使用reasoning_content
-                    if not reply and reasoning:
-                        reply = reasoning
-                        self.logger.info(f"🧠 DeepSeek推理模式，使用reasoning_content")
-                    
-                    self.logger.info(f"✅ API连接成功！")
-                    if reply:
-                        self.logger.info(f"💬 AI回答: {reply}")
-                        # 验证回答是否包含正确答案（0.5）
-                        if '0.5' in reply or '1/2' in reply or '一半' in reply:
-                            self.logger.info(f"✅ AI回答正确（sin30° = 0.5）")
-                        else:
-                            self.logger.warning(f"⚠️  AI回答可能不准确（期望: 0.5）")
-                    else:
-                        self.logger.warning(f"⚠️  API回复为空，但连接成功")
-                        self.logger.info(f"📊 消息结构: {message}")
-                    self.logger.info("="*60 + "\n")
-                    return True
+            # 获取回复
+            reply = response.choices[0].message.content.strip()
+            
+            self.logger.info(f"✅ API连接成功！")
+            if reply:
+                self.logger.info(f"💬 AI回答: {reply}")
+                # 验证回答是否包含正确答案（0.5）
+                if '0.5' in reply or '1/2' in reply or '一半' in reply:
+                    self.logger.info(f"✅ AI回答正确（sin30° = 0.5）")
                 else:
-                    self.logger.error("❌ API返回格式异常")
-                    self.logger.error(f"响应内容: {result}")
-                    return False
+                    self.logger.warning(f"⚠️  AI回答可能不准确（期望: 0.5）")
             else:
-                self.logger.error(f"❌ API请求失败，状态码: {response.status_code}")
-                self.logger.error(f"错误信息: {response.text}")
-                return False
+                self.logger.warning(f"⚠️  API回复为空，但连接成功")
+            self.logger.info("="*60 + "\n")
+            return True
             
-        except requests.exceptions.Timeout:
-            self.logger.error("❌ API请求超时（30秒）")
-            self.logger.error("⚠️  请检查网络连接或API地址是否正确")
-            return False
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"❌ API请求异常: {e}")
-            self.logger.error("⚠️  请检查API密钥和Base URL是否正确")
-            return False
         except Exception as e:
             self.logger.error(f"❌ API验证过程出错: {e}")
             import traceback
@@ -1307,35 +1273,28 @@ class ZhidaoQuizOnlyPlayer:
 
 请直接返回答案字母（单选题返回A/B/C/D，多选题返回AB/ABC等），不需要解释。"""
             
-            # 构造请求
-            url = f"{self.api_base_url}/v1/chat/completions"
-            headers = {
-                'Authorization': f'Bearer {self.api_key}',
-                'Content-Type': 'application/json'
-            }
-            data = {
-                'model': self.api_model,
-                'messages': [
-                    {
-                        'role': 'system',
-                        'content': '你是一个专业的答题助手，只返回答案字母，不要添加任何额外说明。'
-                    },
-                    {
-                        'role': 'user',
-                        'content': user_prompt
-                    }
-                ],
-                'temperature': 0.3,
-                'max_tokens': 10
-            }
-            
             self.logger.info(f"🤖 调用API获取答案...")
             
-            response = requests.post(url, headers=headers, json=data, timeout=30)
-            response.raise_for_status()
+            # 【修改】使用OpenAI SDK调用API
+            response = self.api_client.chat.completions.create(
+                model=self.api_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是一个专业的答题助手，只返回答案字母，不要添加任何额外说明。"
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                    }
+                ],
+                temperature=0.3,
+                max_tokens=10,
+                stream=False
+            )
             
-            result = response.json()
-            answer_text = result['choices'][0]['message']['content'].strip()
+            # 获取回复
+            answer_text = response.choices[0].message.content.strip()
             
             # 提取答案字母
             answer = self.parse_answer(answer_text)
@@ -1345,6 +1304,8 @@ class ZhidaoQuizOnlyPlayer:
             
         except Exception as e:
             self.logger.error(f"API调用失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return None
     
     def parse_answer(self, answer_text):
