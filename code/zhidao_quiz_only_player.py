@@ -580,7 +580,14 @@ class ZhidaoQuizOnlyPlayer:
                 
                 if 'choices' in result and len(result['choices']) > 0:
                     message = result['choices'][0].get('message', {})
+                    # 【修改】先尝试获取content，如果为空则获取reasoning_content
                     reply = message.get('content', '').strip()
+                    reasoning = message.get('reasoning_content', '').strip()
+                    
+                    # 如果content为空但reasoning_content有内容，使用reasoning_content
+                    if not reply and reasoning:
+                        reply = reasoning
+                        self.logger.info(f"🧠 DeepSeek推理模式，使用reasoning_content")
                     
                     self.logger.info(f"✅ API连接成功！")
                     if reply:
