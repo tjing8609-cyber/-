@@ -8,6 +8,7 @@
 本项目是知到（智慧树）网页版自动播放器，支持：
 ✅ 自动播放视频课程
 ✅ 自动答题（有题目版本）
+✅ 纯答题模式（智能答题，支持DeepSeek API）
 ✅ 多账号同时运行
 ✅ 智能卡顿检测与恢复
 ✅ 进度自动保存
@@ -30,7 +31,8 @@ zhidao/
 ├── code/                    # 核心代码
 │   ├── zhidao_launcher.py                    # 启动器（自动选择版本）
 │   ├── zhidao_web_auto_player_final.py       # 无题目课程版本
-│   └── zhidao_web_auto_player_with_quiz.py   # 有题目课程版本
+│   ├── zhidao_web_auto_player_with_quiz.py   # 有题目课程版本
+│   └── zhidao_quiz_only_player.py            # 纯答题模式（DeepSeek AI答题）
 │
 ├── log/                     # 日志和进度文件
 │   ├── zhidao_account1.log              # 账号1日志
@@ -53,17 +55,28 @@ zhidao/
 🚀 快速开始（2种方式）
 ========================================
 
-【方式1】双击bat文件启动（推荐）
+【方式1】双减bat文件启动（推荐）
 -------------------
 1. 打开 `启动/account1.json` 文件，填写账号密码
-2. 设置 course_type（1=无题目，2=有题目）
-3. 双击 `启动/运行账号1.bat`
+2. 设置运行模式：
+   - mode: "video" → 视频播放模式（默认）
+   - mode: "quiz_only" → 纯答题模式（需配置DeepSeek API）
+3. 如果是视频模式，设置 course_type（1=无题目，2=有题目）
+4. 如果是答题模式，设置 quiz_type（课程测试/章节测试等）
+5. 双击 `启动/运行账号1.bat`
 
 【方式2】命令行启动
 -------------------
 环境配置参考文档中的requirements.txt
 
 在项目根目录（zhidao文件夹）执行：
+
+# 视频播放模式（默认）
+```
+python code\zhidao_launcher.py --account 启动\account1.json
+```
+
+# 纯答题模式（需先将account.json中mode设为quiz_only）
 ```
 python code\zhidao_launcher.py --account 启动\account1.json
 ```
@@ -77,7 +90,7 @@ python code\zhidao_launcher.py --account 启动\account1.json
 ✨ 核心功能说明
 ========================================
 
-1. 自动播放视频
+1. 视频播放模式
    - 自动查找未观看的视频
    - 智能跳过已完成视频
    - 每次播完自动切换下一个
@@ -88,12 +101,19 @@ python code\zhidao_launcher.py --account 启动\account1.json
    - 自动选择并提交
    - ESC键关闭题目弹窗
 
-3. 智能卡顿恢复
+3. 纯答题模式（新增）
+   - DeepSeek AI智能答题
+   - 支持单选、多选、判断题
+   - 自动识别题型和选项
+   - 启动时验证API连接
+   - 支持课程测试/章节测试/期末考试
+
+4. 智能卡顿恢复
    - 每10秒检测播放进度
    - 连续3次无进展自动恢复
    - 点击视频中央+暂停播放双重策略
 
-4. 进度保存
+5. 进度保存
    - 自动保存观看进度
    - 断点续播
    - 多账号独立进度
@@ -114,11 +134,19 @@ python code\zhidao_launcher.py --account 启动\account1.json
 - 运行账号3.bat → 使用 account3.json
 
 
-【课程类型切换】
+【课程模式切换】
 -------------------
-修改 account.json 中的 course_type：
+修改 account.json 中的 mode 和 course_type：
+
+视频播放模式：
+- mode: "video"  →  视频播放模式
 - course_type: 1  →  无题目课程
 - course_type: 2  →  有题目课程
+
+纯答题模式：
+- mode: "quiz_only"  →  纯答题模式
+- quiz_type: "课程测试"  →  测试类型
+- 必须配置DeepSeek API
 
 脚本会自动选择对应版本运行！
 
@@ -166,6 +194,13 @@ A5: 不会！每个账号有独立的日志文件和进度文件，互不干扰�
 Q6: 日志文件太大怎么办？
 A6: 脚本每20次运行会自动清理日志，保留最近5000行。
 
+Q7: 纯答题模式API验证失败？
+A7: 检查：
+    1. API密钥是否正确
+    2. API Base URL是否为https://api.deepseek.com（不含/anthropic）
+    3. 网络连接是否正常
+    4. 查看log/日志文件获取详细错误信息
+
 
 🔧 技术支持
 ========================================
@@ -180,6 +215,7 @@ A6: 脚本每20次运行会自动清理日志，保留最近5000行。
 - 启动器：code/zhidao_launcher.py
 - 无题目版本：code/zhidao_web_auto_player_final.py
 - 有题目版本：code/zhidao_web_auto_player_with_quiz.py
+- 纯答题模式：code/zhidao_quiz_only_player.py
 
 
 ⚠️ 注意事项

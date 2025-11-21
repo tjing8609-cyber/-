@@ -4,6 +4,10 @@
 
 本程序支持多账号同时运行，每个账号使用独立的配置文件、进度文件和日志文件，互不干扰。
 
+支持三种运行模式：
+1. 视频播放模式（无题目/有题目）
+2. 纯答题模式（DeepSeek AI智能答题）
+
 ---
 
 ## 🚀 快速开始
@@ -11,9 +15,11 @@
 ### 方式1：使用智能启动器（推荐）
 
 ```bash
-# 智能启动器会根据 course_type 字段自动选择对应版本
-# course_type = 1: 无题目课程（使用 zhidao_web_auto_player_final.py）
-# course_type = 2: 有题目课程（使用 zhidao_web_auto_player_with_quiz.py）
+# 智能启动器会根据 mode 字段自动选择对应版本
+# mode = "video": 视频播放模式
+#   - course_type = 1: 无题目课程（使用 zhidao_web_auto_player_final.py）
+#   - course_type = 2: 有题目课程（使用 zhidao_web_auto_player_with_quiz.py）
+# mode = "quiz_only": 纯答题模式（使用 zhidao_quiz_only_player.py）
 
 # 单账号运行
 python code/zhidao_launcher.py --account 启动/account.json
@@ -56,7 +62,8 @@ zhidao/
 ├── code/                                      # 代码文件夹
 │   ├── zhidao_launcher.py                    # 智能启动器
 │   ├── zhidao_web_auto_player_final.py       # 无题目版本
-│   └── zhidao_web_auto_player_with_quiz.py   # 有题目版本
+│   ├── zhidao_web_auto_player_with_quiz.py   # 有题目版本
+│   └── zhidao_quiz_only_player.py            # 纯答题模式
 │
 ├── 启动/                                      # 启动配置文件夹
 │   ├── account.json                          # 默认账号配置
@@ -97,8 +104,13 @@ zhidao/
     "course_type": 2,
     "use_sidebar_layout": true,
     "max_watch_minutes": 30,
+    "mode": "video",
+    "quiz_type": "课程测试",
+    "deepseek_api_key": "",
     "note": "账号1配置 - 请填写第一个账号的用户名、密码和课程名称",
+    "mode_note": "运行模式: video=视频播放模式(默认), quiz_only=纯答题模式",
     "course_type_note": "课程类型: 1=无题目课程(默认), 2=有题目课程(会弹出题目，自动点击关闭)",
+    "quiz_type_note": "测试类型(仅纯答题模式): 课程测试/章节测试/单元测试/期末考试",
     "use_sidebar_layout_note": "侧边栏布局: false=使用主区域查找(默认,稳定), true=启用侧边栏布局检测(适用于新版界面)",
     "max_watch_minutes_note": "最大观看时长(分钟): 0=播放完所有视频(默认), >0=播放指定分钟数后停止"
 }
@@ -108,13 +120,17 @@ zhidao/
 - `username`: 登录账号（手机号或学号）
 - `password`: 登录密码
 - `course_name`: 要学习的课程名称
-- `course_type`: **1=无题目课程**, **2=有题目课程**（重要！）
+- `mode`: **"video"=视频播放模式**, **"quiz_only"=纯答题模式**（重要！）
+- `course_type`: **1=无题目课程**, **2=有题目课程**（仅视频模式）
+- `quiz_type`: 测试类型（仅纯答题模式）
+- `deepseek_api_key`: DeepSeek API密钥（仅纯答题模式必需）
 - `use_sidebar_layout`: 是否使用侧边栏布局（新版界面）
 - `max_watch_minutes`: 0=播放所有视频，>0=播放指定分钟后停止
 
 **注意：** 
 - 每个账号使用独立的配置文件，互不影响
-- `course_type` 决定使用哪个版本的脚本（通过启动器自动选择）
+- `mode` 决定使用哪个脚本（通过启动器自动选择）
+- 纯答题模式必须配置DeepSeek API，启动时会验证API连接
 
 ### 2. 程序配置文件（config.json）
 
@@ -139,7 +155,7 @@ zhidao/
 ### 基本用法
 
 ```bash
-python code/zhidao_web_auto_player_final.py [选项]
+python code/zhidao_launcher.py [选项]
 ```
 
 ### 可用选项
@@ -155,16 +171,16 @@ python code/zhidao_web_auto_player_final.py [选项]
 
 ```bash
 # 查看帮助
-python code/zhidao_web_auto_player_final.py --help
+python code/zhidao_launcher.py --help
 
-# 使用账号1配置
-python code/zhidao_web_auto_player_final.py --account 启动/account1.json
+# 使用账号1配置（视频模式）
+python code/zhidao_launcher.py --account 启动/account1.json
+
+# 使用账号1配置（纯答题模式，需先设置mode=quiz_only）
+python code/zhidao_launcher.py --account 启动/account1.json
 
 # 使用无头模式运行
-python code/zhidao_web_auto_player_final.py --account 启动/account1.json --headless
-
-# 自定义所有配置文件
-python code/zhidao_web_auto_player_final.py --account 启动/my_account.json --config config.json
+python code/zhidao_launcher.py --account 启动/account1.json --headless
 ```
 
 ---
@@ -349,7 +365,8 @@ rm -r ~/.wdm
 - ✅ 支持多账号同时运行
 - ✅ 每个账号独立配置、进度、日志
 - ✅ **智能启动器自动选择脚本版本**
-- ✅ **支持无题目课程和有题目课程**
+- ✅ **支持视频播放模式和纯答题模式**
+- ✅ **纯答题模式DeepSeek AI智能答题**
 - ✅ 命令行参数灵活控制
 - ✅ 持续播放直到所有视频完成
 - ✅ 断点续播，进度不丢失
