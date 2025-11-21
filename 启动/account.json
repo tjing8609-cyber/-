@@ -11,7 +11,7 @@
     "api_base_url": "",
     "api_model": "",
     "note": "请在运行脚本前填写您的账号、密码和课程名称",
-    "course_type_note": "课程类型: 1=无题目课程(默认), 2=有题目课程(会弹出题目，自动点击关闭)",
+    "course_type_note": "课程类型: 1=无题目课程(默认), 2=有题目课程(会弹出题目，自动点击关闭), 3=纯答题模式(建议使用mode='quiz_only')",
     "use_sidebar_layout_note": "侧边栏布局: false=使用主区域查找(默认,稳定), true=启用侧边栏布局检测(适用于新版界面)",
     "max_watch_minutes_note": "最大观看时长(分钟): 0=播放完所有视频(默认), >0=播放指定分钟数后停止",
     "mode_note": "运行模式: video=视频播放模式(默认), quiz_only=纯答题模式",

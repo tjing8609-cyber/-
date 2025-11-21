@@ -65,9 +65,11 @@ def main():
     print(f"🎯 运行模式: {mode}")
     
     # 【新增】优先检查mode字段，向后兼容course_type
-    if mode == 'quiz_only':
+    if mode == 'quiz_only' or course_type == 3:
         # 纯答题模式
         print("📌 检测到: 纯答题模式")
+        if course_type == 3:
+            print("ℹ️  提示: 建议使用 mode='quiz_only' 代替 course_type=3")
         print(f"📝 测试类型: {quiz_type}")
         print("🚀 启动: zhidao_quiz_only_player.py")
         print("=" * 60)
@@ -121,7 +123,10 @@ def main():
     
     else:
         print(f"❌ 未知的运行模式: mode={mode}, course_type={course_type}")
-        print("运行模式应为: video/quiz_only，课程类型应为 1（无题目）或 2（有题目）")
+        print("运行模式说明:")
+        print("  - mode='video' + course_type=1: 无题目视频课程")
+        print("  - mode='video' + course_type=2: 有题目视频课程")
+        print("  - mode='quiz_only' 或 course_type=3: 纯答题模式")
         sys.exit(1)
 
 
