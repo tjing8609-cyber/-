@@ -561,7 +561,7 @@ class ZhidaoQuizOnlyPlayer:
                 'messages': [
                     {
                         'role': 'user',
-                        'content': '今天是几月几日星期几？请简洁回答。'
+                        'content': 'sin30°等于多少？请直接回答数值。'
                     }
                 ],
                 'max_tokens': 50
@@ -569,7 +569,7 @@ class ZhidaoQuizOnlyPlayer:
             
             self.logger.info(f"📡 请求URL: {url}")
             self.logger.info(f"🤖 使用模型: {self.api_model}")
-            self.logger.info(f"💬 发送问题: 今天是几月几日星期几？")
+            self.logger.info(f"💬 发送问题: sin30°等于多少？")
             
             # 发送测试请求
             response = requests.post(url, headers=headers, json=data, timeout=30)
@@ -592,16 +592,11 @@ class ZhidaoQuizOnlyPlayer:
                     self.logger.info(f"✅ API连接成功！")
                     if reply:
                         self.logger.info(f"💬 AI回答: {reply}")
-                        # 验证回答是否合理
-                        from datetime import datetime
-                        now = datetime.now()
-                        weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
-                        current_weekday = weekdays[now.weekday()]
-                        expected_date = f"{now.month}月{now.day}日"
-                        if str(now.month) in reply or str(now.day) in reply or current_weekday in reply:
-                            self.logger.info(f"✅ AI回答正确（期望包含: {expected_date} {current_weekday}）")
+                        # 验证回答是否包含正确答案（0.5）
+                        if '0.5' in reply or '1/2' in reply or '一半' in reply:
+                            self.logger.info(f"✅ AI回答正确（sin30° = 0.5）")
                         else:
-                            self.logger.warning(f"⚠️  AI回答可能不准确（期望: {expected_date} {current_weekday}）")
+                            self.logger.warning(f"⚠️  AI回答可能不准确（期望: 0.5）")
                     else:
                         self.logger.warning(f"⚠️  API回复为空，但连接成功")
                         self.logger.info(f"📊 消息结构: {message}")
