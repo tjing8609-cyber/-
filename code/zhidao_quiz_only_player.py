@@ -342,6 +342,7 @@ class ZhidaoQuizOnlyPlayer:
                 max_wait = 30
                 check_interval = 2
                 elapsed = 0
+                captcha_detected = False  # 【新增】标记是否检测到人机验证
                 
                 while elapsed < max_wait:
                     self.smart_wait(check_interval)
@@ -357,6 +358,7 @@ class ZhidaoQuizOnlyPlayer:
                             return False
                         # 验证完成后直接跳出循环，不再重复检查
                         self.logger.info("✅ 人机验证已完成，跳过剩余检查")
+                        captcha_detected = True  # 【新增】设置标记
                         break
                     
                     # 检查登录是否成功
@@ -399,6 +401,29 @@ class ZhidaoQuizOnlyPlayer:
                             
                             self.logger.info("✅ 页面加载完成，继续执行")
                             return True
+                
+                # 【新增】如果是因为人机验证完成而break，需要再次检查登录状态
+                if captcha_detected:
+                    self.logger.info("人机验证已完成，检查登录状态...")
+                    self.logger.info("⏳ 等待10秒，确保页面完全加载且无第二次人机验证...")
+                    time.sleep(10)
+                    
+                    # 再次检查是否有新的人机验证
+                    if self.check_captcha():
+                        self.logger.warning("⚠️  检测到第二次人机验证！")
+                        if not self.wait_for_captcha_completion():
+                            self.logger.warning("第二次人机验证等待超时或失败")
+                            return False
+                        self.logger.info("✅ 第二次人机验证已完成")
+                        time.sleep(10)
+                    
+                    # 检查登录是否成功
+                    if self.check_login_success():
+                        self.logger.info("✅ 登录成功！")
+                        self.logger.info("✅ 页面加载完成，继续执行")
+                        return True
+                    else:
+                        self.logger.warning("⚠️  人机验证后登录状态仍未确认，继续检查...")
                 
                 self.logger.warning(f"等待{max_wait}秒后登录状态仍未确认")
                 # 最后再检查一次
