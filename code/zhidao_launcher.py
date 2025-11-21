@@ -51,23 +51,45 @@ def main():
     # 加载账号配置
     config = load_account_config(args.account)
     
-    # 获取课程类型
+    # 获取运行模式（新增：优先检查mode字段）
+    mode = config.get('mode', 'video')  # 默认为视频模式
     course_type = config.get('course_type', 1)
     course_name = config.get('course_name', '未指定')
+    quiz_type = config.get('quiz_type', '课程测试')
     
     print("=" * 60)
     print("知到网页版自动播放器 - 智能启动器")
     print("=" * 60)
     print(f"📁 配置文件: {args.account}")
     print(f"📚 课程名称: {course_name}")
-    print(f"🎯 课程类型: {course_type}")
+    print(f"🎯 运行模式: {mode}")
     
-    if course_type == 1:
+    # 【新增】优先检查mode字段，向后兼容course_type
+    if mode == 'quiz_only':
+        # 纯答题模式
+        print("📌 检测到: 纯答题模式")
+        print(f"📝 测试类型: {quiz_type}")
+        print("🚀 启动: zhidao_quiz_only_player.py")
+        print("=" * 60)
+        
+        try:
+            from zhidao_quiz_only_player import ZhidaoQuizOnlyPlayer
+            
+            player = ZhidaoQuizOnlyPlayer(account_file=args.account, headless=args.headless)
+            player.run()
+            
+        except ImportError as e:
+            print(f"❌ 无法导入纯答题播放器: {e}")
+            print("请确保 zhidao_quiz_only_player.py 文件存在")
+            sys.exit(1)
+    
+    elif mode == 'video' or course_type == 1:
+        # 无题目视频模式
         print("📌 检测到: 无题目课程")
+        print(f"🎯 课程类型: {course_type}")
         print("🚀 启动: zhidao_web_auto_player_final.py")
         print("=" * 60)
         
-        # 导入并运行旧版播放器
         try:
             from zhidao_web_auto_player_final import ZhidaoWebAutoPlayerFinal
             
@@ -80,11 +102,12 @@ def main():
             sys.exit(1)
     
     elif course_type == 2:
+        # 有题目视频模式
         print("📌 检测到: 有题目课程")
+        print(f"🎯 课程类型: {course_type}")
         print("🚀 启动: zhidao_web_auto_player_with_quiz.py")
         print("=" * 60)
         
-        # 导入并运行新版播放器
         try:
             from zhidao_web_auto_player_with_quiz import ZhidaoWebAutoPlayerWithQuiz
             
@@ -97,8 +120,8 @@ def main():
             sys.exit(1)
     
     else:
-        print(f"❌ 未知的课程类型: {course_type}")
-        print("课程类型应为 1（无题目）或 2（有题目）")
+        print(f"❌ 未知的运行模式: mode={mode}, course_type={course_type}")
+        print("运行模式应为: video/quiz_only，课程类型应为 1（无题目）或 2（有题目）")
         sys.exit(1)
 
 
