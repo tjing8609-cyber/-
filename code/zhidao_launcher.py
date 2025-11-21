@@ -83,7 +83,7 @@ def main():
             print("请确保 zhidao_quiz_only_player.py 文件存在")
             sys.exit(1)
     
-    elif mode == 'video' or course_type == 1:
+    elif mode == 'video' and course_type == 1:
         # 无题目视频模式
         print("📌 检测到: 无题目课程")
         print(f"🎯 课程类型: {course_type}")
@@ -101,7 +101,7 @@ def main():
             print("请确保 zhidao_web_auto_player_final.py 文件存在")
             sys.exit(1)
     
-    elif course_type == 2:
+    elif mode == 'video' and course_type == 2:
         # 有题目视频模式
         print("📌 检测到: 有题目课程")
         print(f"🎯 课程类型: {course_type}")
