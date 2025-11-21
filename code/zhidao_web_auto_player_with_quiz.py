@@ -3240,6 +3240,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             # 检测视频是否播放完成
                             # 1. 视频ended属性为true
                             # 2. 当前进度距离总时长不到5秒（避免卡顿误判）
+                            # 【优化】记录检测到的时长信息
+                            if duration > 0:
+                                self.logger.debug(f"📊 视频时长信息: 总时长={duration:.0f}秒, 当前={currentTime:.0f}秒, 进度={currentTime/duration*100:.1f}%")
+                            
                             if ended or (duration > 0 and currentTime >= duration - 5):
                                 self.logger.info(f"✅ 检测到视频播放完成: {currentTime:.0f}/{duration:.0f}秒")
                                 video_completed = True
@@ -3254,7 +3258,17 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     elapsed_time += 10
                     
                     # 显示进度
-                    self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒")
+                    # 【优化】同时显示视频总时长
+                    try:
+                        video_duration = self.driver.execute_script(
+                            "return document.querySelector('video') ? document.querySelector('video').duration : 0"
+                        )
+                        if video_duration and video_duration > 0:
+                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 视频总长: {video_duration:.0f}秒")
+                        else:
+                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒")
+                    except:
+                        self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒")
                 
                 if video_completed:
                     videos_played += 1
