@@ -1541,14 +1541,16 @@ class ZhidaoWebAutoPlayerFinal:
                 "return document.querySelector('video') ? document.querySelector('video').duration : null"
             )
             if duration and duration > 0:
-                self.logger.info(f"视频时长: {duration:.0f}秒 ({duration/60:.1f}分钟)")
+                self.logger.info(f"✅ 成功获取视频时长: {duration:.0f}秒 ({duration/60:.1f}分钟)")
                 return duration
+            else:
+                self.logger.warning(f"⚠️ 视频时长为空或无效: {duration}")
         except Exception as e:
-            self.logger.warning(f"无法获取视频时长: {e}")
+            self.logger.warning(f"❌ 无法获取视频时长: {e}")
         
-        # 默认返回5分钟
-        self.logger.info("使用默认观看时长: 300秒 (5分钟)")
-        return 300
+        # 默认返回None，让调用方决定如何处理
+        self.logger.warning("⚠️ 视频时长获取失败，返回None")
+        return None
     
     def is_video_playing(self):
         """检测视频是否正在播放"""
@@ -1916,8 +1918,15 @@ class ZhidaoWebAutoPlayerFinal:
     def simulate_watching(self, video_duration=None):
         """模拟观看行为"""
         try:
+            # 【修复】如果没有传入视频时长，尝试重新获取
             if video_duration is None:
-                # 如果没有传入时长，使用默认值
+                self.logger.warning("⚠️ 未传入视频时长，尝试重新获取...")
+                self.smart_wait(2)  # 等待视频加载完成
+                video_duration = self.get_video_duration()
+            
+            if video_duration is None or video_duration <= 0:
+                # 如果仍然无法获取时长，使用默认值
+                self.logger.warning("⚠️ 无法获取视频时长，使用默认观看时间")
                 watch_time = random.randint(90, 180)
             else:
                 # 根据实际视频时长计算观看时间
