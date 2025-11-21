@@ -390,10 +390,18 @@ class ZhidaoQuizOnlyPlayer:
             # 检查响应
             if response.status_code == 200:
                 result = response.json()
+                self.logger.info(f"📊 完整响应: {result}")
+                
                 if 'choices' in result and len(result['choices']) > 0:
-                    reply = result['choices'][0]['message']['content']
+                    message = result['choices'][0].get('message', {})
+                    reply = message.get('content', '')
+                    
                     self.logger.info(f"✅ API连接成功！")
-                    self.logger.info(f"💬 API回复: {reply}")
+                    if reply:
+                        self.logger.info(f"💬 API回复: {reply}")
+                    else:
+                        self.logger.warning(f"⚠️  API回复为空，但连接成功")
+                        self.logger.info(f"📊 消息结构: {message}")
                     self.logger.info("="*60 + "\n")
                     return True
                 else:
