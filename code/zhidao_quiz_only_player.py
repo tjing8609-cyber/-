@@ -253,6 +253,101 @@ class ZhidaoQuizOnlyPlayer:
         actual_wait = seconds + random.uniform(-0.5, 0.5)
         time.sleep(max(0.5, actual_wait))
     
+    def is_last_question(self):
+        """双重判断是否为最后一题"""
+        try:
+            # 【判断1】检查下一题按钮是否变灰
+            next_button_gray = False
+            gray_next_selectors = [
+                "//span[contains(@class, 'Topicswitchingbtn-gray')]",
+                "//span[contains(@class, 'Topicswitchingbtn') and contains(@class, 'gray')]",
+            ]
+            
+            for selector in gray_next_selectors:
+                try:
+                    gray_buttons = self.driver.find_elements(By.XPATH, selector)
+                    if gray_buttons:
+                        self.logger.info("✅ 判断1: 下一题按钮变灰")
+                        next_button_gray = True
+                        break
+                except:
+                    continue
+            
+            if not next_button_gray:
+                self.logger.info("❌ 判断1: 下一题按钮未变灰")
+                return False
+            
+            # 【判断2】检查右侧答题卡
+            all_answered = self.check_answer_card()
+            
+            if next_button_gray and all_answered:
+                self.logger.info("✅ 双重确认: 这是最后一题！")
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"检查是否最后一题失败: {e}")
+            return False
+    
+    def check_answer_card(self):
+        """检查右侧答题卡，判断是否除了当前题外其余都已答"""
+        try:
+            self.logger.info("📋 检查右侧答题卡...")
+            
+            # 根据截图，答题卡在右侧，题号是21-35
+            # 查找所有题号按钮
+            question_buttons = self.driver.find_elements(By.XPATH, "//div[@class='el-dialog__body']//span")
+            
+            green_items = 0  # 绿色项目（已答+当前）
+            total_items = 0
+            
+            for btn in question_buttons:
+                try:
+                    # 检查是否为题号
+                    text = btn.text.strip()
+                    if not text.isdigit():
+                        continue
+                    
+                    total_items += 1
+                    
+                    # 检查背景颜色（绿色底）或border（绿色框）
+                    bg_color = btn.value_of_css_property('background-color')
+                    border = btn.value_of_css_property('border')
+                    
+                    # 判断是否为绿色（已答或当前）
+                    is_green = False
+                    if bg_color and 'rgb' in bg_color:
+                        # 提取RGB值
+                        import re
+                        rgb_match = re.search(r'rgb\((\d+),\s*(\d+),\s*(\d+)', bg_color)
+                        if rgb_match:
+                            r, g, b = map(int, rgb_match.groups())
+                            # 绿色判断：g > 200 且 r < 100 且 b < 100
+                            if g > 200 and r < 100 and b < 100:
+                                is_green = True
+                    
+                    if is_green:
+                        green_items += 1
+                        
+                except:
+                    continue
+            
+            self.logger.info(f"📊 统计: 总题数={total_items}, 绿色项目(已答+当前)={green_items}")
+            
+            # 如果绿色项目数 == 总题数，说明所有题都已答或当前题
+            # 且只有最后一题是当前题，其余都是已答
+            if total_items > 10 and green_items == total_items:
+                self.logger.info("✅ 判断2: 答题卡检查通过，所有题目均为绿色")
+                return True
+            else:
+                self.logger.warning(f"⚠️  判断2: 答题卡状态不符合")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"检查答题卡失败: {e}")
+            return False
+    
     def handle_api_error(self, error, context="API调用"):
         """处理DeepSeek API错误，根据官方文档提供详细提示"""
         error_str = str(error)
@@ -1089,13 +1184,19 @@ class ZhidaoQuizOnlyPlayer:
                 has_next = self.click_next_button()
                 
                 if not has_next:
-                    # 没有下一题，说明是最后一题，尝试提交
-                    self.logger.info("🏁 已经是最后一题，尝试提交...")
-                    if self.check_and_submit():
-                        self.logger.info("✅ 已成功提交测试")
-                        break
+                    # 没有下一题，双重检查是否为最后一题
+                    self.logger.info("🔍 检测到下一题按钮不可用，进行双重检查...")
+                    if self.is_last_question():
+                        # 确认是最后一题，尝试提交
+                        self.logger.info("🏁 双重确认是最后一题，尝试提交...")
+                        if self.check_and_submit():
+                            self.logger.info("✅ 已成功提交测试")
+                            break
+                        else:
+                            self.logger.warning("⚠️  提交失败，答题结束")
+                            break
                     else:
-                        self.logger.warning("⚠️  提交失败，答题结束")
+                        self.logger.warning("⚠️  双重检查未通过，不确认是否最后一题，结束答题")
                         break
                 
                 # 随机延时（反检测）
