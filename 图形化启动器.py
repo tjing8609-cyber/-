@@ -642,12 +642,14 @@ class ZhidaoGUILauncher:
                         cmd = [sys.executable, '-m', 'pip', 'install', '-r', requirements_file]
                         self.log(f"📌 执行命令: {' '.join(cmd)}")
                         
+                        # 【修复】使用系统默认编码，并捕获错误
                         process = subprocess.Popen(
                             cmd,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
                             text=True,
-                            encoding='utf-8'
+                            encoding='gbk',  # Windows下cmd默认GBK
+                            errors='replace'  # 遇到无法解码的字符用?替换
                         )
                         
                         for line in process.stdout:
@@ -676,9 +678,22 @@ class ZhidaoGUILauncher:
         """显示依赖列表"""
         requirements_file = os.path.join(self.project_root, '文档', 'requirements.txt')
         if os.path.exists(requirements_file):
-            with open(requirements_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            messagebox.showinfo("依赖列表", content)
+            # 【修复】尝试多种编码
+            encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312']
+            content = None
+            
+            for encoding in encodings:
+                try:
+                    with open(requirements_file, 'r', encoding=encoding) as f:
+                        content = f.read()
+                    break
+                except UnicodeDecodeError:
+                    continue
+            
+            if content:
+                messagebox.showinfo("依赖列表", content)
+            else:
+                messagebox.showerror("错误", "无法读取requirements.txt，请检查文件编码！")
         else:
             messagebox.showerror("错误", "未找到requirements.txt文件！")
     
@@ -742,12 +757,14 @@ class ZhidaoGUILauncher:
             
             self.log(f"📌 执行命令: {' '.join(cmd)}\n")
             
+            # 【修复】使用GBK编码读取Windows cmd输出
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                encoding='utf-8',
+                encoding='gbk',  # Windows下cmd默认GBK
+                errors='replace',  # 遇到无法解码的字符用?替换
                 bufsize=1,
                 cwd=self.code_dir
             )
