@@ -19,6 +19,12 @@ import json
 import sys
 import os
 
+# 【修复】设置stdout编码为UTF-8，避免Windows下emoji输出错误
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 # 添加code文件夹到Python路径
 code_dir = os.path.dirname(os.path.abspath(__file__))
 if code_dir not in sys.path:
@@ -28,13 +34,21 @@ if code_dir not in sys.path:
 def load_account_config(account_file):
     """加载账号配置"""
     try:
-        with open(account_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        # 尝试多种编码
+        encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312']
+        for encoding in encodings:
+            try:
+                with open(account_file, 'r', encoding=encoding) as f:
+                    return json.load(f)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+        # 如果所有编码都失败
+        raise Exception("无法解析配置文件")
     except FileNotFoundError:
-        print(f"❌ 找不到配置文件: {account_file}")
+        print(f"[错误] 找不到配置文件: {account_file}")
         sys.exit(1)
-    except json.JSONDecodeError:
-        print(f"❌ 配置文件格式错误: {account_file}")
+    except Exception as e:
+        print(f"[错误] 配置文件错误: {account_file} - {e}")
         sys.exit(1)
 
 
@@ -60,18 +74,18 @@ def main():
     print("=" * 60)
     print("知到网页版自动播放器 - 智能启动器")
     print("=" * 60)
-    print(f"📁 配置文件: {args.account}")
-    print(f"📚 课程名称: {course_name}")
-    print(f"🎯 运行模式: {mode}")
+    print(f"[配置] {args.account}")
+    print(f"[课程] {course_name}")
+    print(f"[模式] {mode}")
     
     # 【新增】优先检查mode字段，向后兼容course_type
     if mode == 'quiz_only' or course_type == 3:
         # 纯答题模式
-        print("📌 检测到: 纯答题模式")
+        print("[检测] 纯答题模式")
         if course_type == 3:
-            print("ℹ️  提示: 建议使用 mode='quiz_only' 代替 course_type=3")
-        print(f"📝 测试类型: {quiz_type}")
-        print("🚀 启动: zhidao_quiz_only_player.py")
+            print("[提示] 建议使用 mode='quiz_only' 代替 course_type=3")
+        print(f"[测试] {quiz_type}")
+        print("[启动] zhidao_quiz_only_player.py")
         print("=" * 60)
         
         try:
@@ -81,15 +95,15 @@ def main():
             player.run()
             
         except ImportError as e:
-            print(f"❌ 无法导入纯答题播放器: {e}")
+            print(f"[错误] 无法导入纯答题播放器: {e}")
             print("请确保 zhidao_quiz_only_player.py 文件存在")
             sys.exit(1)
     
     elif mode == 'video' and course_type == 1:
         # 无题目视频模式
-        print("📌 检测到: 无题目课程")
-        print(f"🎯 课程类型: {course_type}")
-        print("🚀 启动: zhidao_web_auto_player_final.py")
+        print("[检测] 无题目课程")
+        print(f"[类型] {course_type}")
+        print("[启动] zhidao_web_auto_player_final.py")
         print("=" * 60)
         
         try:
@@ -99,15 +113,15 @@ def main():
             player.run()
             
         except ImportError as e:
-            print(f"❌ 无法导入旧版播放器: {e}")
+            print(f"[错误] 无法导入旧版播放器: {e}")
             print("请确保 zhidao_web_auto_player_final.py 文件存在")
             sys.exit(1)
     
     elif mode == 'video' and course_type == 2:
         # 有题目视频模式
-        print("📌 检测到: 有题目课程")
-        print(f"🎯 课程类型: {course_type}")
-        print("🚀 启动: zhidao_web_auto_player_with_quiz.py")
+        print("[检测] 有题目课程")
+        print(f"[类型] {course_type}")
+        print("[启动] zhidao_web_auto_player_with_quiz.py")
         print("=" * 60)
         
         try:
@@ -117,12 +131,12 @@ def main():
             player.run()
             
         except ImportError as e:
-            print(f"❌ 无法导入新版播放器: {e}")
+            print(f"[错误] 无法导入新版播放器: {e}")
             print("请确保 zhidao_web_auto_player_with_quiz.py 文件存在")
             sys.exit(1)
     
     else:
-        print(f"❌ 未知的运行模式: mode={mode}, course_type={course_type}")
+        print(f"[错误] 未知的运行模式: mode={mode}, course_type={course_type}")
         print("运行模式说明:")
         print("  - mode='video' + course_type=1: 无题目视频课程")
         print("  - mode='video' + course_type=2: 有题目视频课程")
