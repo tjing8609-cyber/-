@@ -15,3 +15,7 @@ python code/zhidao_launcher.py --account 启动/account.json
 
 
 其中指令python code/zhidao_launcher.py --account 启动/account.json中account后的数字可以根据配置文档的改变而改变。
+
+
+！！！
+新版更新了图形化界面，点击根目录内的“启动图形化界面.bat”就可以启动脚本啦！

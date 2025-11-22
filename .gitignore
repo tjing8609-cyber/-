@@ -3,6 +3,8 @@ account1.json
 account2.json
 account3.json
 account_*.json
+启动/account.json
+启动/account*.json
 
 # 配置文件（含真实信息）
 启动/account.json.local
@@ -26,6 +28,7 @@ ENV/
 # IDE 配置
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 

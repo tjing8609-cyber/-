@@ -1,0 +1,13 @@
+{
+  "username": "",
+  "password": "",
+  "course_name": "课程名称",
+  "mode": "quiz_only",
+  "course_type": 1,
+  "quiz_type": "章节测试",
+  "deepseek_api_key": "",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "deepseek_model": "deepseek-chat",
+  "max_watch_minutes": 0,
+  "use_sidebar_layout": false
+}
