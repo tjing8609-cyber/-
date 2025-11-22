@@ -1014,13 +1014,16 @@ class ZhidaoQuizOnlyPlayer:
             return False
     
     def find_quiz_entrance(self, quiz_type):
-        """查找测试入口"""
+        """查找测试入口【优化】添加滚动功能"""
         try:
             self.logger.info(f"正在查找测试入口: {quiz_type}")
             
             # 【优化】根据实际页面结构调整选择器
             # 先切换到"作业考试"tab
             self.switch_to_exam_tab()
+            
+            # 【新增】滚动页面以加载所有测试项
+            self.scroll_to_load_all_quizzes()
             
             # 测试入口的多种选择器（按优先级）
             quiz_selectors = [
@@ -1113,6 +1116,60 @@ class ZhidaoQuizOnlyPlayer:
         except Exception as e:
             self.logger.error(f"切换tab失败: {e}")
             return False
+    
+    def scroll_to_load_all_quizzes(self):
+        """滚动页面以加载所有测试项目"""
+        try:
+            self.logger.info("📜 滚动页面加载所有测试...")
+            
+            # 尝试查找作业列表容器
+            container_selectors = [
+                "//div[contains(@class, 'homework-list')]",
+                "//div[contains(@class, 'exam-list')]",
+                "//div[contains(@class, 'test-list')]",
+                "//div[contains(@class, 'list-container')]",
+                "//div[contains(@class, 'content')]",
+            ]
+            
+            scroll_container = None
+            for selector in container_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    if elements:
+                        scroll_container = elements[0]
+                        self.logger.info(f"✅ 找到滚动容器: {selector}")
+                        break
+                except:
+                    continue
+            
+            # 如果找到容器，滚动它；否则滚动整个页面
+            if scroll_container:
+                # 滚动容器到底部
+                self.driver.execute_script(
+                    "arguments[0].scrollTop = arguments[0].scrollHeight",
+                    scroll_container
+                )
+                self.smart_wait(1)
+                # 再滚回顶部
+                self.driver.execute_script(
+                    "arguments[0].scrollTop = 0",
+                    scroll_container
+                )
+                self.logger.info("✅ 已滚动容器")
+            else:
+                # 滚动整个页面
+                # 先滚到页面底部
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                self.smart_wait(1)
+                # 再滚回顶部
+                self.driver.execute_script("window.scrollTo(0, 0);")
+                self.logger.info("✅ 已滚动页面")
+            
+            # 等待元素加载
+            self.smart_wait(2)
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️  滚动页面失败: {e}，继续查找...")
     
     def find_start_button(self, container):
         """在测试容器内查找开始按钮"""
