@@ -83,35 +83,40 @@ class ZhidaoWebAutoPlayerFinal:
         self.logger.info(f"日志文件: {self.log_file}")
 
     def load_config(self):
-        """加载配置文件"""
+        """加载配置文件（从 account.json 和 config.json 两个文件读取）"""
+        # 默认配置（只包含通用配置，不包含账号、密码、课程名称）
         default_config = {
-            "username": "",
-            "password": "",
-            "course_name": "中国近代史纲要",
             "min_watch_percentage": 0.95,
-            "max_videos_per_run": 20,
+            "max_videos_per_run": 999,
             "captcha_timeout": 300,
             "enable_notifications": True
         }
         
-        # 获取项目根目录
+        # 1. 加载通用配置 config.json
         config_path = os.path.join(self.project_root, '启动', 'config.json')
         
         if os.path.exists(config_path):
             try:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                    default_config.update(config)
+                    # 只更新通用配置
+                    for key in ['min_watch_percentage', 'max_videos_per_run', 'captcha_timeout', 'enable_notifications']:
+                        if key in config:
+                            default_config[key] = config[key]
             except Exception as e:
                 print(f"加载配置文件失败，使用默认配置: {e}")
-        else:
-            # 创建默认配置文件
+        
+        # 2. 加载账号配置 account.json（包含账号、密码、课程名称等）
+        account_path = os.path.join(self.project_root, '启动', self.account_file)
+        
+        if os.path.exists(account_path):
             try:
-                with open(config_path, 'w', encoding='utf-8') as f:
-                    json.dump(default_config, f, ensure_ascii=False, indent=2)
-                print(f"已创建默认配置文件: {config_path}")
+                with open(account_path, 'r', encoding='utf-8') as f:
+                    account_config = json.load(f)
+                    # 合并账号配置（会覆盖通用配置中的同名项）
+                    default_config.update(account_config)
             except Exception as e:
-                print(f"创建配置文件失败: {e}")
+                print(f"加载账号配置文件失败: {e}")
         
         return default_config
     
