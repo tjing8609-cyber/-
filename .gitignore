@@ -2,6 +2,12 @@
 account1.json
 account2.json
 account3.json
+account_*.json
+
+# 配置文件（含真实信息）
+启动/account.json.local
+启动/config.json.local
+*.local.json
 
 # 进度文件
 progress_*.json

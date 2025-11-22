@@ -85,8 +85,8 @@ class ZhidaoWebAutoPlayerFinal:
     def load_config(self):
         """加载配置文件"""
         default_config = {
-            "username": "18520464935",
-            "password": "Zhanghx2006",
+            "username": "",
+            "password": "",
             "course_name": "中国近代史纲要",
             "min_watch_percentage": 0.95,
             "max_videos_per_run": 20,
