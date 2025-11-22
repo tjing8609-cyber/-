@@ -1085,14 +1085,17 @@ class ZhidaoQuizOnlyPlayer:
                 else:
                     self.logger.error("❌ 选择答案失败")
                 
-                # 检查是否有下一题按钮
-                if not self.click_next_button():
-                    self.logger.info("ℹ️  没有下一题按钮，尝试提交")
+                # 【优化】检查是否有下一题按钮
+                has_next = self.click_next_button()
+                
+                if not has_next:
+                    # 没有下一题，说明是最后一题，尝试提交
+                    self.logger.info("🏁 已经是最后一题，尝试提交...")
                     if self.check_and_submit():
-                        self.logger.info("✅ 已提交测试")
+                        self.logger.info("✅ 已成功提交测试")
                         break
                     else:
-                        self.logger.info("ℹ️  答题结束")
+                        self.logger.warning("⚠️  提交失败，答题结束")
                         break
                 
                 # 随机延时（反检测）
@@ -1489,9 +1492,26 @@ class ZhidaoQuizOnlyPlayer:
             return parent_elem
     
     def click_next_button(self):
-        """点击下一题按钮"""
+        """点击下一题按钮，返回是否有下一题"""
         try:
-            # 【优化】根据实际页面结构
+            # 【优化】先检查下一题按钮是否变灰（最后一题）
+            gray_next_selectors = [
+                "//span[contains(@class, 'Topicswitchingbtn-gray')]",
+                "//span[contains(@class, 'Topicswitchingbtn') and contains(@class, 'gray')]",
+                "//button[contains(@class, 'next') and (@disabled or contains(@class, 'disabled'))]",
+            ]
+            
+            for selector in gray_next_selectors:
+                try:
+                    gray_buttons = self.driver.find_elements(By.XPATH, selector)
+                    for btn in gray_buttons:
+                        if '下一题' in btn.text:
+                            self.logger.info("🏁 检测到下一题按钮变灰，已是最后一题")
+                            return False  # 没有下一题了
+                except:
+                    continue
+            
+            # 如果没有变灰，尝试点击下一题
             next_selectors = [
                 # 知到平台专用class
                 "//span[contains(@class, 'Topicswitchingbtn') and contains(text(), '下一题')]",
@@ -1508,7 +1528,12 @@ class ZhidaoQuizOnlyPlayer:
                 try:
                     elements = self.driver.find_elements(By.XPATH, selector)
                     for elem in elements:
-                        if '下一题' in elem.text or 'next' in elem.get_attribute('class').lower():
+                        # 排除变灰的按钮
+                        elem_class = elem.get_attribute('class') or ''
+                        if 'gray' in elem_class.lower() or 'disabled' in elem_class.lower():
+                            continue
+                        
+                        if '下一题' in elem.text or 'next' in elem_class.lower():
                             # 使用ActionChains点击
                             actions = ActionChains(self.driver)
                             actions.move_to_element(elem)
@@ -1522,7 +1547,7 @@ class ZhidaoQuizOnlyPlayer:
                 except:
                     continue
             
-            self.logger.info("ℹ️  未找到下一题按钮")
+            self.logger.info("ℹ️  未找到可点击的下一题按钮")
             return False
             
         except Exception as e:
@@ -1582,26 +1607,40 @@ class ZhidaoQuizOnlyPlayer:
     def handle_submit_confirm(self):
         """处理提交确认弹窗"""
         try:
-            confirm_selectors = [
-                "//button[contains(text(), '确定')]",
-                "//span[contains(text(), '确认')]",
-                "//button[contains(text(), '确认')]",
-            ]
+            self.logger.info("🔍 查找确认弹窗...")
+            self.smart_wait(2)  # 等待弹窗出现
             
-            self.smart_wait(1)
+            # 【优化】根据截图，确认按钮的class是 el-button.Submissionbtn.el-button--primary
+            confirm_selectors = [
+                # 知到平台专用确认按钮
+                "//button[contains(@class, 'Submissionbtn') and contains(@class, 'el-button--primary')]",
+                "//button[contains(@class, 'Submissionbtn')]",
+                # 通用选择器（确认按钮通常在右侧）
+                "//button[contains(@class, 'el-button--primary') and contains(text(), '提交')]",
+                "//button[contains(@class, 'el-button--primary') and contains(text(), '确定')]",
+                "//button[contains(@class, 'el-button--primary') and contains(text(), '确认')]",
+                "//span[contains(text(), '提交')]/parent::button[contains(@class, 'el-button--primary')]",
+            ]
             
             for selector in confirm_selectors:
                 try:
                     elements = self.driver.find_elements(By.XPATH, selector)
                     for elem in elements:
                         if elem.is_displayed():
-                            elem.click()
+                            # 使用ActionChains点击
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(elem)
+                            actions.pause(random.uniform(0.5, 1.0))
+                            actions.click()
+                            actions.perform()
+                            
                             self.logger.info("✅ 已确认提交")
-                            self.smart_wait(2)
+                            self.smart_wait(3)  # 等待提交处理
                             return True
                 except:
                     continue
             
+            self.logger.warning("⚠️  未找到确认按钮")
             return False
             
         except Exception as e:
