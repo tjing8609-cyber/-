@@ -3,7 +3,7 @@ chcp 65001 > nul
 title 知到自动播放器 - 图形化启动器
 echo.
 echo =========================================
-echo   知到自动播放器 - 图形化启动器 v1.0
+echo   知到自动播放器 - 图形化启动器
 echo =========================================
 echo.
 echo 正在启动图形化界面...
@@ -14,7 +14,7 @@ python 图形化启动器.py
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo ❌ 启动失败！
+    echo [错误] 启动失败！
     echo.
     echo 可能原因：
     echo   1. 未安装Python 3
