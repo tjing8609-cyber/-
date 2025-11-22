@@ -1928,19 +1928,37 @@ class ZhidaoQuizOnlyPlayer:
                 self.logger.error("❌ 登录失败，程序退出")
                 return
             
-            self.logger.info("✅ 登录成功，开始查找测试")
+            self.logger.info("✅ 登录成功，开始循环查找测试")
             
-            # 查找并进入测试
-            if not self.find_and_enter_quiz():
-                self.logger.error("❌ 未找到测试或进入测试失败")
-                return
+            # 【新增】循环查找和答题，直到所有题目都完成
+            max_rounds = 100  # 防止死循环，最多100轮
+            round_count = 0
             
-            self.logger.info("✅ 成功进入答题页面")
+            while round_count < max_rounds:
+                round_count += 1
+                self.logger.info(f"\n{'='*60}")
+                self.logger.info(f"🔄 第 {round_count} 轮查找测试")
+                self.logger.info("="*60)
+                
+                # 查找并进入测试
+                if not self.find_and_enter_quiz():
+                    self.logger.info("✅ 所有测试已完成，程序结束")
+                    break
+                
+                self.logger.info("✅ 成功进入答题页面")
+                
+                # 开始答题循环
+                self.answer_all_questions()
+                
+                self.logger.info(f"✅ 第 {round_count} 轮答题完成")
+                
+                # 等待一下再进入下一轮
+                self.smart_wait(2)
             
-            # 开始答题循环
-            self.answer_all_questions()
-            
-            self.logger.info("✅ 答题任务完成")
+            if round_count >= max_rounds:
+                self.logger.warning("⚠️  已达到最大轮次限制，程序退出")
+            else:
+                self.logger.info("✅ 所有答题任务完成")
             
         except Exception as e:
             self.logger.error(f"运行过程中出现错误: {e}")

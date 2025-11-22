@@ -1,2 +1,8 @@
+# Selenium相关（网页自动化核心）
 selenium>=4.0.0
 webdriver-manager>=3.0.0
+
+# DeepSeek API相关（仅纯答题模式需要）
+openai>=1.0.0
+python-dotenv>=0.19.0
+tenacity>=8.0.0
