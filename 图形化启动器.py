@@ -533,8 +533,21 @@ class ZhidaoGUILauncher:
         """加载配置"""
         try:
             if os.path.exists(self.current_account_file):
-                with open(self.current_account_file, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
+                # 【修复】尝试多种编码方式
+                encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312']
+                config = None
+                
+                for encoding in encodings:
+                    try:
+                        with open(self.current_account_file, 'r', encoding=encoding) as f:
+                            config = json.load(f)
+                        self.log(f"✅ 使用 {encoding} 编码加载成功")
+                        break
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                
+                if config is None:
+                    raise Exception("无法解析配置文件，请检查文件编码")
                 
                 self.username_var.set(config.get('username', ''))
                 self.password_var.set(config.get('password', ''))
@@ -550,8 +563,12 @@ class ZhidaoGUILauncher:
                 
                 self.on_mode_change()
                 self.log("✅ 配置已加载")
+            else:
+                self.log("⚠️  配置文件不存在，请先保存配置")
         except Exception as e:
-            self.log(f"⚠️ 加载配置失败: {e}")
+            error_msg = f"⚠️  加载配置失败: {str(e)}"
+            self.log(error_msg)
+            messagebox.showerror("错误", error_msg)
     
     def save_config(self):
         """保存配置"""
