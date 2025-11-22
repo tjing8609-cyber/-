@@ -19,3 +19,5 @@ python code/zhidao_launcher.py --account 启动/account.json
 
 ！！！
 新版更新了图形化界面，点击根目录内的“启动图形化界面.bat”就可以启动脚本啦！
+
+记得登录界面要手动登录！！
