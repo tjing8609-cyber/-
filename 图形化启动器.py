@@ -828,6 +828,8 @@ class ZhidaoGUILauncher:
                 cmd.append('--headless')
             
             self.log(f"📌 执行命令: {' '.join(cmd)}\n")
+            self.log(f"📁 工作目录: {self.code_dir}\n")
+            self.log(f"📄 配置文件: {self.current_account_file}\n")
             
             # 【修复】使用GBK编码读取Windows cmd输出
             self.process = subprocess.Popen(
@@ -841,18 +843,30 @@ class ZhidaoGUILauncher:
                 cwd=self.code_dir
             )
             
-            # 实时读取输出
+            self.log("✅ 进程已启动，正在运行...\n")
+            
+            # 【修复】无论是否显示实时日志，都要读取输出，否则进程会阻塞
             for line in self.process.stdout:
                 if not self.is_running:
                     break
-                if self.show_realtime_log_var.get():
-                    self.log(line.rstrip())
+                # 始终读取输出，但只在勾选时显示
+                line = line.rstrip()
+                if line:  # 忽略空行
+                    if self.show_realtime_log_var.get():
+                        self.log(line)
+                    else:
+                        # 即使不显示，也要处理一些关键信息
+                        if any(keyword in line for keyword in ['ERROR', 'CRITICAL', '错误', '失败', '异常']):
+                            self.log(f"⚠️ {line}")
             
             self.process.wait()
             
             if self.is_running:
                 self.log("\n" + "="*70)
-                self.log("✅ 任务完成")
+                if self.process.returncode == 0:
+                    self.log("✅ 任务完成")
+                else:
+                    self.log(f"⚠️ 任务结束（退出码: {self.process.returncode}）")
                 self.log("="*70 + "\n")
         
         except Exception as e:
