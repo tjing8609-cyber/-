@@ -266,7 +266,18 @@ class ZhidaoGUILauncher:
         row8.pack(fill=tk.X, pady=3)
         tk.Label(row8, text="DeepSeek API:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.api_key_var = tk.StringVar()
-        tk.Entry(row8, textvariable=self.api_key_var, show="*", font=("微软雅黑", 9), width=50).pack(side=tk.LEFT, padx=5)
+        tk.Entry(row8, textvariable=self.api_key_var, show="*", font=("微软雅黑", 9), width=40).pack(side=tk.LEFT, padx=5)
+        # 【新增】读取系统配置按钮
+        tk.Button(
+            row8,
+            text="🔍 读取系统配置",
+            command=self.load_system_env_config,
+            font=("微软雅黑", 8),
+            bg="#F39C12",
+            fg="white",
+            cursor="hand2",
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
         
         # API Base URL
         row9 = tk.Frame(self.quiz_frame)
@@ -696,6 +707,67 @@ class ZhidaoGUILauncher:
                 messagebox.showerror("错误", "无法读取requirements.txt，请检查文件编码！")
         else:
             messagebox.showerror("错误", "未找到requirements.txt文件！")
+    
+    def load_system_env_config(self):
+        """从系统环境变量读取DeepSeek API配置"""
+        try:
+            self.log("\n" + "="*70)
+            self.log("🔍 开始读取系统环境配置...")
+            self.log("="*70)
+            
+            # 读取环境变量
+            api_key = os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
+            api_base_url = os.getenv('ANTHROPIC_BASE_URL', '').strip()
+            api_model = os.getenv('ANTHROPIC_MODEL', '').strip()
+            
+            found_count = 0
+            
+            # 填充API密钥
+            if api_key:
+                self.api_key_var.set(api_key)
+                self.log("✅ ANTHROPIC_AUTH_TOKEN: 已读取")
+                found_count += 1
+            else:
+                self.log("⚠️  ANTHROPIC_AUTH_TOKEN: 未设置")
+            
+            # 填充API Base URL
+            if api_base_url:
+                self.api_base_url_var.set(api_base_url)
+                self.log(f"✅ ANTHROPIC_BASE_URL: {api_base_url}")
+                found_count += 1
+            else:
+                self.log("⚠️  ANTHROPIC_BASE_URL: 未设置")
+            
+            # 填充API Model
+            if api_model:
+                self.api_model_var.set(api_model)
+                self.log(f"✅ ANTHROPIC_MODEL: {api_model}")
+                found_count += 1
+            else:
+                self.log("⚠️  ANTHROPIC_MODEL: 未设置")
+            
+            self.log("="*70)
+            
+            if found_count > 0:
+                self.log(f"✅ 成功读取 {found_count} 项系统配置")
+                self.log("="*70 + "\n")
+                messagebox.showinfo("成功", f"已从系统环境变量读取 {found_count} 项配置！")
+            else:
+                self.log("⚠️  未找到任何系统配置")
+                self.log("="*70 + "\n")
+                messagebox.showwarning(
+                    "提示", 
+                    "未找到系统环境配置！\n\n"
+                    "请设置以下环境变量：\n"
+                    "  - ANTHROPIC_AUTH_TOKEN（必需）\n"
+                    "  - ANTHROPIC_BASE_URL（可选）\n"
+                    "  - ANTHROPIC_MODEL（可选）"
+                )
+        
+        except Exception as e:
+            error_msg = f"❌ 读取系统配置失败: {str(e)}"
+            self.log(error_msg)
+            messagebox.showerror("错误", error_msg)
     
     def validate_config(self):
         """验证配置"""
