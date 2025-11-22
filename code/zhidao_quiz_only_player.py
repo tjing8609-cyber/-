@@ -1041,17 +1041,34 @@ class ZhidaoQuizOnlyPlayer:
                 try:
                     elements = self.driver.find_elements(By.XPATH, selector)
                     for elem in elements:
+                        elem_text = elem.text
                         # 精确匹配quiz_type或包含"测试"关键词
-                        if quiz_type in elem.text or '测试' in elem.text or '作业' in elem.text:
-                            # 排除已完成的测试
-                            if '已完成' not in elem.text and '已提交' not in elem.text:
-                                self.quiz_container = elem
-                                self.logger.info(f"找到测试容器: {elem.text[:30]}")
-                                
-                                # 查找容器内的"开始做题"按钮
-                                self.quiz_element = self.find_start_button(elem)
-                                if self.quiz_element:
-                                    return True
+                        if quiz_type in elem_text or '测试' in elem_text or '作业' in elem_text:
+                            # 【优化】排除已完成的测试（增加更多关键词）
+                            skip_keywords = [
+                                '已完成', '已提交', '已批阅', 
+                                '查看作业', '查看', '已做',
+                                '100%', '满分'
+                            ]
+                            
+                            # 检查是否包含任何跳过关键词
+                            should_skip = False
+                            for keyword in skip_keywords:
+                                if keyword in elem_text:
+                                    self.logger.info(f"⏭️  跳过已完成测试: {elem_text[:50]}... (包含'{keyword}')")
+                                    should_skip = True
+                                    break
+                            
+                            if should_skip:
+                                continue
+                            
+                            self.quiz_container = elem
+                            self.logger.info(f"找到未完成测试: {elem_text[:50]}...")
+                            
+                            # 查找容器内的"开始做题"按钮
+                            self.quiz_element = self.find_start_button(elem)
+                            if self.quiz_element:
+                                return True
                 except Exception as e:
                     continue
             
