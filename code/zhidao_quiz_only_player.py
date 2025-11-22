@@ -130,8 +130,14 @@ class ZhidaoQuizOnlyPlayer:
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(logging.INFO)
         
-        # 控制台处理器
-        console_handler = logging.StreamHandler()
+        # 控制台处理器【修复】Windows下强制UTF-8编码
+        if sys.platform == 'win32':
+            import io
+            # 创建UTF-8编码的stream
+            utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+            console_handler = logging.StreamHandler(utf8_stdout)
+        else:
+            console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
         
         # 格式化

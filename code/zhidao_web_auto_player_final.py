@@ -255,14 +255,21 @@ class ZhidaoWebAutoPlayerFinal:
         # 使用实例变量中的日志文件名
         log_file = self.log_file
         
-        # 配置日志格式
+        # 配置日志格式【修复】Windows下强制UTF-8编码
+        handlers = [logging.FileHandler(log_file, encoding='utf-8')]
+        
+        if sys.platform == 'win32':
+            import io
+            # 创建UTF-8编码的stream
+            utf8_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
+            handlers.append(logging.StreamHandler(utf8_stdout))
+        else:
+            handlers.append(logging.StreamHandler())
+        
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler()
-            ]
+            handlers=handlers
         )
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"日志系统初始化完成，日志文件: {log_file}")
