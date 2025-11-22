@@ -296,11 +296,11 @@ class ZhidaoQuizOnlyPlayer:
             self.logger.info("📋 检查右侧答题卡...")
             
             # 根据截图，答题卡的题号在 li 元素中
-            # 已答: li.greenbgcur (background: #3D4059)
-            # 正在答: li.greenbordercur (border: 1px solid #F00C96)
-            # 未答: 普通样式
+            # 已答: background: #D1F8EE（浅绿色）或 li.greenbgcur
+            # 正在答: border: 1px solid #F00C96 或 li.greenbordercur
+            # 未答: background: #9798A9（灰色）
             
-            # 查找答题卡滞动容器
+            # 查找答题卡滚动容器
             answer_card_container = None
             container_selectors = [
                 "//div[contains(@class, 'el-scrollbar__view')]",
@@ -316,9 +316,9 @@ class ZhidaoQuizOnlyPlayer:
                 except:
                     continue
             
-            # 滞动到底部以查看所有题号
+            # 滚动到底部以查看所有题号
             if answer_card_container:
-                self.logger.info("📜 滞动答题卡到底部...")
+                self.logger.info("📜 滚动答题卡到底部...")
                 self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", answer_card_container)
                 self.smart_wait(1)
             
@@ -348,20 +348,45 @@ class ZhidaoQuizOnlyPlayer:
                     total_count += 1
                     last_question_index = i  # 更新最后一题索引
                     
-                    # 检查状态
+                    # 获取背景颜色
+                    bg_color = item.value_of_css_property('background-color')
+                    
+                    # 检查状态（同时检查CSS类和背景颜色）
+                    is_answered = False
+                    is_current = False
+                    
+                    # 判断是否已答题
                     if 'greenbgcur' in item_class:
-                        # 已答题（绿色背景）
-                        answered_count += 1
-                        self.logger.debug(f"题号 {item.text}: 已答题")
-                    elif 'greenbordercur' in item_class:
+                        is_answered = True
+                    elif bg_color:
+                        # 转换背景颜色为hex格式进行判断
+                        import re
+                        rgb_match = re.search(r'rgba?\((\d+),\s*(\d+),\s*(\d+)', bg_color)
+                        if rgb_match:
+                            r, g, b = map(int, rgb_match.groups())
+                            hex_color = f"#{r:02x}{g:02x}{b:02x}".upper()
+                            # 已答题颜色: #D1F8EE（浅绿色）
+                            if hex_color == '#D1F8EE' or (r > 200 and g > 240 and b > 230):
+                                is_answered = True
+                    
+                    # 判断是否正在答题
+                    if 'greenbordercur' in item_class:
+                        is_current = True
+                    
+                    # 统计
+                    if is_current:
                         # 正在答（绿色边框）
                         current_count += 1
                         current_question_index = i
                         self.logger.debug(f"题号 {item.text}: 正在答题")
+                    elif is_answered:
+                        # 已答题（绿色背景）
+                        answered_count += 1
+                        self.logger.debug(f"题号 {item.text}: 已答题")
                     else:
                         # 未答题
                         unanswered_count += 1
-                        self.logger.debug(f"题号 {item.text}: 未答题")
+                        self.logger.debug(f"题号 {item.text}: 未答题 (bg={bg_color})")
                         
                 except:
                     continue
@@ -376,7 +401,7 @@ class ZhidaoQuizOnlyPlayer:
                 self.logger.info("✅ 判断2: 答题卡检查通过！除了最后一题正在答，其余均已答")
                 return True
             else:
-                self.logger.warning(f"⚠️  判断2: 答题卡状态不符合（正在答={current_count}, 当前题是最后一题={current_question_index == last_question_index}")
+                self.logger.warning(f"⚠️  判断2: 答题卡状态不符合（正在答={current_count}, 当前题是最后一题={current_question_index == last_question_index}, 未答={unanswered_count}）")
                 return False
                 
         except Exception as e:
