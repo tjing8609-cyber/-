@@ -255,6 +255,11 @@ class ZhidaoWebAutoPlayerFinal:
         # 使用实例变量中的日志文件名
         log_file = self.log_file
         
+        # 【修复】确保日志目录存在
+        log_dir = os.path.dirname(log_file)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        
         # 配置日志格式【修复】Windows下强制UTF-8编码
         handlers = [logging.FileHandler(log_file, encoding='utf-8')]
         

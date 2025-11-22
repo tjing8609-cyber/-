@@ -149,6 +149,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         log_file = os.path.join(project_root, 'log', f'zhidao_account{account_num}_quiz.log')
         
+        # 【修复】确保日志目录存在
+        log_dir = os.path.dirname(log_file)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        
         # 配置日志
         self.logger = logging.getLogger(f'ZhidaoQuiz_{account_num}')
         self.logger.setLevel(logging.INFO)
