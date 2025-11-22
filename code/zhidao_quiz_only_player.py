@@ -291,61 +291,98 @@ class ZhidaoQuizOnlyPlayer:
             return False
     
     def check_answer_card(self):
-        """检查右侧答题卡，判断是否除了当前题外其余都已答"""
+        """检查右侧答题卡，判断是否除了最后一题外其余都已答"""
         try:
             self.logger.info("📋 检查右侧答题卡...")
             
-            # 根据截图，答题卡在右侧，题号是21-35
-            # 查找所有题号按钮
-            question_buttons = self.driver.find_elements(By.XPATH, "//div[@class='el-dialog__body']//span")
+            # 根据截图，答题卡的题号在 li 元素中
+            # 已答: li.greenbgcur (background: #3D4059)
+            # 正在答: li.greenbordercur (border: 1px solid #F00C96)
+            # 未答: 普通样式
             
-            green_items = 0  # 绿色项目（已答+当前）
-            total_items = 0
+            # 查找答题卡滞动容器
+            answer_card_container = None
+            container_selectors = [
+                "//div[contains(@class, 'el-scrollbar__view')]",
+                "//div[@class='el-dialog__body']",
+            ]
             
-            for btn in question_buttons:
+            for selector in container_selectors:
                 try:
-                    # 检查是否为题号
-                    text = btn.text.strip()
-                    if not text.isdigit():
+                    containers = self.driver.find_elements(By.XPATH, selector)
+                    if containers:
+                        answer_card_container = containers[0]
+                        break
+                except:
+                    continue
+            
+            # 滞动到底部以查看所有题号
+            if answer_card_container:
+                self.logger.info("📜 滞动答题卡到底部...")
+                self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", answer_card_container)
+                self.smart_wait(1)
+            
+            # 查找所有题号 li 元素
+            question_items = self.driver.find_elements(By.XPATH, "//li[contains(@class, 'questionlistall') or contains(@class, 'green')]")
+            
+            if not question_items:
+                # 如果找不到，尝试其他选择器
+                question_items = self.driver.find_elements(By.XPATH, "//div[@class='el-dialog__body']//li")
+            
+            answered_count = 0      # 已答题数
+            current_count = 0       # 正在答题数
+            unanswered_count = 0    # 未答题数
+            total_count = 0
+            
+            last_question_index = -1  # 最后一题的索引
+            current_question_index = -1  # 正在答的题索引
+            
+            for i, item in enumerate(question_items):
+                try:
+                    item_class = item.get_attribute('class') or ''
+                    
+                    # 过滤非题号元素
+                    if not item.text.strip().isdigit():
                         continue
                     
-                    total_items += 1
+                    total_count += 1
+                    last_question_index = i  # 更新最后一题索引
                     
-                    # 检查背景颜色（绿色底）或border（绿色框）
-                    bg_color = btn.value_of_css_property('background-color')
-                    border = btn.value_of_css_property('border')
-                    
-                    # 判断是否为绿色（已答或当前）
-                    is_green = False
-                    if bg_color and 'rgb' in bg_color:
-                        # 提取RGB值
-                        import re
-                        rgb_match = re.search(r'rgb\((\d+),\s*(\d+),\s*(\d+)', bg_color)
-                        if rgb_match:
-                            r, g, b = map(int, rgb_match.groups())
-                            # 绿色判断：g > 200 且 r < 100 且 b < 100
-                            if g > 200 and r < 100 and b < 100:
-                                is_green = True
-                    
-                    if is_green:
-                        green_items += 1
+                    # 检查状态
+                    if 'greenbgcur' in item_class:
+                        # 已答题（绿色背景）
+                        answered_count += 1
+                        self.logger.debug(f"题号 {item.text}: 已答题")
+                    elif 'greenbordercur' in item_class:
+                        # 正在答（绿色边框）
+                        current_count += 1
+                        current_question_index = i
+                        self.logger.debug(f"题号 {item.text}: 正在答题")
+                    else:
+                        # 未答题
+                        unanswered_count += 1
+                        self.logger.debug(f"题号 {item.text}: 未答题")
                         
                 except:
                     continue
             
-            self.logger.info(f"📊 统计: 总题数={total_items}, 绿色项目(已答+当前)={green_items}")
+            self.logger.info(f"📊 统计: 总题数={total_count}, 已答={answered_count}, 正在答={current_count}, 未答={unanswered_count}")
             
-            # 如果绿色项目数 == 总题数，说明所有题都已答或当前题
-            # 且只有最后一题是当前题，其余都是已答
-            if total_items > 10 and green_items == total_items:
-                self.logger.info("✅ 判断2: 答题卡检查通过，所有题目均为绿色")
+            # 判断条件：
+            # 1. 只有一道题正在答
+            # 2. 正在答的题是最后一题
+            # 3. 其余所有题都已答
+            if current_count == 1 and current_question_index == last_question_index and answered_count == total_count - 1 and unanswered_count == 0:
+                self.logger.info("✅ 判断2: 答题卡检查通过！除了最后一题正在答，其余均已答")
                 return True
             else:
-                self.logger.warning(f"⚠️  判断2: 答题卡状态不符合")
+                self.logger.warning(f"⚠️  判断2: 答题卡状态不符合（正在答={current_count}, 当前题是最后一题={current_question_index == last_question_index}")
                 return False
                 
         except Exception as e:
             self.logger.error(f"检查答题卡失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return False
     
     def handle_api_error(self, error, context="API调用"):
