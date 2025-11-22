@@ -281,7 +281,7 @@ class ZhidaoWebAutoPlayerFinal:
         self.logger.info(f"日志系统初始化完成，日志文件: {log_file}")
 
     def setup_driver(self, headless=False):
-        """设置Chrome浏览器驱动，使用webdriver-manager"""
+        """设置Chrome浏览器驱动，使用webdriver-manager（国内镜像优化）"""
         chrome_options = Options()
 
         # 基础设置
@@ -301,12 +301,45 @@ class ZhidaoWebAutoPlayerFinal:
             chrome_options.add_argument('--headless')
 
         try:
-            # 尝试使用webdriver-manager自动管理驱动
+            # 【优化】优先尝试国内镜像下载
             try:
-                self.logger.info("尝试使用webdriver-manager自动下载ChromeDriver...")
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                self.logger.info("✅ 使用webdriver-manager初始化成功")
+                self.logger.info("🌐 尝试使用国内镜像下载ChromeDriver...")
+                # 设置淘宝镜像
+                os.environ['WDM_SSL_VERIFY'] = '0'
+                
+                # 使用淘宝NPM镜像（速度更快）
+                from webdriver_manager.core.download_manager import WDMDownloadManager
+                from webdriver_manager.core.http import WDMHttpClient
+                
+                class TaobaoMirrorManager(WDMDownloadManager):
+                    def __init__(self):
+                        super().__init__()
+                        
+                    def download_file(self, url):
+                        # 将Google官方源替换为淘宝镜像
+                        if 'chromedriver.storage.googleapis.com' in url or 'edgedl.me.gvt1.com' in url:
+                            # 提取版本号
+                            import re
+                            version_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', url)
+                            if version_match:
+                                version = version_match.group(1)
+                                # 使用淘宝镜像
+                                url = f'https://registry.npmmirror.com/-/binary/chromedriver/{version}/chromedriver_win32.zip'
+                                self.logger.info(f"📥 使用淘宝镜像: {url}")
+                        return super().download_file(url)
+                
+                # 尝试使用镜像下载
+                try:
+                    service = Service(ChromeDriverManager(download_manager=TaobaoMirrorManager()).install())
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.logger.info("✅ 使用国内镜像下载成功")
+                except:
+                    # 镜像下载失败，尝试官方源
+                    self.logger.info("🔄 镜像下载失败，尝试官方源...")
+                    service = Service(ChromeDriverManager().install())
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.logger.info("✅ 使用官方源下载成功")
+                    
             except Exception as download_error:
                 # 如果下载失败，尝试使用系统自带的ChromeDriver
                 self.logger.warning(f"⚠️  webdriver-manager下载失败: {str(download_error)[:100]}")
@@ -319,9 +352,9 @@ class ZhidaoWebAutoPlayerFinal:
                 except Exception as system_error:
                     self.logger.error(f"❌ 系统ChromeDriver也失败: {system_error}")
                     self.logger.error("\n解决方案：")
-                    self.logger.error("1. 检查网络连接，确保可以访问国外网站")
-                    self.logger.error("2. 或者手动下载ChromeDriver: https://googlechromelabs.github.io/chrome-for-testing/")
-                    self.logger.error("3. 将chromedriver.exe放入系统PATH或当前目录")
+                    self.logger.error("1. 手动下载ChromeDriver: https://registry.npmmirror.com/binary.html?path=chromedriver/")
+                    self.logger.error("2. 将chromedriver.exe放入系统PATH或当前目录")
+                    self.logger.error("3. 或使用VPN后重试自动下载")
                     raise
 
             # 隐藏自动化特征

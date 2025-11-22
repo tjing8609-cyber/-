@@ -221,7 +221,7 @@ class ZhidaoQuizOnlyPlayer:
             json.dump(self.progress, f, indent=2, ensure_ascii=False)
     
     def setup_driver(self, headless=False):
-        """设置Chrome浏览器驱动"""
+        """设置Chrome浏览器驱动（国内镜像优化）"""
         chrome_options = Options()
         
         if headless:
@@ -240,10 +240,31 @@ class ZhidaoQuizOnlyPlayer:
         
         try:
             try:
-                self.logger.info("尝试使用webdriver-manager自动下载ChromeDriver...")
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                self.logger.info("✅ 使用webdriver-manager初始化成功")
+                self.logger.info("🌐 尝试使用国内镜像下载ChromeDriver...")
+                os.environ['WDM_SSL_VERIFY'] = '0'
+                
+                from webdriver_manager.core.download_manager import WDMDownloadManager
+                
+                class TaobaoMirrorManager(WDMDownloadManager):
+                    def download_file(self, url):
+                        if 'chromedriver.storage.googleapis.com' in url or 'edgedl.me.gvt1.com' in url:
+                            import re
+                            version_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', url)
+                            if version_match:
+                                version = version_match.group(1)
+                                url = f'https://registry.npmmirror.com/-/binary/chromedriver/{version}/chromedriver_win32.zip'
+                        return super().download_file(url)
+                
+                try:
+                    service = Service(ChromeDriverManager(download_manager=TaobaoMirrorManager()).install())
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.logger.info("✅ 使用国内镜像下载成功")
+                except:
+                    self.logger.info("🔄 镜像下载失败，尝试官方源...")
+                    service = Service(ChromeDriverManager().install())
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.logger.info("✅ 使用官方源下载成功")
+                    
             except Exception as download_error:
                 self.logger.warning(f"⚠️  webdriver-manager下载失败: {str(download_error)[:100]}")
                 self.logger.info("🔄 尝试使用系统环境中的ChromeDriver...")

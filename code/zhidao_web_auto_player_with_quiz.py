@@ -331,7 +331,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             json.dump(self.progress, f, indent=2, ensure_ascii=False)
     
     def setup_driver(self, headless=False):
-        """设置Chrome浏览器驱动"""
+        """设置Chrome浏览器驱动（国内镜像优化）"""
         chrome_options = Options()
         
         if headless:
@@ -349,12 +349,33 @@ class ZhidaoWebAutoPlayerWithQuiz:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            # 尝试使用webdriver-manager自动管理驱动
+            # 【优化】优先尝试国内镜像下载
             try:
-                self.logger.info("尝试使用webdriver-manager自动下载ChromeDriver...")
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                self.logger.info("✅ 使用webdriver-manager初始化成功")
+                self.logger.info("🌐 尝试使用国内镜像下载ChromeDriver...")
+                os.environ['WDM_SSL_VERIFY'] = '0'
+                
+                from webdriver_manager.core.download_manager import WDMDownloadManager
+                
+                class TaobaoMirrorManager(WDMDownloadManager):
+                    def download_file(self, url):
+                        if 'chromedriver.storage.googleapis.com' in url or 'edgedl.me.gvt1.com' in url:
+                            import re
+                            version_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', url)
+                            if version_match:
+                                version = version_match.group(1)
+                                url = f'https://registry.npmmirror.com/-/binary/chromedriver/{version}/chromedriver_win32.zip'
+                        return super().download_file(url)
+                
+                try:
+                    service = Service(ChromeDriverManager(download_manager=TaobaoMirrorManager()).install())
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.logger.info("✅ 使用国内镜像下载成功")
+                except:
+                    self.logger.info("🔄 镜像下载失败，尝试官方源...")
+                    service = Service(ChromeDriverManager().install())
+                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    self.logger.info("✅ 使用官方源下载成功")
+                    
             except Exception as download_error:
                 self.logger.warning(f"⚠️  webdriver-manager下载失败: {str(download_error)[:100]}")
                 self.logger.info("🔄 尝试使用系统环境中的ChromeDriver...")
@@ -365,9 +386,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 except Exception as system_error:
                     self.logger.error(f"❌ 系统ChromeDriver也失败: {system_error}")
                     self.logger.error("\n解决方案：")
-                    self.logger.error("1. 检查网络连接，确保可以访问国外网站")
-                    self.logger.error("2. 或者手动下载ChromeDriver: https://googlechromelabs.github.io/chrome-for-testing/")
-                    self.logger.error("3. 将chromedriver.exe放入系统PATH或当前目录")
+                    self.logger.error("1. 手动下载ChromeDriver: https://registry.npmmirror.com/binary.html?path=chromedriver/")
+                    self.logger.error("2. 将chromedriver.exe放入系统PATH或当前目录")
+                    self.logger.error("3. 或使用VPN后重试自动下载")
                     raise
 
             # 隐藏自动化特征
