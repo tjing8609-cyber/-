@@ -253,6 +253,110 @@ class ZhidaoQuizOnlyPlayer:
         actual_wait = seconds + random.uniform(-0.5, 0.5)
         time.sleep(max(0.5, actual_wait))
     
+    def handle_after_submit(self):
+        """处理提交后的页面：关闭结果页面，返回题目列表，刷新"""
+        try:
+            self.logger.info("🔄 处理提交后的页面...")
+            
+            # 等待页面加载完成
+            self.smart_wait(3)
+            
+            # 检查是否有多个窗口/标签页
+            all_windows = self.driver.window_handles
+            self.logger.info(f"📊 当前窗口数量: {len(all_windows)}")
+            
+            if len(all_windows) > 1:
+                # 关闭当前窗口（提交结果页）
+                current_window = self.driver.current_window_handle
+                self.logger.info("📛 关闭提交结果页面...")
+                self.driver.close()
+                
+                # 切换到主窗口
+                remaining_windows = [w for w in all_windows if w != current_window]
+                if remaining_windows:
+                    self.driver.switch_to.window(remaining_windows[0])
+                    self.logger.info("✅ 已切换到主窗口")
+            else:
+                # 只有一个窗口，检查URL是否为提交结果页
+                current_url = self.driver.current_url
+                self.logger.info(f"🔗 当前URL: {current_url}")
+                
+                # 如果是提交结果页，返回上一页或点击返回按钮
+                if 'doHomeWork' in current_url or 'backUrl' in current_url:
+                    self.logger.info("🔙 检测到提交结果页，尝试返回...")
+                    
+                    # 尝试点击返回按钮
+                    return_button_found = False
+                    return_selectors = [
+                        "//span[contains(text(), '返回')]",
+                        "//button[contains(text(), '返回')]",
+                        "//a[contains(text(), '返回')]",
+                        "//div[contains(@class, '返回')]",
+                    ]
+                    
+                    for selector in return_selectors:
+                        try:
+                            buttons = self.driver.find_elements(By.XPATH, selector)
+                            if buttons:
+                                buttons[0].click()
+                                self.logger.info("✅ 已点击返回按钮")
+                                return_button_found = True
+                                break
+                        except:
+                            continue
+                    
+                    # 如果没找到返回按钮，使用浏览器后退
+                    if not return_button_found:
+                        self.logger.info("🔙 使用浏览器后退")
+                        self.driver.back()
+            
+            # 等待页面加载
+            self.smart_wait(3)
+            
+            # 刷新页面获取最新状态
+            self.logger.info("🔄 刷新页面获取最新题目状态...")
+            self.driver.refresh()
+            self.smart_wait(3)
+            
+            self.logger.info("✅ 已返回题目列表并刷新")
+            
+            # 检查题目状态变化
+            self.check_quiz_status_change()
+            
+        except Exception as e:
+            self.logger.error(f"处理提交后页面失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+    
+    def check_quiz_status_change(self):
+        """检查题目状态变化"""
+        try:
+            self.logger.info("🔍 检查题目状态...")
+            
+            # 查找当前题目的状态
+            status_selectors = [
+                "//span[contains(text(), '已批阅')]",
+                "//span[contains(text(), '已提交')]",
+                "//span[contains(text(), '已完成')]",
+                "//span[contains(text(), '查看作业')]",
+                "//button[contains(text(), '查看作业')]",
+            ]
+            
+            for selector in status_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    if elements:
+                        status_text = elements[0].text.strip()
+                        self.logger.info(f"✅ 题目状态: {status_text}")
+                        return
+                except:
+                    continue
+            
+            self.logger.info("ℹ️  未检测到明确的状态变化")
+            
+        except Exception as e:
+            self.logger.error(f"检查题目状态失败: {e}")
+    
     def is_last_question(self):
         """双重判断是否为最后一题"""
         try:
@@ -1253,6 +1357,8 @@ class ZhidaoQuizOnlyPlayer:
                         self.logger.info("🏁 双重确认是最后一题，尝试提交...")
                         if self.check_and_submit():
                             self.logger.info("✅ 已成功提交测试")
+                            # 【新增】处理提交后的页面
+                            self.handle_after_submit()
                             break
                         else:
                             self.logger.warning("⚠️  提交失败，答题结束")
