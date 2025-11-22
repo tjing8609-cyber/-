@@ -837,13 +837,13 @@ class ZhidaoGUILauncher:
             self.log(f"📁 工作目录: {self.code_dir}\n")
             self.log(f"📄 配置文件: {self.current_account_file}\n")
             
-            # 【修复】使用GBK编码读取Windows cmd输出
+            # 【修复】使用UTF-8编码读取子进程输出（子进程已设置UTF-8输出）
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                encoding='gbk',  # Windows下cmd默认GBK
+                encoding='utf-8',  # 子进程使用UTF-8输出
                 errors='replace',  # 遇到无法解码的字符用?替换
                 bufsize=1,
                 cwd=self.code_dir
