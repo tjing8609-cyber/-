@@ -459,6 +459,7 @@ class ZhidaoWebAutoPlayerFinal:
                 username = account.get('username', '').strip()
                 password = account.get('password', '').strip()
                 course_name = account.get('course_name', '').strip()
+                course_url = account.get('course_url', '').strip()  # 【新增】课程URL
                 course_type = account.get('course_type', 1)  # 默认为类型1（无题目）
                 max_watch_minutes = account.get('max_watch_minutes', 0)  # 默认0（播放完所有）
                 
@@ -467,10 +468,12 @@ class ZhidaoWebAutoPlayerFinal:
                     print(f"请在 {self.account_file} 中填写正确的账号和密码")
                     raise ValueError("账号或密码为空")
                 
-                # 如果没有课程名称，使用config.json中的默认值（向后兼容）
-                if not course_name:
-                    course_name = self.config.get('course_name', '中国近现代史纲要')
-                    self.logger.warning(f"⚠️ account.json中未配置课程名称，使用默认值: {course_name}")
+                # 【修改】如果有course_url，course_name可以为空
+                if not course_url:
+                    # 没有URL，必须提供course_name
+                    if not course_name:
+                        course_name = self.config.get('course_name', '中国近现代史纲要')
+                        self.logger.warning(f"⚠️ account.json中未配置course_name，使用默认值: {course_name}")
                 
                 # 课程类型说明
                 course_type_desc = "无题目课程" if course_type == 1 else "有题目课程（会自动关闭弹题）"
@@ -482,10 +485,19 @@ class ZhidaoWebAutoPlayerFinal:
                     watch_time_desc = "播放完所有视频"
                 
                 print(f"\n✅ 已加载账号: {username[:3]}****{username[-2:] if len(username) > 5 else '**'}")
-                print(f"✅ 目标课程: {course_name}")
+                
+                # 【新增】显示URL或课程名
+                if course_url:
+                    print(f"🌐 课程URL: {course_url}")
+                    print("✅ 将直接跳转到课程URL，跳过课程查找")
+                else:
+                    print(f"✅ 目标课程: {course_name}")
+                
                 print(f"✅ 课程类型: {course_type} - {course_type_desc}")
                 print(f"✅ 观看时长: {watch_time_desc}")
-                return username, password, course_name, course_type, max_watch_minutes
+                
+                # 【修改】返回6个值（新增 course_url）
+                return username, password, course_name, course_type, max_watch_minutes, course_url
                 
         except FileNotFoundError:
             raise
@@ -596,11 +608,12 @@ class ZhidaoWebAutoPlayerFinal:
         # 如果没有传入账号密码，从配置文件读取
         if username is None or password is None:
             try:
-                username, password, course_name, course_type, max_watch_minutes = self.load_account()
-                # 保存课程名称、类型和最大观看时长到实例变量
+                username, password, course_name, course_type, max_watch_minutes, course_url = self.load_account()
+                # 保存课程名称、类型、最大观看时长和course_url到实例变量
                 self.course_name = course_name
                 self.course_type = course_type
                 self.max_watch_minutes = max_watch_minutes
+                self.course_url = course_url  # 【新增】
             except Exception as e:
                 self.logger.error(f"加载账号失败: {e}")
                 return False
@@ -2196,11 +2209,12 @@ class ZhidaoWebAutoPlayerFinal:
         # 如果没有传入账号密码，从 account.json 读取
         if username is None or password is None:
             try:
-                username, password, course_name, course_type, max_watch_minutes = self.load_account()
-                # 保存课程名称、类型和最大观看时长到实例变量
+                username, password, course_name, course_type, max_watch_minutes, course_url = self.load_account()
+                # 保存课程名称、类型、最大观看时长和course_url到实例变量
                 self.course_name = course_name
                 self.course_type = course_type
                 self.max_watch_minutes = max_watch_minutes
+                self.course_url = course_url  # 【新增】
                 # 显示时间限制配置
                 if self.max_watch_minutes > 0:
                     self.logger.info(f"⏰ 预设观看时间限制: {self.max_watch_minutes} 分钟")
@@ -2233,10 +2247,23 @@ class ZhidaoWebAutoPlayerFinal:
                 self.logger.error("登录失败，程序结束")
                 return
 
-            # 查找课程
-            if not self.find_chinese_history_course():
-                self.logger.error("未找到课程，程序结束")
-                return
+            # 【新增】检查是否有course_url，决定是否跳过课程查找
+            if hasattr(self, 'course_url') and self.course_url:
+                # 有URL，直接跳转
+                self.logger.info(f"🌐 检测到course_url，直接跳转: {self.course_url}")
+                self.logger.info("✅ 跳过课程查找步骤")
+                try:
+                    self.driver.get(self.course_url)
+                    self.smart_wait(3)  # 等待页面加载
+                    self.logger.info("✅ 已成功跳转到课程URL")
+                except Exception as e:
+                    self.logger.error(f"❌ 跳转到课程URL失败: {e}")
+                    return
+            else:
+                # 没有URL，使用传统的课程查找
+                if not self.find_chinese_history_course():
+                    self.logger.error("未找到课程，程序结束")
+                    return
 
             # 循环处理视频，直到所有视频播放完成或达到时间限制
             videos_played = 0
