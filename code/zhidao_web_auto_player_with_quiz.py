@@ -3221,22 +3221,91 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.driver.get(self.course_url)
                     self.smart_wait(3)  # 等待页面加载
                     self.logger.info("✅ 已成功跳转到课程URL")
+                    
+                    # 处理常见弹窗（承诺书/学前必读/提示框）
+                    try:
+                        candidates = [
+                            "//button[contains(@class,'agree-btn')]",
+                            "//button[contains(@class,'btn') and (contains(.,'同意') or contains(.,'确认') or contains(.,'知道了') or contains(.,'我知道了'))]",
+                            "//span[contains(.,'同意')]/ancestor::button",
+                            "//*[@role='dialog']//button[contains(.,'同意') or contains(.,'确认') or contains(.,'知道了')]",
+                            "//i[contains(@class,'iconguanbi')]"
+                        ]
+                        for xpath in candidates:
+                            elems = self.driver.find_elements(By.XPATH, xpath)
+                            if elems:
+                                try:
+                                    elems[0].click()
+                                    self.smart_wait(1)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+                    
+                    # 等待课程页面或用户处理未知弹窗
+                    self.logger.info("🔔 如有弹窗或未知提示，请手动处理；程序将等待进入课程页面...")
+                    waited = 0
+                    while waited < 600:
+                        try:
+                            if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
+                                self.logger.info("✅ 已进入课程页面")
+                                break
+                            dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'el-dialog__wrapper')]")
+                            if dialogs:
+                                close_btns = self.driver.find_elements(By.XPATH, "//button[contains(.,'同意') or contains(.,'确认') or contains(.,'关闭') or contains(.,'知道了')] | //i[contains(@class,'iconguanbi')]")
+                                if close_btns:
+                                    try:
+                                        close_btns[0].click()
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                        time.sleep(2)
+                        waited += 2
                 except Exception as e:
                     self.logger.error(f"❌ 跳转到课程URL失败: {e}")
-                    return
+                    self.logger.info("🔔 请手动进入课程页面，程序将等待...")
+                    waited = 0
+                    while waited < 600:
+                        try:
+                            if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
+                                self.logger.info("✅ 已进入课程页面")
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(2)
+                        waited += 2
                 
                 # 跳过enter_study_page，因为已经在课程页面了
             else:
                 # 没有URL，使用传统的课程查找
                 # 查找并进入课程
                 if not self.find_course():
-                    self.logger.error("❌ 查找课程失败，程序退出")
-                    return
-                
-                # 进入学习页面
-                if not self.enter_study_page():
-                    self.logger.error("❌ 进入学习页面失败，程序退出")
-                    return
+                    self.logger.warning("⚠️ 未找到课程，等待用户手动进入课程页面...")
+                    waited = 0
+                    while waited < 600:
+                        try:
+                            if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
+                                self.logger.info("✅ 已进入课程页面")
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(2)
+                        waited += 2
+                else:
+                    # 进入学习页面
+                    if not self.enter_study_page():
+                        self.logger.warning("⚠️ 进入学习页面失败，等待用户手动进入课程页面...")
+                        waited = 0
+                        while waited < 600:
+                            try:
+                                if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
+                                    self.logger.info("✅ 已进入课程页面")
+                                    break
+                            except Exception:
+                                pass
+                            time.sleep(2)
+                            waited += 2
             
             # 查找未观看的视频
             unwatched_videos = self.find_unwatched_videos()
