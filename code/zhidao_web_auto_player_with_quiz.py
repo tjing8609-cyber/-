@@ -1040,23 +1040,27 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.logger.info(f"  [{idx}] (无法读取文本)")
                 self.logger.info("-" * 50)
                 
-                # 步骤5：精确匹配课程卡片（根据要求.txt）
+                # 【分级查找策略】先严格匹配（6个条件），失败后宽松匹配（3个条件）
+                matched_card = None
+                
+                # 【第一轮】严格匹配：6个条件
+                self.logger.info("🔍 第一轮：严格匹配（6个条件）")
                 for idx, card in enumerate(unique_cards, 1):
                     try:
                         card_text = card.text or ''
                         
-                        # 条件1：标题包含课程名
+                        # 条件1：课程名匹配
                         if course_name not in card_text:
                             continue
                         
-                        # 排除“重要提醒”区域
+                        # 条件2：排除重要提醒区域
                         card_classes = card.get_attribute('class') or ''
                         card_id = card.get_attribute('id') or ''
                         if 'important' in card_classes.lower() or 'reminder' in card_classes.lower() or 'carousel' in card_classes.lower():
                             self.logger.debug(f"⚠️  跳过重要提醒区卡片: {card_id}")
                             continue
                         
-                        # 排除书名号和直播课
+                        # 条件3：排除书名号和直播课
                         if '《' in card_text or '》' in card_text:
                             self.logger.debug(f"⚠️  排除书名号: {card_text[:40]}")
                             continue
@@ -1064,64 +1068,124 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.logger.debug(f"⚠️  排除直播课: {card_text[:40]}")
                             continue
                         
-                        # 条件2：匹配进度文本（正则：进度\s*:\s*\d+(\.\d+)?%）【改为可选】
+                        # 条件4：必须有进度信息
                         import re
                         progress_match = re.search(r'进度\s*[:：]\s*(\d+(?:\.\d+)?)%', card_text)
-                        if progress_match:
-                            progress_value = progress_match.group(1)
-                            self.logger.info(f"✅ 找到进度: {progress_value}%")
-                        else:
-                            self.logger.debug(f"ℹ️  未找到进度信息（可选条件）: {card_text[:60]}")
+                        if not progress_match:
+                            self.logger.debug(f"⚠️  未找到进度信息: {card_text[:60]}")
+                            continue
                         
-                        # 【移除】教师/机构白名单筛选 - 只根据课程名匹配
+                        progress_value = progress_match.group(1)
+                        self.logger.info(f"✅ 找到进度: {progress_value}%")
                         
-                        # 条件4：可选-检查是否有图片封面
+                        # 条件5：必须包含教师/机构白名单
+                        teacher_keywords = ['吉林大学', '北京大学', '清华大学', '北京师范大学', '中山大学', '南京大学',
+                                           '杨振斌', '李娜', '王芳', '张伟', '教授', '老师', '大学', '学院', '讲师']
+                        
+                        found_teacher = False
+                        for keyword in teacher_keywords:
+                            if keyword in card_text:
+                                self.logger.info(f"✅ 找到教师/机构: {keyword}")
+                                found_teacher = True
+                                break
+                        
+                        if not found_teacher:
+                            self.logger.debug(f"⚠️  未找到教师/机构: {card_text[:60]}")
+                            continue
+                        
+                        # 条件6：必须有图片封面
                         has_image = len(card.find_elements(By.TAG_NAME, 'img')) > 0
-                        if has_image:
-                            self.logger.info("✅ 卡片包含图片封面")
+                        if not has_image:
+                            self.logger.debug(f"⚠️  未找到图片封面: {card_text[:60]}")
+                            continue
                         
-                        # 所有条件匹配，点击该卡片
-                        self.logger.info(f"🎯 找到符合条件的课程卡片 #{idx}: {card_text[:80]}")
+                        self.logger.info("✅ 卡片包含图片封面")
                         
-                        # 滚动到可视区域
-                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", card)
-                        self.smart_wait(1)
-                        
-                        # 尝试点击卡片内的链接
-                        link = None
-                        try:
-                            link = card.find_element(By.XPATH, ".//a[contains(@href, 'course') or contains(@href, 'study')]")
-                        except:
-                            # 如果没有链接，尝试点击卡片本身
-                            link = card
-                        
-                        # 多策略点击（在课程列表页可以使用JS）
-                        try:
-                            link.click()
-                            self.logger.info("✅ 普通点击成功")
-                        except:
-                            try:
-                                # 使用JavaScript点击（课程列表页不涉及视频播放器，可以用JS）
-                                self.driver.execute_script("arguments[0].click();", link)
-                                self.logger.info("✅ JavaScript点击成功")
-                            except Exception as e:
-                                self.logger.error(f"所有点击方式都失败: {e}")
-                                continue
-                        
-                        # 等待页面跳转
-                        self.smart_wait(5)
-                        
-                        # 验证是否进入课程详情页
-                        new_url = self.driver.current_url
-                        if 'course' in new_url.lower() or 'detail' in new_url.lower() or 'study' in new_url.lower():
-                            self.logger.info(f"✅ 成功进入课程页: {new_url}")
-                            return True
-                        else:
-                            self.logger.warning(f"⚠️  URL未变化，继续尝试下一个: {new_url}")
+                        # 所有6个条件匹配
+                        self.logger.info(f"🎯 严格匹配成功！找到课程卡片 #{idx}: {card_text[:80]}")
+                        matched_card = (card, idx, card_text)
+                        break
                     
                     except Exception as card_error:
                         self.logger.debug(f"处理卡片 #{idx} 时出错: {card_error}")
                         continue
+                
+                # 【第二轮】如果严格匹配失败，使用宽松匹配：3个条件
+                if not matched_card:
+                    self.logger.warning("⚠️  严格匹配失败，切换到宽松匹配模式")
+                    self.logger.info("🔍 第二轮：宽松匹配（3个条件）")
+                    
+                    for idx, card in enumerate(unique_cards, 1):
+                        try:
+                            card_text = card.text or ''
+                            
+                            # 条件1：课程名匹配
+                            if course_name not in card_text:
+                                continue
+                            
+                            # 条件2：排除重要提醒区域
+                            card_classes = card.get_attribute('class') or ''
+                            card_id = card.get_attribute('id') or ''
+                            if 'important' in card_classes.lower() or 'reminder' in card_classes.lower() or 'carousel' in card_classes.lower():
+                                self.logger.debug(f"⚠️  跳过重要提醒区卡片: {card_id}")
+                                continue
+                            
+                            # 条件3：排除书名号和直播课
+                            if '《' in card_text or '》' in card_text:
+                                self.logger.debug(f"⚠️  排除书名号: {card_text[:40]}")
+                                continue
+                            if '直播' in card_text or '见面课' in card_text:
+                                self.logger.debug(f"⚠️  排除直播课: {card_text[:40]}")
+                                continue
+                            
+                            # 宽松匹配成功！
+                            self.logger.info(f"🎯 宽松匹配成功！找到课程卡片 #{idx}: {card_text[:80]}")
+                            matched_card = (card, idx, card_text)
+                            break
+                        
+                        except Exception as card_error:
+                            self.logger.debug(f"处理卡片 #{idx} 时出错: {card_error}")
+                            continue
+                
+                # 【点击匹配到的课程】
+                if matched_card:
+                    card, idx, card_text = matched_card
+                    
+                    # 滚动到可视区域
+                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", card)
+                    self.smart_wait(1)
+                    
+                    # 尝试点击卡片内的链接
+                    link = None
+                    try:
+                        link = card.find_element(By.XPATH, ".//a[contains(@href, 'course') or contains(@href, 'study')]")
+                    except:
+                        # 如果没有链接，尝试点击卡片本身
+                        link = card
+                    
+                    # 多策略点击（在课程列表页可以使用JS）
+                    try:
+                        link.click()
+                        self.logger.info("✅ 普通点击成功")
+                    except:
+                        try:
+                            # 使用JavaScript点击（课程列表页不涉及视频播放器，可以用JS）
+                            self.driver.execute_script("arguments[0].click();", link)
+                            self.logger.info("✅ JavaScript点击成功")
+                        except Exception as e:
+                            self.logger.error(f"所有点击方式都失败: {e}")
+                            # 继续下一次滚动尝试
+                    
+                    # 等待页面跳转
+                    self.smart_wait(5)
+                    
+                    # 验证是否进入课程详情页
+                    new_url = self.driver.current_url
+                    if 'course' in new_url.lower() or 'detail' in new_url.lower() or 'study' in new_url.lower():
+                        self.logger.info(f"✅ 成功进入课程页: {new_url}")
+                        return True
+                    else:
+                        self.logger.warning(f"⚠️  URL未变化: {new_url}")
             
             self.logger.error(f"未找到符合所有条件的'{course_name}'课程卡片")
             return False
