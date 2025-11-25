@@ -205,6 +205,14 @@ class ZhidaoGUILauncher:
         self.course_name_var = tk.StringVar()
         tk.Entry(row3, textvariable=self.course_name_var, font=("微软雅黑", 9), width=50).pack(side=tk.LEFT, padx=5)
         
+        # 【新增】课程URL（可选）
+        row3_url = tk.Frame(course_frame)
+        row3_url.pack(fill=tk.X, pady=3)
+        tk.Label(row3_url, text="课程URL:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self.course_url_var = tk.StringVar()
+        tk.Entry(row3_url, textvariable=self.course_url_var, font=("微软雅黑", 9), width=50).pack(side=tk.LEFT, padx=5)
+        tk.Label(row3_url, text="(可选，设置后将跳过课程查找)", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
+        
         # ==================== 视频模式配置 ====================
         self.video_frame = tk.LabelFrame(
             container,
@@ -569,6 +577,7 @@ class ZhidaoGUILauncher:
                 self.username_var.set(config.get('username', ''))
                 self.password_var.set(config.get('password', ''))
                 self.course_name_var.set(config.get('course_name', ''))
+                self.course_url_var.set(config.get('course_url', ''))  # 【新增】
                 self.course_type_var.set(config.get('course_type', 1))
                 self.sidebar_var.set(config.get('use_sidebar_layout', False))
                 self.max_watch_minutes_var.set(config.get('max_watch_minutes', 0))
@@ -594,6 +603,7 @@ class ZhidaoGUILauncher:
                 "username": self.username_var.get(),
                 "password": self.password_var.get(),
                 "course_name": self.course_name_var.get(),
+                "course_url": self.course_url_var.get(),  # 【新增】
                 "course_type": self.course_type_var.get(),
                 "use_sidebar_layout": self.sidebar_var.get(),
                 "max_watch_minutes": self.max_watch_minutes_var.get(),
