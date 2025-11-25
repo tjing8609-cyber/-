@@ -3363,6 +3363,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.click_correct_answer(first, options)
                     # 点击后再滚动一次以确认状态
                     self.scroll_quiz_dialog('bottom')
+                # 作答完成后尝试关闭弹窗
+                try:
+                    self.logger.info("✅ 已完成作答，尝试关闭题目弹窗")
+                    closed = self.close_quiz_dialog()
+                    if not closed:
+                        self.logger.info("🔔 自动关闭失败，请手动关闭；程序将继续监控")
+                except Exception:
+                    pass
                 return True
             else:
                 # 未识别出答案，等待人工介入
