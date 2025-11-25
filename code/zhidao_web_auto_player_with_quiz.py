@@ -254,7 +254,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def load_account_config(self):
         """加载账号配置"""
         with open(self.account_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            config = json.load(f)
+            
+            # 【新增】提取course_url
+            self.course_url = config.get('course_url', '').strip()
+            
+            return config
     
     def load_progress(self):
         """加载进度记录"""
@@ -3207,15 +3212,31 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 self.logger.error("❌ 登录失败，程序退出")
                 return
             
-            # 查找并进入课程
-            if not self.find_course():
-                self.logger.error("❌ 查找课程失败，程序退出")
-                return
-            
-            # 进入学习页面
-            if not self.enter_study_page():
-                self.logger.error("❌ 进入学习页面失败，程序退出")
-                return
+            # 【新增】检查是否有course_url，决定是否跳过课程查找
+            if hasattr(self, 'course_url') and self.course_url:
+                # 有URL，直接跳转
+                self.logger.info(f"🌐 检测到course_url，直接跳转: {self.course_url}")
+                self.logger.info("✅ 跳过课程查找步骤")
+                try:
+                    self.driver.get(self.course_url)
+                    self.smart_wait(3)  # 等待页面加载
+                    self.logger.info("✅ 已成功跳转到课程URL")
+                except Exception as e:
+                    self.logger.error(f"❌ 跳转到课程URL失败: {e}")
+                    return
+                
+                # 跳过enter_study_page，因为已经在课程页面了
+            else:
+                # 没有URL，使用传统的课程查找
+                # 查找并进入课程
+                if not self.find_course():
+                    self.logger.error("❌ 查找课程失败，程序退出")
+                    return
+                
+                # 进入学习页面
+                if not self.enter_study_page():
+                    self.logger.error("❌ 进入学习页面失败，程序退出")
+                    return
             
             # 查找未观看的视频
             unwatched_videos = self.find_unwatched_videos()
