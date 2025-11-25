@@ -2217,8 +2217,69 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 检查是否还有可见的弹窗，如果有则保存HTML调试
         self.check_and_save_dialogs_for_debug()
         
-        self.logger.info("✅ 弹窗关闭检查完成")
-    
+    def select_options_by_letters(self, letters):
+        """根据字母点击选项（支持多选）"""
+        try:
+            if isinstance(letters, str):
+                letters = [letters]
+            # 查找所有可见的选项容器
+            option_xpaths = [
+                "//div[contains(@class,'topic-item')]",
+                "//li[contains(@class,'option')]",
+                "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
+            ]
+            options = []
+            for xp in option_xpaths:
+                try:
+                    opts = self.driver.find_elements(By.XPATH, xp)
+                    options.extend([o for o in opts if o.is_displayed()])
+                except Exception:
+                    continue
+            if not options:
+                self.logger.debug("未找到可点击选项容器")
+                return False
+            from selenium.webdriver.common.action_chains import ActionChains
+            import re
+            clicked = 0
+            for letter in letters:
+                target = None
+                # 在选项容器中匹配以字母开头的文本
+                for opt in options:
+                    try:
+                        txt = (opt.text or '').strip()
+                        if re.match(rf"^\s*{letter}[\.|、|）|)]", txt):
+                            target = opt
+                            break
+                        # 备用：查找包含字母标签的span
+                        spans = opt.find_elements(By.XPATH, ".//span")
+                        for sp in spans:
+                            if (sp.text or '').strip().startswith(letter):
+                                target = opt
+                                break
+                        if target:
+                            break
+                    except Exception:
+                        continue
+                if target:
+                    try:
+                        # 滚动到视图并点击
+                        self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target)
+                        self.smart_wait(0.3)
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(target)
+                        actions.click()
+                        actions.perform()
+                        clicked += 1
+                        self.smart_wait(0.3)
+                        self.logger.info(f"✅ 已点击选项: {letter}")
+                    except Exception:
+                        pass
+                else:
+                    self.logger.debug(f"未找到选项: {letter}")
+            return clicked > 0
+        except Exception as e:
+            self.logger.debug(f"选择选项失败: {e}")
+            return False    
     def check_and_save_dialogs_for_debug(self):
         """检查是否还有未关闭的弹窗，并保存HTML供调试"""
         try:
@@ -3012,35 +3073,54 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.debug(f"检查答案结果失败: {e}")
             return None
     
-    def extract_correct_answer(self):
-        """提取正确答案（从错误提示中）"""
+    def extract_correct_answers(self):
+        """提取正确答案（支持多选，滚动弹窗以完整展示答案）"""
         try:
+            # 优先滚动弹窗容器，避免只看到一部分答案
+            try:
+                dialog_wrappers = self.driver.find_elements(By.XPATH,
+                    "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]")
+                for wrap in dialog_wrappers:
+                    try:
+                        self.driver.execute_script(
+                            "arguments[0].scrollTop = arguments[0].scrollHeight;", wrap)
+                        self.smart_wait(0.3)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            
             # 查找包含正确答案的元素
             answer_selectors = [
-                "//p[contains(@class, 'answer')]",  # 【新增】知到平台的 <p class="answer">
+                "//p[contains(@class, 'answer')]",  # 知到平台 <p class="answer">
                 "//*[contains(text(), '正确答案')]",
                 "//*[contains(text(), '正确选项')]",
                 "//*[contains(@class, 'correct-answer')]",
                 "//*[contains(@class, 'right-answer')]",
             ]
             
+            import re
+            letters = []
+            # 支持多选题扩展选项：A-Z（常见为A-L）
+            letter_pattern = r"[A-Z]"
             for selector in answer_selectors:
                 try:
                     elements = self.driver.find_elements(By.XPATH, selector)
                     for elem in elements:
                         if elem.is_displayed():
                             text = elem.text.strip()
-                            # 提取答案字母（A/B/C/D）
-                            import re
-                            # 匹配 "A" 或 "（A）" 或 "A、" 或 "A."
-                            match = re.search(r'([A-D])', text)
-                            if match:
-                                answer_letter = match.group(1)
-                                self.logger.debug(f"提取到正确答案: {answer_letter}")
-                                return answer_letter
-                except:
+                            # 提取所有答案字母（A-Z），避免只识别一个
+                            found = re.findall(letter_pattern, text)
+                            if found:
+                                letters.extend(found)
+                except Exception:
                     continue
             
+            # 去重并按字母顺序
+            letters = sorted(list(dict.fromkeys(letters)))
+            if letters:
+                self.logger.info(f"✅ 提取到正确答案: {', '.join(letters)}")
+                return letters
             return None
             
         except Exception as e:
@@ -3048,9 +3128,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return None
     
     def click_correct_answer(self, answer_letter, options):
-        """点击正确答案"""
+        """点击正确答案（兼容扩展选项 A-Z）"""
         try:
-            # 将字母转换为索引
+            # 将字母转换为索引（A->0, B->1, ... Z->25）
+            answer_letter = str(answer_letter).strip().upper()
+            if not answer_letter or not ('A' <= answer_letter <= 'Z'):
+                return False
             answer_index = ord(answer_letter) - ord('A')
             
             if 0 <= answer_index < len(options):
