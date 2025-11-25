@@ -1073,20 +1073,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         else:
                             self.logger.debug(f"ℹ️  未找到进度信息（可选条件）: {card_text[:60]}")
                         
-                        # 条件3：包含教师/机构名称【改为可选，仅作为加分项】
-                        teacher_keywords = ['吉林大学', '北京大学', '清华大学', '北京师范大学', '中山大学', '南京大学',
-                                           '杨振斌', '李娜', '王芳', '张伟', '教授', '老师', '大学', '学院', '讲师']
-                        
-                        found_teacher = False
-                        for keyword in teacher_keywords:
-                            if keyword in card_text:
-                                self.logger.info(f"✅ 找到教师/机构: {keyword}（加分项）")
-                                found_teacher = True
-                                break
-                        
-                        if not found_teacher:
-                            self.logger.debug(f"ℹ️  未找到教师/机构（可选条件）: {card_text[:60]}")
-                        # 【修改】不再因为没有教师信息而跳过
+                        # 【移除】教师/机构白名单筛选 - 只根据课程名匹配
                         
                         # 条件4：可选-检查是否有图片封面
                         has_image = len(card.find_elements(By.TAG_NAME, 'img')) > 0
