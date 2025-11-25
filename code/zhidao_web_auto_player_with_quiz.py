@@ -3209,8 +3209,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
             
             # 登录
             if not self.login():
-                self.logger.error("❌ 登录失败，程序退出")
-                return
+                self.logger.warning("⚠️ 登录失败，等待用户手动登录...")
+                waited = 0
+                while waited < 600:
+                    try:
+                        current_url = self.driver.current_url
+                        if "onlinestuh5" in current_url and "login" not in current_url:
+                            self.logger.info("✅ 已检测到登录成功")
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(2)
+                    waited += 2
             
             # 【新增】检查是否有course_url，决定是否跳过课程查找
             if hasattr(self, 'course_url') and self.course_url:
