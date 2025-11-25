@@ -845,7 +845,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         if use_sidebar:
             self.logger.info("🆕 检测到配置为新版布局，使用侧边栏查找逻辑")
-            return self.find_course_in_sidebar(course_name)
+            # 【修改】先在共享课中查找，失败后全界面查找
+            result = self.find_course_in_sidebar(course_name)
+            if result:
+                return True
+            else:
+                self.logger.warning("⚠️  共享课中未找到课程，切换到全界面查找")
+                self.logger.info("🔍 尝试全界面查找模式")
+                return self.find_course_legacy(course_name)
         else:
             self.logger.info("📜 使用老版主区域查找逻辑")
             return self.find_course_legacy(course_name)
