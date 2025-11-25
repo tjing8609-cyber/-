@@ -3214,6 +3214,164 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.debug(f"关闭题目弹窗失败: {e}")
             return False
     
+    def get_quiz_options(self):
+        """获取当前题目选项元素列表（可见）"""
+        try:
+            option_xpaths = [
+                "//li[contains(@class,'topic-item')]",
+                "//li[contains(@class,'option')]",
+                "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
+            ]
+            options = []
+            for xp in option_xpaths:
+                try:
+                    opts = self.driver.find_elements(By.XPATH, xp)
+                    options.extend([o for o in opts if o.is_displayed()])
+                except Exception:
+                    continue
+            return options
+        except Exception:
+            return []
+
+    def is_multi_choice(self):
+        """判断是否为多选题"""
+        try:
+            elems = self.driver.find_elements(By.XPATH, "//span[contains(@class,'title-tit')]")
+            for e in elems:
+                if e.is_displayed():
+                    t = (e.text or '').strip()
+                    if '多选题' in t:
+                        return True
+            # 备用：有checkbox即视为多选
+            checkboxes = self.driver.find_elements(By.XPATH, "//label[contains(@class,'el-checkbox')]")
+            return len([c for c in checkboxes if c.is_displayed()]) > 0
+        except Exception:
+            return False
+
+    def scroll_quiz_dialog(self, position='bottom'):
+        """滚动题目弹窗视图，确保答案或选项完全可见"""
+        try:
+            wrappers = self.driver.find_elements(By.XPATH, "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]")
+            for w in wrappers:
+                try:
+                    view = None
+                    try:
+                        view = w.find_element(By.XPATH, ".//div[contains(@class,'el-scrollbar__wrap')]")
+                    except Exception:
+                        view = w
+                    if position == 'top':
+                        self.driver.execute_script("arguments[0].scrollTop = 0;", view)
+                    elif position == 'center':
+                        self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight/2;", view)
+                    else:
+                        self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", view)
+                    self.smart_wait(0.4)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    def check_for_quiz(self):
+        """检测是否出现题目弹窗"""
+        try:
+            dialogs = self.driver.find_elements(By.XPATH, "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]")
+            for d in dialogs:
+                if d.is_displayed():
+                    return True
+            return False
+        except Exception:
+            return False
+
+    def select_options_by_letters_v2(self, letters):
+        """根据字母点击选项（支持多选，随机顺序与间隔，必要时二次点击确认）"""
+        try:
+            import random
+            if isinstance(letters, str):
+                letters = [letters]
+            options = self.get_quiz_options()
+            if not options:
+                self.logger.debug("未找到可点击选项容器")
+                return False
+            # 构造按索引映射的字母序列（A,B,C...）
+            index_to_letter = [chr(ord('A') + i) for i in range(len(options))]
+            # 随机化点击顺序
+            to_click = [l for l in letters if l in index_to_letter]
+            random.shuffle(to_click)
+            last_clicked = None
+            for l in to_click:
+                idx = ord(l) - ord('A')
+                if 0 <= idx < len(options):
+                    opt = options[idx]
+                    try:
+                        # 滚动到视图中再点击
+                        try:
+                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", opt)
+                        except Exception:
+                            pass
+                        from selenium.webdriver.common.action_chains import ActionChains
+                        actions = ActionChains(self.driver)
+                        actions.move_to_element(opt)
+                        actions.click()
+                        actions.perform()
+                        last_clicked = opt
+                        # 选项间隔（0.5-1.5秒）
+                        self.smart_wait(random.uniform(0.5, 1.5))
+                        # 每次点击后滚动到底，确保答案可见
+                        self.scroll_quiz_dialog('bottom')
+                    except Exception:
+                        continue
+            # 二次点击最后一个选项以确认（某些页面需要）
+            if last_clicked is not None:
+                try:
+                    from selenium.webdriver.common.action_chains import ActionChains
+                    actions = ActionChains(self.driver)
+                    actions.move_to_element(last_clicked)
+                    actions.click()
+                    actions.perform()
+                    self.smart_wait(random.uniform(0.5, 1.0))
+                except Exception:
+                    pass
+            return True
+        except Exception as e:
+            self.logger.debug(f"选择多选项失败: {e}")
+            return False
+
+    def answer_quiz(self):
+        """处理题目弹窗：识别题型，滚动查看答案，并选择选项"""
+        try:
+            if not self.check_for_quiz():
+                return False
+            # 先滚动到底，避免答案不完整
+            self.scroll_quiz_dialog('bottom')
+            letters = self.extract_correct_answers()
+            if not letters:
+                # 单选题或答案未出现，滚动后重试
+                self.scroll_quiz_dialog('bottom')
+                letters = self.extract_correct_answers()
+            # 获取选项列表
+            options = self.get_quiz_options()
+            if not options:
+                self.logger.info("🔔 未检测到选项，请手动处理；程序继续监控")
+                return False
+            if letters:
+                if self.is_multi_choice():
+                    # 多选：随机顺序点击，并在每步间滚动
+                    self.select_options_by_letters_v2(letters)
+                else:
+                    # 单选：点击第一个答案
+                    first = letters[0]
+                    self.click_correct_answer(first, options)
+                    # 点击后再滚动一次以确认状态
+                    self.scroll_quiz_dialog('bottom')
+                return True
+            else:
+                # 未识别出答案，等待人工介入
+                self.logger.info("🔔 未识别到答案，请手动选择；程序将继续播放监控")
+                return False
+        except Exception as e:
+            self.logger.debug(f"处理题目弹窗失败: {e}")
+            return False
+
     def wait_for_video_complete(self, max_wait_minutes=60):
         """等待当前视频播放完成（带卡停检测）"""
         self.logger.info("⏰ 开始监控视频播放...")
