@@ -2408,7 +2408,36 @@ class ZhidaoWebAutoPlayerFinal:
                         self.logger.info("🚫 已达到预设观看时间，退出播放循环")
                         break
                 else:
-                    self.logger.warning(f"⚠️ 播放第 {attempt} 个视频失败")
+                    self.logger.warning("⚠️ 播放失败，尝试恢复或等待人工介入")
+                    # 尝试恢复播放
+                    if self.ensure_video_playing():
+                            self.logger.info("✅ 已恢复播放")
+                    else:
+                            # 尝试关闭可能的弹窗
+                            try:
+                                dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'el-dialog__wrapper')]")
+                                if dialogs:
+                                    close_btns = self.driver.find_elements(By.XPATH, "//button[contains(.,'同意') or contains(.,'确认') or contains(.,'关闭') or contains(.,'知道了')] | //i[contains(@class,'iconguanbi')]")
+                                    if close_btns:
+                                        try:
+                                            close_btns[0].click()
+                                        except Exception:
+                                            pass
+                            except Exception:
+                                pass
+                            
+                            # 人工介入等待：提示用户手动点击播放或关闭弹窗
+                            self.logger.info("🔔 请手动点击播放或关闭弹窗，程序将等待恢复播放...")
+                            waited_manual = 0
+                            while waited_manual < 600:
+                                try:
+                                    if self.is_video_playing():
+                                        self.logger.info("✅ 检测到视频已开始播放")
+                                        break
+                                except Exception:
+                                    pass
+                                time.sleep(2)
+                                waited_manual += 2
 
                 # 随机延迟
                 self.smart_wait()

@@ -3318,6 +3318,27 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             waited += 2
             
             # 查找未观看的视频
+            # 弹窗安全处理：尝试关闭，失败则等待人工处理
+            try:
+                self.close_all_dialogs()
+            except Exception:
+                pass
+            dialogs = []
+            try:
+                dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'el-dialog__wrapper')]")
+            except Exception:
+                dialogs = []
+            if dialogs:
+                self.logger.info("🔔 检测到弹窗，请手动关闭；程序将等待进入播放页面...")
+                waited = 0
+                while waited < 600:
+                    try:
+                        if self.driver.find_elements(By.TAG_NAME, 'video'):
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(2)
+                    waited += 2
             unwatched_videos = self.find_unwatched_videos()
             
             if not unwatched_videos:
@@ -3344,6 +3365,22 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.logger.info("✅ ActionChains点击成功")
                     except Exception as e:
                         self.logger.error(f"❌ 点击视频失败: {e}")
+                        # 等待人工介入：请手动点击右侧目录或视频中央开始播放
+                        self.logger.info("🔔 请手动点击开始播放或关闭弹窗，程序将等待...")
+                        waited_manual = 0
+                        while waited_manual < 600:
+                            try:
+                                # 视频元素出现且处于播放状态
+                                video_element = self.driver.find_elements(By.TAG_NAME, 'video')
+                                if video_element:
+                                    is_playing = self.driver.execute_script("return document.querySelector('video') ? !document.querySelector('video').paused : false")
+                                    if is_playing:
+                                        self.logger.info("✅ 检测到视频已开始播放")
+                                        break
+                            except Exception:
+                                pass
+                            time.sleep(2)
+                            waited_manual += 2
                 
                 self.smart_wait(3)  # 等待视频加载
                 
