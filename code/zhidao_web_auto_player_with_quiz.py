@@ -1029,6 +1029,17 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 
                 self.logger.info(f"找到 {len(unique_cards)} 个课程卡片，开始精确匹配...")
                 
+                # 【增强调试】输出所有卡片的文本
+                self.logger.info("-" * 50)
+                self.logger.info("📝 所有课程卡片列表：")
+                for idx, card in enumerate(unique_cards, 1):
+                    try:
+                        card_text = card.text or ''
+                        self.logger.info(f"  [{idx}] {card_text[:100]}")
+                    except Exception:
+                        self.logger.info(f"  [{idx}] (无法读取文本)")
+                self.logger.info("-" * 50)
+                
                 # 步骤5：精确匹配课程卡片（根据要求.txt）
                 for idx, card in enumerate(unique_cards, 1):
                     try:
@@ -1053,30 +1064,29 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.logger.debug(f"⚠️  排除直播课: {card_text[:40]}")
                             continue
                         
-                        # 条件2：匹配进度文本（正则：进度\s*:\s*\d+(\.\d+)?%）
+                        # 条件2：匹配进度文本（正则：进度\s*:\s*\d+(\.\d+)?%）【改为可选】
                         import re
                         progress_match = re.search(r'进度\s*[:：]\s*(\d+(?:\.\d+)?)%', card_text)
-                        if not progress_match:
-                            self.logger.debug(f"⚠️  未找到进度信息: {card_text[:60]}")
-                            continue
+                        if progress_match:
+                            progress_value = progress_match.group(1)
+                            self.logger.info(f"✅ 找到进度: {progress_value}%")
+                        else:
+                            self.logger.debug(f"ℹ️  未找到进度信息（可选条件）: {card_text[:60]}")
                         
-                        progress_value = progress_match.group(1)
-                        self.logger.info(f"✅ 找到进度: {progress_value}%")
-                        
-                        # 条件3：包含教师/机构名称（白名单）
+                        # 条件3：包含教师/机构名称【改为可选，仅作为加分项】
                         teacher_keywords = ['吉林大学', '北京大学', '清华大学', '北京师范大学', '中山大学', '南京大学',
-                                           '杨振斌', '李娜', '王芳', '张伟']
+                                           '杨振斌', '李娜', '王芳', '张伟', '教授', '老师', '大学', '学院', '讲师']
                         
                         found_teacher = False
                         for keyword in teacher_keywords:
                             if keyword in card_text:
-                                self.logger.info(f"✅ 找到教师/机构: {keyword}")
+                                self.logger.info(f"✅ 找到教师/机构: {keyword}（加分项）")
                                 found_teacher = True
                                 break
                         
                         if not found_teacher:
-                            self.logger.debug(f"⚠️  未找到匹配的教师/机构: {card_text[:60]}")
-                            continue
+                            self.logger.debug(f"ℹ️  未找到教师/机构（可选条件）: {card_text[:60]}")
+                        # 【修改】不再因为没有教师信息而跳过
                         
                         # 条件4：可选-检查是否有图片封面
                         has_image = len(card.find_elements(By.TAG_NAME, 'img')) > 0
