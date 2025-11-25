@@ -845,17 +845,31 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         if use_sidebar:
             self.logger.info("🆕 检测到配置为新版布局，使用侧边栏查找逻辑")
-            # 【修改】先在共享课中查找，失败后全界面查找
+            # 【第一级】共享课标签页查找（严格+宽松）
             result = self.find_course_in_sidebar(course_name)
             if result:
                 return True
             else:
                 self.logger.warning("⚠️  共享课中未找到课程，切换到全界面查找")
-                self.logger.info("🔍 尝试全界面查找模式")
-                return self.find_course_legacy(course_name)
+                self.logger.info("🔍 第二级：尝试全界面查找模式")
+                # 【第二级】全界面查找（有题目版本逻辑）
+                result = self.find_course_legacy(course_name)
+                if result:
+                    return True
+                else:
+                    self.logger.warning("⚠️  全界面查找也失败，切换到最简化查找逻辑")
+                    self.logger.info("🔍 第三级：使用无题目版本查找逻辑（兑底）")
+                    # 【第三级】无题目版本查找逻辑（最简化，但仍进入有题目课程）
+                    return self.find_course_simple(course_name)
         else:
             self.logger.info("📜 使用老版主区域查找逻辑")
-            return self.find_course_legacy(course_name)
+            result = self.find_course_legacy(course_name)
+            if result:
+                return True
+            else:
+                self.logger.warning("⚠️  老版逻辑失败，切换到最简化查找逻辑")
+                self.logger.info("🔍 使用无题目版本查找逻辑（兑底）")
+                return self.find_course_simple(course_name)
     
     def find_course_in_sidebar(self, course_name=None):
         """新版布局：在“共享课”标签页中查找课程（根据要求.txt实现）"""
@@ -1397,6 +1411,106 @@ class ZhidaoWebAutoPlayerWithQuiz:
         self.logger.error("请检查：")
         self.logger.error("1. 课程名称是否正确（当前配置：'" + course_name + "'）")
         self.logger.error("2. 是否需要先点击某个标签页（如'共享课'）")
+        return False
+    
+    def find_course_simple(self, course_name=None):
+        """最简化查找逻辑（复制无题目版本，作为最后兜底）"""
+        if course_name is None:
+            course_name = self.account_config.get('course_name')
+        
+        self.logger.info(f"🔍 【最简化查找】'{course_name}'课程...")
+        self.logger.info("💡 使用无题目版本逻辑（保证可运行的最低级版本）")
+        
+        # 检查浏览器是否还在运行
+        try:
+            current_url = self.driver.current_url
+            self.logger.info(f"当前页面URL: {current_url}")
+        except Exception as e:
+            self.logger.error("⚠️  浏览器已关闭！请不要手动关闭浏览器窗口！")
+            self.logger.error(f"错误详情: {e}")
+            return False
+        
+        # 先尝试滚动页面，确保所有课程都加载出来
+        self.logger.info("滚动页面加载所有课程...")
+        for i in range(3):
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            self.smart_wait(1)
+            self.driver.execute_script("window.scrollTo(0, 0);")
+            self.smart_wait(1)
+
+        # 多种课程选择器（无题目版本的逻辑）
+        course_selectors = [
+            # 直接查找文本
+            f"//*[contains(text(), '{course_name}')]",
+            f"//div[contains(text(), '{course_name}')]",
+            f"//a[contains(text(), '{course_name}')]",
+            f"//span[contains(text(), '{course_name}')]",
+            f"//h3[contains(text(), '{course_name}')]",
+            f"//h4[contains(text(), '{course_name}')]",
+            f"//p[contains(text(), '{course_name}')]",
+            # 查找课程卡片
+            f"//div[contains(@class, 'course')]//*[contains(text(), '{course_name}')]",
+            f"//div[contains(@class, 'card')]//*[contains(text(), '{course_name}')]",
+        ]
+        
+        # 尝试每个选择器
+        for selector_idx, selector in enumerate(course_selectors, 1):
+            try:
+                self.logger.info(f"尝试最简选择器 {selector_idx}/{len(course_selectors)}: {selector[:80]}...")
+                
+                # 查找所有匹配的元素
+                elements = self.driver.find_elements(By.XPATH, selector)
+                
+                if not elements:
+                    self.logger.info(f"选择器 {selector_idx} 未找到元素")
+                    continue
+                
+                self.logger.info(f"选择器 {selector_idx} 找到 {len(elements)} 个匹配的元素")
+                
+                # 尝试点击每个匹配的元素
+                for idx, element in enumerate(elements):
+                    try:
+                        elem_text = element.text[:50] if element.text else "(无文本)"
+                        self.logger.info(f"尝试元素 {idx+1}/{len(elements)}: {elem_text}")
+                        
+                        # 滚动到元素
+                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                        self.smart_wait(1)
+                        
+                        # 尝试点击
+                        try:
+                            element.click()
+                            self.logger.info(f"✅ 成功点击'{course_name}'课程")
+                            self.smart_wait(5)
+                            return True
+                        except Exception as click_err:
+                            # 如果常规点击失败，尝试 ActionChains 点击
+                            self.logger.info(f"常规点击失败，尝试ActionChains点击")
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element(element)
+                                actions.click()
+                                actions.perform()
+                                self.logger.info(f"✅ 通过ActionChains成功点击'{course_name}'课程")
+                                self.smart_wait(5)
+                                return True
+                            except Exception as ac_err:
+                                self.logger.warning(f"ActionChains点击也失败: {ac_err}")
+                                continue
+                    
+                    except Exception as elem_err:
+                        self.logger.warning(f"处理元素 {idx+1} 时出错: {elem_err}")
+                        continue
+
+            except Exception as e:
+                self.logger.warning(f"选择器 {selector_idx} 失败: {e}")
+                continue
+
+        self.logger.error(f"❌ 最简化查找也未找到'{course_name}'课程")
+        self.logger.error("请检查：")
+        self.logger.error("1. 课程名称是否正确（当前配置：'" + course_name + "'）")
+        self.logger.error("2. 课程是否确实存在于当前页面")
         return False
     
     def enter_study_page(self):
