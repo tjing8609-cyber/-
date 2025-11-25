@@ -3,6 +3,223 @@
 知到自动播放脚本 - 版本更新日志
 ========================================
 
+【v1.2】2025-11-25 🌐 URL直接启动功能 - 参考Autovisor实现
+-------------------
+主题：添加course_url可选配置，支持直接跳转到课程URL，跳过课程查找步骤
+
+**用户需求：**
+
+> "根据Autovisor项目，我们来一个个加入我们希望的新功能，第一步是URL启动"
+
+**问题分析：**
+
+原有流程：
+```python
+# 传统方式：必须通过课程名称查找
+登录() → 查找课程(course_name) → 进入学习页面 → 播放视频
+```
+
+存在问题：
+1. ❌ 课程查找需要时间
+2. ❌ 页面布局变化可能导致查找失败
+3. ❌ 不支持直接访问特定课程URL
+4. ❌ 用户已知课程URL时仍需查找
+
+**解决方案：**
+
+### 🌐 核心修改：添加course_url可选配置
+
+#### **1️⃣ 新的配置字段**
+
+```json
+{
+  "username": "你的账号",
+  "password": "你的密码",
+  "course_name": "课程名称",
+  "course_url": "https://wenda.zhihuishu.com/stu/courseInfo/studyResource?courseId=11345707",  // 【新增】
+  "course_type": 2,
+  "max_watch_minutes": 30
+}
+```
+
+**配置说明：**
+- `course_url`：课程URL（可选）
+  - ✅ 填写后将跳过课程查找，直接跳转
+  - ✅ 留空则使用course_name查找课程
+  - ✅ 完全向后兼容
+
+#### **2️⃣ 新的启动流程**
+
+```python
+def run(self):
+    # 登录
+    if not self.login():
+        return
+    
+    # 【新增】检查是否有course_url
+    if hasattr(self, 'course_url') and self.course_url:
+        # 有URL，直接跳转
+        logger.info(f"🌐 检测到course_url，直接跳转: {self.course_url}")
+        logger.info("✅ 跳过课程查找步骤")
+        self.driver.get(self.course_url)
+        self.smart_wait(3)
+        logger.info("✅ 已成功跳转到课程URL")
+    else:
+        # 没有URL，使用传统的课程查找
+        if not self.find_course():
+            return
+        if not self.enter_study_page():
+            return
+    
+    # 继续播放视频...
+```
+
+#### **3️⃣ GUI界面更新**
+
+**新增输入框：**
+```
+📚 课程配置
+  - 课程名称: [输入框]
+  - 课程URL: [输入框] (可选，设置后将跳过课程查找)  ← 新增
+```
+
+**功能特点：**
+- ✅ 自动保存course_url到配置文件
+- ✅ 自动加载course_url从配置文件
+- ✅ 支持空值（向后兼容）
+
+### 📊 实现范围
+
+**已修改的文件：**
+
+1. **`code/zhidao_web_auto_player_final.py`** (无题目版本)
+   - 修改位置：`load_account()` 方法 (456-487行)
+   - 修改位置：`login()` 方法 (594-606行)
+   - 修改位置：`run()` 方法 (2229-2247行)
+   - 代码变化：+41行, -16行
+
+2. **`code/zhidao_web_auto_player_with_quiz.py`** (有题目版本)
+   - 修改位置：`load_account_config()` 方法 (254-257行)
+   - 修改位置：`run()` 方法 (3210-3234行)
+   - 代码变化：+31行, -10行
+
+3. **`auto_start.py`** (图形化界面)
+   - 修改位置：`create_widgets()` (201-214行) - 新增输入框
+   - 修改位置：`save_config()` (604行) - 保存course_url
+   - 修改位置：`load_config()` (579行) - 加载course_url
+   - 代码变化：+10行
+
+4. **`启动/account.json.template`** (配置模板)
+   - 新增：course_url字段
+   - 新增：course_url_note说明
+   - 代码变化：+15行, -4行
+
+### 📊 功能对比
+
+| 特性 | v1.1 | v1.2 |
+|------|------|------|
+| 支持课程名称查找 | ✅ | ✅ |
+| 支持直接URL跳转 | ❌ | ✅ |
+| 跳过课程查找步骤 | ❌ | ✅ |
+| GUI界面支持 | ❌ | ✅ |
+| 向后兼容 | ✅ | ✅ |
+| 参考Autovisor设计 | ❌ | ✅ |
+
+### 📋 使用示例
+
+**方式1：通过GUI界面**
+```
+1. 打开 start_gui.bat
+2. 填写账号密码
+3. 填写课程URL（可选）
+4. 点击保存配置
+5. 点击开始运行
+```
+
+**方式2：直接编辑JSON**
+```json
+{
+  "username": "18520464935",
+  "password": "Zhanghx2006",
+  "course_url": "https://wenda.zhihuishu.com/stu/courseInfo/studyResource?courseId=11345707",
+  "course_type": 2,
+  "max_watch_minutes": 30
+}
+```
+
+**方式3：传统方式（向后兼容）**
+```json
+{
+  "username": "18520464935",
+  "password": "Zhanghx2006",
+  "course_name": "中国近现代史纲要",
+  "course_type": 1
+}
+```
+
+### 📖 Git提交记录
+
+**Commit 1:** `e112ad9`
+**提交信息:** `feat: 添加course_url可选启动方式 - 支持直接跳转到课程URL`
+**修改文件:** zhidao_web_auto_player_final.py, account.json.template
+
+**Commit 2:** `ffe4bb3`
+**提交信息:** `feat: 有题目版本也添加course_url支持`
+**修改文件:** zhidao_web_auto_player_with_quiz.py
+
+**Commit 3:** `1d5e953`
+**提交信息:** `feat: GUI图形界面也添加course_url字段支持`
+**修改文件:** auto_start.py
+
+**总计修改统计：**
+- 4 files changed
+- 97 insertions(+)
+- 30 deletions(-)
+
+### ✅ 功能特性
+
+- ✅ 支持直接URL启动，跳过课程查找
+- ✅ 完全向后兼容，不影响现有用户
+- ✅ GUI界面完整支持
+- ✅ 所有播放器版本均支持
+- ✅ 参考Autovisor项目设计
+- ✅ 提高稳定性，避免页面布局变化影响
+
+### 💡 技术亮点
+
+💡 **可选配置** - course_url为可选项，不填写则使用传统查找
+💡 **智能判断** - 自动检测是否有course_url，决定执行路径
+💡 **全面支持** - 所有Player类和GUI界面均支持
+💡 **参考优秀项目** - 借鉴Autovisor的course_urls设计理念
+
+### 📌 向后兼容
+
+✅ 完全兼容v1.1及更早版本
+✅ 旧配置文件不需修改
+✅ 不填写course_url则使用原有逻辑
+✅ 所有现有功能保持不变
+
+### ⚠️ 重要说明
+
+⚠️ course_url为可选配置，不填写不影响使用
+⚠️ 填写course_url后将跳过课程查找，直接跳转
+⚠️ course_name和course_url可以同时存在，优先使用course_url
+⚠️ GUI界面会自动保存和加载course_url配置
+
+### 🔥 使用建议
+
+**何时使用course_url：**
+- ✅ 已知道课程的直接URL
+- ✅ 课程名称查找经常失败
+- ✅ 需要提高程序稳定性
+- ✅ 希望节省课程查找时间
+
+**何时使用course_name：**
+- ✅ 不知道课程URL
+- ✅ 只知道课程名称
+- ✅ 使用传统方式
+
+
 【v1.1】2025-11-22 🔄 纯答题模式循环答题功能 + 依赖库完善
 -------------------
 主题：实现纯答题模式自动循环答题，完善项目依赖说明
