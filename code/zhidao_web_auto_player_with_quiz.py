@@ -3170,14 +3170,49 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.info(f"⏳ 关闭弹窗前等待 {close_delay:.2f} 秒")
             self.smart_wait(close_delay)
             
-            # 【P1 - 反检测优化】减少选择器数量，只保疙4个最常用
+            # 【P1 - 反检测优化】减少选择器数量，并优先点击底部“关闭”按钮
+            # 先滚动到底，确保footer可见
+            try:
+                self.scroll_quiz_dialog('bottom')
+            except Exception:
+                pass
+            # 优先尝试 footer 按钮（span.dialog-footer > div.btn 文本含“关闭”）
+            try:
+                footer_btns = self.driver.find_elements(By.XPATH,
+                    "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and (text()='关闭' or contains(text(),'关闭'))]")
+                for fb in footer_btns:
+                    if fb.is_displayed():
+                        try:
+                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", fb)
+                        except Exception:
+                            pass
+                        try:
+                            fb.click()
+                            self.logger.info("✅ 已点击底部关闭按钮")
+                            self.smart_wait(1)
+                            return True
+                        except Exception:
+                            # 备用：ActionChains 点击
+                            try:
+                                from selenium.webdriver.common.action_chains import ActionChains
+                                actions = ActionChains(self.driver)
+                                actions.move_to_element(fb)
+                                actions.click()
+                                actions.perform()
+                                self.logger.info("✅ 已点击底部关闭按钮(ActionChains)")
+                                self.smart_wait(1)
+                                return True
+                            except Exception:
+                                continue
+            except Exception:
+                pass
             close_selectors = [
-                # 知到平台题目弹窗的关闭按钮
-                "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and text()='关闭']",  # 精确匹配
-                "//span[@class='dialog-footer']//div[@class='btn']",  # 直接找footer下的btn
-                # Element UI标准关闭按钮
-                "//button[contains(@class, 'el-dialog__headerbtn')]",  # 头部关闭按钮
-                "//button[contains(text(), '关闭')]",  # 文本为"关闭"的按钮
+                # Element UI标准关闭按钮（头部X）
+                "//button[contains(@class, 'el-dialog__headerbtn')]",
+                # 文本为"关闭"的按钮（通用）
+                "//button[contains(text(), '关闭')]",
+                # 兜底：任意footer下的div.btn
+                "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn')]",
             ]
             
             for selector in close_selectors:
