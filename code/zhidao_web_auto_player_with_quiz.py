@@ -3208,7 +3208,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             fb.click()
                             self.logger.info("✅ 已点击底部关闭按钮")
                             self.smart_wait(1)
-                            return True
+                            # 【新增】验证是否关闭成功
+                            if not self.check_for_quiz():
+                                self.logger.info("✅ 题目弹窗已成功关闭")
+                                return True
+                            else:
+                                self.logger.warning("⚠️  点击关闭按钮后，题目弹窗仍然存在，尝试其他方法")
                         except Exception:
                             # 备用：ActionChains 点击
                             try:
@@ -3219,7 +3224,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 actions.perform()
                                 self.logger.info("✅ 已点击底部关闭按钮(ActionChains)")
                                 self.smart_wait(1)
-                                return True
+                                # 【新增】验证是否关闭成功
+                                if not self.check_for_quiz():
+                                    self.logger.info("✅ 题目弹窗已成功关闭")
+                                    return True
+                                else:
+                                    self.logger.warning("⚠️  ActionChains点击关闭按钮后，题目弹窗仍然存在，尝试其他方法")
                             except Exception:
                                 continue
             except Exception:
@@ -3241,9 +3251,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             # 尝试普通点击
                             try:
                                 close_btn.click()
-                                self.logger.info(f"✅ 已关闭题目弹窗: {selector[:60]}")
+                                self.logger.info(f"✅ 已点击关闭按钮: {selector[:60]}")
                                 self.smart_wait(1)
-                                return True
+                                # 【新增】验证是否关闭成功
+                                if not self.check_for_quiz():
+                                    self.logger.info("✅ 题目弹窗已成功关闭")
+                                    return True
+                                else:
+                                    self.logger.warning(f"⚠️  点击 {selector[:40]} 后，题目弹窗仍然存在，尝试其他方法")
                             except:
                                 # 如果普通点击失败，尝试ActionChains点击
                                 try:
@@ -3252,15 +3267,36 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     actions.move_to_element(close_btn)
                                     actions.click()
                                     actions.perform()
-                                    self.logger.info(f"✅ 已关闭题目弹窗(ActionChains): {selector[:60]}")
+                                    self.logger.info(f"✅ 已点击关闭按钮(ActionChains): {selector[:60]}")
                                     self.smart_wait(1)
-                                    return True
+                                    # 【新增】验证是否关闭成功
+                                    if not self.check_for_quiz():
+                                        self.logger.info("✅ 题目弹窗已成功关闭")
+                                        return True
+                                    else:
+                                        self.logger.warning(f"⚠️  ActionChains点击 {selector[:40]} 后，题目弹窗仍然存在，尝试其他方法")
                                 except:
                                     continue
                 except:
                     continue
             
-            self.logger.warning("⚠️  未找到题目弹窗的关闭按钮")
+            # 【新增】所有关闭按钮都失败后，尝试ESC键
+            self.logger.warning("⚠️  所有关闭按钮都失败，尝试按ESC键关闭")
+            try:
+                from selenium.webdriver.common.keys import Keys
+                from selenium.webdriver.common.action_chains import ActionChains
+                ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+                self.smart_wait(1)
+                # 验证是否关闭成功
+                if not self.check_for_quiz():
+                    self.logger.info("✅ ESC键成功关闭题目弹窗")
+                    return True
+                else:
+                    self.logger.warning("⚠️  ESC键无法关闭题目弹窗")
+            except Exception as e:
+                self.logger.debug(f"按ESC键失败: {e}")
+            
+            self.logger.warning("⚠️  未能成功关闭题目弹窗")
             return False
             
         except Exception as e:
