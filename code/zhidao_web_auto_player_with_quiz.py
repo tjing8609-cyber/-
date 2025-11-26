@@ -3280,23 +3280,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 except:
                     continue
             
-            # 【新增】所有关闭按钮都失败后，尝试ESC键
-            self.logger.warning("⚠️  所有关闭按钮都失败，尝试按ESC键关闭")
-            try:
-                from selenium.webdriver.common.keys import Keys
-                from selenium.webdriver.common.action_chains import ActionChains
-                ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
-                self.smart_wait(1)
-                # 验证是否关闭成功
-                if not self.check_for_quiz():
-                    self.logger.info("✅ ESC键成功关闭题目弹窗")
-                    return True
-                else:
-                    self.logger.warning("⚠️  ESC键无法关闭题目弹窗")
-            except Exception as e:
-                self.logger.debug(f"按ESC键失败: {e}")
-            
-            self.logger.warning("⚠️  未能成功关闭题目弹窗")
+            self.logger.warning("⚠️  所有已知的关闭按钮都无法成功关闭题目弹窗")
             return False
             
         except Exception as e:
@@ -3523,14 +3507,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.logger.info("✅ 已随机作答，尝试关闭题目弹窗")
                             closed = self.close_quiz_dialog()
                             if not closed:
-                                self.logger.info("🔔 自动关闭失败，尝试按ESC键关闭")
-                                try:
-                                    from selenium.webdriver.common.keys import Keys
-                                    from selenium.webdriver.common.action_chains import ActionChains
-                                    ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
-                                    self.smart_wait(1)
-                                except Exception:
-                                    pass
+                                self.logger.warning("⚠️  自动关闭失败，题目弹窗仍然存在")
                         except Exception:
                             pass
                         return True
