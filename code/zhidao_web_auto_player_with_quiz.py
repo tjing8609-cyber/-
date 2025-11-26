@@ -114,7 +114,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         # 初始化刷新计数器（每10次才刷新一次）
         self.items_processed_since_refresh = 0
-        self.refresh_interval = 10  # 每10个项目刷新一次
+        self.refresh_interval = 30  # 每30个项目刷新一次
         
         # 初始化累计观看时间（秒）
         self.total_watch_time_seconds = 0
