@@ -3438,12 +3438,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.click_correct_answer(first, options)
                     # 点击后再滚动一次以确认状态
                     self.scroll_quiz_dialog('bottom')
+                
+                # 【新增】关闭题目弹窗
+                self.smart_wait(2)
+                self.close_quiz_dialog()
                 return True
             else:
                 # 【新增】未识别出答案，随机选择一个选项
                 self.logger.info("🎲 未识别到答案，随机选择一个选项...")
                 import random
-                random_index = random.randint(0, len(options) - 1)
+                # 【修复】限制随机索引在选项数量范围内
+                max_options = min(len(options), 4)  # 最多只能选择A-D
+                random_index = random.randint(0, max_options - 1)
                 random_letter = chr(65 + random_index)  # A=65, B=66, C=67, D=68
                 self.logger.info(f"🎯 随机选择了选项 {random_letter}")
                 
@@ -3457,6 +3463,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.smart_wait(1)
                     
                     self.logger.info("✅ 已随机选择并确认")
+                    
+                    # 【新增】关闭题目弹窗
+                    self.smart_wait(2)
+                    self.close_quiz_dialog()
                     return True
                 except Exception as e:
                     self.logger.warning(f"随机选择失败: {e}")
