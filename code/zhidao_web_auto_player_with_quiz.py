@@ -21,7 +21,6 @@ import os
 import sys
 import random
 import logging
-import threading
 from datetime import datetime
 
 from selenium import webdriver
@@ -98,12 +97,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def __init__(self, account_file='account.json', headless=False):
         """初始化播放器"""
         self.account_file = account_file
-        
-        # 【新增】线程控制变量
-        self.quiz_detected = threading.Event()  # 题目检测事件
-        self.quiz_handling = False  # 是否正在处理题目
-        self.monitor_running = True  # 监控线程运行标志
-        self.quiz_monitor_thread = None  # 题目监控线程
         
         # 加载配置
         self.config = self.load_config()
@@ -2369,14 +2362,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return 0
     
     def ensure_video_playing(self):
-        """确保视频正在播放（优先检查题目弹窗）"""
+        """确保视频正在播放"""
         try:
-            # 【新增】优先检查是否有题目弹窗，避免误判为视频播放错误
-            if self.check_for_quiz():
-                self.logger.debug("🚨 检测到题目弹窗，视频暂停是正常现象")
-                return True  # 返回 True，让主循环不尝试恢复播放
-            
-            # 检查视频是否正在播放
             is_playing = self.driver.execute_script("""
                 var video = document.querySelector('video');
                 if (video) {
@@ -2390,13 +2377,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
     
     def recover_stuck_video(self):
-        """恢复卡停的视频（优先检查题目弹窗）"""
+        """恢复卡停的视频（使用ActionChains模拟真实点击）"""
         try:
-            # 【新增】在恢复播放前，再次检查是否有题目弹窗
-            if self.check_for_quiz():
-                self.logger.info("🚨 检测到题目弹窗，不尝试恢复播放，等待监控线程处理")
-                return True
-            
             self.logger.warning("🔧 检测到视频卡停，开始恢复...")
             
             # 策略1：使用ActionChains点击视频中央区域（模拟真实用户操作）
@@ -2937,63 +2919,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.warning(f"⚠️  点击视频中央失败: {e}")
                     return True  # 即使点击失败也返回True，因为题目已处理
             
-            # 【新增】所有选项都尝试完毕且不是多选题时，随机选择一个选项
-            self.logger.warning("⚠️  所有尝试都失败，未找到正确答案，随机选择一个选项")
-            try:
-                if options:
-                    # 随机选择一个选项
-                    random_option = random.choice(options)
-                    option_index = options.index(random_option) + 1
-                    self.logger.info(f"🎲 随机选择第 {option_index} 个选项")
-                    
-                    # 随机延时
-                    random_delay = random.uniform(0.5, 2)
-                    self.smart_wait(random_delay)
-                    
-                    # 点击选项
-                    try:
-                        from selenium.webdriver.common.action_chains import ActionChains
-                        actions = ActionChains(self.driver)
-                        actions.move_to_element(random_option)
-                        actions.click()
-                        actions.perform()
-                        self.smart_wait(1)
-                    except Exception:
-                        try:
-                            random_option.click()
-                            self.smart_wait(1)
-                        except Exception:
-                            pass
-                    
-                    # 尝试提交
-                    submit_buttons = [
-                        "//span[contains(text(), '确定')]",
-                        "//button[contains(text(), '确定')]",
-                        "//div[contains(@class, 'popbtn_ok')]",
-                    ]
-                    for btn_selector in submit_buttons:
-                        try:
-                            submit_btns = self.driver.find_elements(By.XPATH, btn_selector)
-                            for submit_btn in submit_btns:
-                                if submit_btn.is_displayed() and submit_btn.is_enabled():
-                                    submit_btn.click()
-                                    self.logger.info("✅ 已提交随机选择")
-                                    self.smart_wait(1.5)
-                                    break
-                            break
-                        except:
-                            continue
-                    
-                    # 尝试关闭弹窗
-                    self.logger.info("✅ 已随机作答，尝试关闭题目弹窗")
-                    closed = self.close_quiz_dialog()
-                    if not closed:
-                        self.logger.warning("⚠️  自动关闭失败，题目弹窗仍然存在")
-                    
-                    return True
-            except Exception as e:
-                self.logger.debug(f"随机选择选项失败: {e}")
-            
             return False
             
         except Exception as e:
@@ -3245,59 +3170,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.info(f"⏳ 关闭弹窗前等待 {close_delay:.2f} 秒")
             self.smart_wait(close_delay)
             
-            # 【P1 - 反检测优化】减少选择器数量，并优先点击底部“关闭”按钮
-            # 先滚动到底，确保footer可见
-            try:
-                self.scroll_quiz_dialog('bottom')
-            except Exception:
-                pass
-            # 优先尝试 footer 按钮（span.dialog-footer > div.btn 文本含“关闭”）
-            try:
-                footer_btns = self.driver.find_elements(By.XPATH,
-                    "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and (text()='关闭' or contains(text(),'关闭'))]")
-                for fb in footer_btns:
-                    if fb.is_displayed():
-                        try:
-                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", fb)
-                        except Exception:
-                            pass
-                        try:
-                            fb.click()
-                            self.logger.info("✅ 已点击底部关闭按钮")
-                            self.smart_wait(1)
-                            # 【新增】验证是否关闭成功
-                            if not self.check_for_quiz():
-                                self.logger.info("✅ 题目弹窗已成功关闭")
-                                return True
-                            else:
-                                self.logger.warning("⚠️  点击关闭按钮后，题目弹窗仍然存在，尝试其他方法")
-                        except Exception:
-                            # 备用：ActionChains 点击
-                            try:
-                                from selenium.webdriver.common.action_chains import ActionChains
-                                actions = ActionChains(self.driver)
-                                actions.move_to_element(fb)
-                                actions.click()
-                                actions.perform()
-                                self.logger.info("✅ 已点击底部关闭按钮(ActionChains)")
-                                self.smart_wait(1)
-                                # 【新增】验证是否关闭成功
-                                if not self.check_for_quiz():
-                                    self.logger.info("✅ 题目弹窗已成功关闭")
-                                    return True
-                                else:
-                                    self.logger.warning("⚠️  ActionChains点击关闭按钮后，题目弹窗仍然存在，尝试其他方法")
-                            except Exception:
-                                continue
-            except Exception:
-                pass
+            # 【P1 - 反检测优化】减少选择器数量，只保疙4个最常用
             close_selectors = [
-                # Element UI标准关闭按钮（头部X）
-                "//button[contains(@class, 'el-dialog__headerbtn')]",
-                # 文本为"关闭"的按钮（通用）
-                "//button[contains(text(), '关闭')]",
-                # 兜底：任意footer下的div.btn
-                "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn')]",
+                # 知到平台题目弹窗的关闭按钮
+                "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and text()='关闭']",  # 精确匹配
+                "//span[@class='dialog-footer']//div[@class='btn']",  # 直接找footer下的btn
+                # Element UI标准关闭按钮
+                "//button[contains(@class, 'el-dialog__headerbtn')]",  # 头部关闭按钮
+                "//button[contains(text(), '关闭')]",  # 文本为"关闭"的按钮
             ]
             
             for selector in close_selectors:
@@ -3308,14 +3188,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             # 尝试普通点击
                             try:
                                 close_btn.click()
-                                self.logger.info(f"✅ 已点击关闭按钮: {selector[:60]}")
+                                self.logger.info(f"✅ 已关闭题目弹窗: {selector[:60]}")
                                 self.smart_wait(1)
-                                # 【新增】验证是否关闭成功
-                                if not self.check_for_quiz():
-                                    self.logger.info("✅ 题目弹窗已成功关闭")
-                                    return True
-                                else:
-                                    self.logger.warning(f"⚠️  点击 {selector[:40]} 后，题目弹窗仍然存在，尝试其他方法")
+                                return True
                             except:
                                 # 如果普通点击失败，尝试ActionChains点击
                                 try:
@@ -3324,20 +3199,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     actions.move_to_element(close_btn)
                                     actions.click()
                                     actions.perform()
-                                    self.logger.info(f"✅ 已点击关闭按钮(ActionChains): {selector[:60]}")
+                                    self.logger.info(f"✅ 已关闭题目弹窗(ActionChains): {selector[:60]}")
                                     self.smart_wait(1)
-                                    # 【新增】验证是否关闭成功
-                                    if not self.check_for_quiz():
-                                        self.logger.info("✅ 题目弹窗已成功关闭")
-                                        return True
-                                    else:
-                                        self.logger.warning(f"⚠️  ActionChains点击 {selector[:40]} 后，题目弹窗仍然存在，尝试其他方法")
+                                    return True
                                 except:
                                     continue
                 except:
                     continue
             
-            self.logger.warning("⚠️  所有已知的关闭按钮都无法成功关闭题目弹窗")
+            self.logger.warning("⚠️  未找到题目弹窗的关闭按钮")
             return False
             
         except Exception as e:
@@ -3400,41 +3270,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     continue
         except Exception:
             pass
-
-    def start_quiz_monitor(self):
-        """启动题目实时监控线程（独立线程，异步检测）"""
-        def monitor_loop():
-            self.logger.info("👁️  题目实时监控线程已启动")
-            while self.monitor_running:
-                try:
-                    # 每2秒检测一次
-                    time.sleep(2)
-                    if not self.monitor_running:
-                        break
-                    # 检测题目弹窗
-                    if self.check_for_quiz():
-                        if not self.quiz_handling:
-                            self.logger.info("🚨 [实时监控] 检测到题目弹窗，暂停主循环")
-                            self.quiz_detected.set()  # 通知主线程暂停
-                            self.quiz_handling = True
-                            # 处理题目
-                            self.answer_quiz()
-                            self.quiz_handling = False
-                            self.quiz_detected.clear()  # 清除事件，恢复主线程
-                            self.logger.info("✅ [实时监控] 题目处理完毕，恢复主循环")
-                except Exception as e:
-                    self.logger.debug(f"题目监控线程异常: {e}")
-                    continue
-            self.logger.info("👁️  题目实时监控线程已停止")
-        
-        self.quiz_monitor_thread = threading.Thread(target=monitor_loop, daemon=True, name="QuizMonitor")
-        self.quiz_monitor_thread.start()
-
-    def stop_quiz_monitor(self):
-        """停止题目监控线程"""
-        self.monitor_running = False
-        if self.quiz_monitor_thread and self.quiz_monitor_thread.is_alive():
-            self.quiz_monitor_thread.join(timeout=5)
 
     def check_for_quiz(self):
         """检测是否出现题目弹窗"""
@@ -3501,6 +3336,41 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.debug(f"选择多选项失败: {e}")
             return False
 
+    def answer_quiz(self):
+        """处理题目弹窗：识别题型，滚动查看答案，并选择选项"""
+        try:
+            if not self.check_for_quiz():
+                return False
+            # 先滚动到底，避免答案不完整
+            self.scroll_quiz_dialog('bottom')
+            letters = self.extract_correct_answers()
+            if not letters:
+                # 单选题或答案未出现，滚动后重试
+                self.scroll_quiz_dialog('bottom')
+                letters = self.extract_correct_answers()
+            # 获取选项列表
+            options = self.get_quiz_options()
+            if not options:
+                self.logger.info("🔔 未检测到选项，请手动处理；程序继续监控")
+                return False
+            if letters:
+                if self.is_multi_choice():
+                    # 多选：随机顺序点击，并在每步间滚动
+                    self.select_options_by_letters_v2(letters)
+                else:
+                    # 单选：点击第一个答案
+                    first = letters[0]
+                    self.click_correct_answer(first, options)
+                    # 点击后再滚动一次以确认状态
+                    self.scroll_quiz_dialog('bottom')
+                return True
+            else:
+                # 未识别出答案，等待人工介入
+                self.logger.info("🔔 未识别到答案，请手动选择；程序将继续播放监控")
+                return False
+        except Exception as e:
+            self.logger.debug(f"处理题目弹窗失败: {e}")
+            return False
 
     def wait_for_video_complete(self, max_wait_minutes=60):
         """等待当前视频播放完成（带卡停检测）"""
@@ -3518,12 +3388,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
         start_time = time.time()
         
         while elapsed_time < max_wait_time:
-            # 【新增】检查是否有题目弹窗，如有则等待处理完成
-            if self.quiz_detected.is_set():
-                self.logger.debug("⏸️  主循环暂停，等待题目处理...")
-                self.quiz_detected.wait()  # 阻塞，直到题目处理完毕
-                self.logger.debug("▶️  主循环恢复")
-                continue
+            # 检查是否有题目弹窗
+            if self.check_for_quiz():
+                self.answer_quiz()
             
             # 检查视频是否还在播放
             if not self.ensure_video_playing():
@@ -3580,9 +3447,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # 清空已观看视频列表（任务开始时重置）
             self.watched_video_list = []
             self.logger.info("✅ 已清空已观看视频列表")
-            
-            # 【新增】启动题目实时监控线程
-            self.start_quiz_monitor()
             
             # 登录
             if not self.login():
@@ -4106,12 +3970,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def cleanup(self):
         """清理资源（关闭时调用）"""
-        # 【新增】停止题目监控线程
-        try:
-            self.stop_quiz_monitor()
-        except Exception:
-            pass
-        
         # 【优先级最高】关闭浏览器（确保不被中断）
         if hasattr(self, 'driver'):
             try:
