@@ -2369,8 +2369,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return 0
     
     def ensure_video_playing(self):
-        """确保视频正在播放"""
+        """确保视频正在播放（优先检查题目弹窗）"""
         try:
+            # 【新增】优先检查是否有题目弹窗，避免误判为视频播放错误
+            if self.check_for_quiz():
+                self.logger.debug("🚨 检测到题目弹窗，视频暂停是正常现象")
+                return True  # 返回 True，让主循环不尝试恢复播放
+            
+            # 检查视频是否正在播放
             is_playing = self.driver.execute_script("""
                 var video = document.querySelector('video');
                 if (video) {
@@ -2384,8 +2390,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
     
     def recover_stuck_video(self):
-        """恢复卡停的视频（使用ActionChains模拟真实点击）"""
+        """恢复卡停的视频（优先检查题目弹窗）"""
         try:
+            # 【新增】在恢复播放前，再次检查是否有题目弹窗
+            if self.check_for_quiz():
+                self.logger.info("🚨 检测到题目弹窗，不尝试恢复播放，等待监控线程处理")
+                return True
+            
             self.logger.warning("🔧 检测到视频卡停，开始恢复...")
             
             # 策略1：使用ActionChains点击视频中央区域（模拟真实用户操作）
