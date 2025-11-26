@@ -21,6 +21,7 @@ import os
 import sys
 import random
 import logging
+import threading
 from datetime import datetime
 
 from selenium import webdriver
@@ -97,6 +98,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def __init__(self, account_file='account.json', headless=False):
         """初始化播放器"""
         self.account_file = account_file
+        
+        # 【新增】线程控制变量
+        self.quiz_detected = threading.Event()  # 题目检测事件
+        self.quiz_handling = False  # 是否正在处理题目
+        self.monitor_running = True  # 监控线程运行标志
+        self.quiz_monitor_thread = None  # 题目监控线程
         
         # 加载配置
         self.config = self.load_config()
@@ -3306,6 +3313,41 @@ class ZhidaoWebAutoPlayerWithQuiz:
         except Exception:
             pass
 
+    def start_quiz_monitor(self):
+        """启动题目实时监控线程（独立线程，异步检测）"""
+        def monitor_loop():
+            self.logger.info("👁️  题目实时监控线程已启动")
+            while self.monitor_running:
+                try:
+                    # 每2秒检测一次
+                    time.sleep(2)
+                    if not self.monitor_running:
+                        break
+                    # 检测题目弹窗
+                    if self.check_for_quiz():
+                        if not self.quiz_handling:
+                            self.logger.info("🚨 [实时监控] 检测到题目弹窗，暂停主循环")
+                            self.quiz_detected.set()  # 通知主线程暂停
+                            self.quiz_handling = True
+                            # 处理题目
+                            self.answer_quiz()
+                            self.quiz_handling = False
+                            self.quiz_detected.clear()  # 清除事件，恢复主线程
+                            self.logger.info("✅ [实时监控] 题目处理完毕，恢复主循环")
+                except Exception as e:
+                    self.logger.debug(f"题目监控线程异常: {e}")
+                    continue
+            self.logger.info("👁️  题目实时监控线程已停止")
+        
+        self.quiz_monitor_thread = threading.Thread(target=monitor_loop, daemon=True, name="QuizMonitor")
+        self.quiz_monitor_thread.start()
+
+    def stop_quiz_monitor(self):
+        """停止题目监控线程"""
+        self.monitor_running = False
+        if self.quiz_monitor_thread and self.quiz_monitor_thread.is_alive():
+            self.quiz_monitor_thread.join(timeout=5)
+
     def check_for_quiz(self):
         """检测是否出现题目弹窗"""
         try:
@@ -3431,9 +3473,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
         start_time = time.time()
         
         while elapsed_time < max_wait_time:
-            # 检查是否有题目弹窗
-            if self.check_for_quiz():
-                self.answer_quiz()
+            # 【新增】检查是否有题目弹窗，如有则等待处理完成
+            if self.quiz_detected.is_set():
+                self.logger.debug("⏸️  主循环暂停，等待题目处理...")
+                self.quiz_detected.wait()  # 阻塞，直到题目处理完毕
+                self.logger.debug("▶️  主循环恢复")
+                continue
             
             # 检查视频是否还在播放
             if not self.ensure_video_playing():
@@ -3490,6 +3535,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # 清空已观看视频列表（任务开始时重置）
             self.watched_video_list = []
             self.logger.info("✅ 已清空已观看视频列表")
+            
+            # 【新增】启动题目实时监控线程
+            self.start_quiz_monitor()
             
             # 登录
             if not self.login():
@@ -4013,6 +4061,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def cleanup(self):
         """清理资源（关闭时调用）"""
+        # 【新增】停止题目监控线程
+        try:
+            self.stop_quiz_monitor()
+        except Exception:
+            pass
+        
         # 【优先级最高】关闭浏览器（确保不被中断）
         if hasattr(self, 'driver'):
             try:
