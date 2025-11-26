@@ -3341,22 +3341,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.quiz_detected.set()  # 通知主线程暂停
                             self.quiz_handling = True
                             # 处理题目
-                            success = self.answer_quiz()
-                            # 【新增】如果未识别到答案，等待用户手动处理（监控题目弹窗消失）
-                            if not success:
-                                self.logger.info("🔔 [实时监控] 未识别到答案，等待用户手动处理题目...")
-                                waited = 0
-                                max_wait = 600  # 最多等待10分钟
-                                while waited < max_wait and self.monitor_running:
-                                    time.sleep(3)
-                                    waited += 3
-                                    # 检查题目弹窗是否消失
-                                    if not self.check_for_quiz():
-                                        self.logger.info("✅ [实时监控] 题目弹窗已消失，用户已处理")
-                                        break
-                                    # 每30秒提示一次
-                                    if waited % 30 == 0:
-                                        self.logger.info(f"⏳ [实时监控] 仍在等待用户处理题目... (已等待 {waited}秒)")
+                            self.answer_quiz()
                             self.quiz_handling = False
                             self.quiz_detected.clear()  # 清除事件，恢复主线程
                             self.logger.info("✅ [实时监控] 题目处理完毕，恢复主循环")
@@ -3476,8 +3461,45 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     pass
                 return True
             else:
-                # 未识别出答案，等待人工介入
-                self.logger.info("🔔 未识别到答案，请手动选择；程序将继续播放监控")
+                # 【修改】未识别出答案时，随机选择一个选项
+                self.logger.info("⚠️ 未识别到答案，随机选择一个选项")
+                try:
+                    import random
+                    if options:
+                        # 随机选择一个选项
+                        random_option = random.choice(options)
+                        self.logger.info(f"🎲 随机选择第 {options.index(random_option) + 1} 个选项")
+                        try:
+                            from selenium.webdriver.common.action_chains import ActionChains
+                            actions = ActionChains(self.driver)
+                            actions.move_to_element(random_option)
+                            actions.click()
+                            actions.perform()
+                            self.smart_wait(1)
+                        except Exception:
+                            try:
+                                random_option.click()
+                                self.smart_wait(1)
+                            except Exception:
+                                pass
+                        # 尝试关闭弹窗
+                        try:
+                            self.logger.info("✅ 已随机作答，尝试关闭题目弹窗")
+                            closed = self.close_quiz_dialog()
+                            if not closed:
+                                self.logger.info("🔔 自动关闭失败，尝试按ESC键关闭")
+                                try:
+                                    from selenium.webdriver.common.keys import Keys
+                                    from selenium.webdriver.common.action_chains import ActionChains
+                                    ActionChains(self.driver).send_keys(Keys.ESCAPE).perform()
+                                    self.smart_wait(1)
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
+                        return True
+                except Exception as e:
+                    self.logger.debug(f"随机选择选项失败: {e}")
                 return False
         except Exception as e:
             self.logger.debug(f"处理题目弹窗失败: {e}")
