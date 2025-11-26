@@ -3341,7 +3341,22 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             self.quiz_detected.set()  # 通知主线程暂停
                             self.quiz_handling = True
                             # 处理题目
-                            self.answer_quiz()
+                            success = self.answer_quiz()
+                            # 【新增】如果未识别到答案，等待用户手动处理（监控题目弹窗消失）
+                            if not success:
+                                self.logger.info("🔔 [实时监控] 未识别到答案，等待用户手动处理题目...")
+                                waited = 0
+                                max_wait = 600  # 最多等待10分钟
+                                while waited < max_wait and self.monitor_running:
+                                    time.sleep(3)
+                                    waited += 3
+                                    # 检查题目弹窗是否消失
+                                    if not self.check_for_quiz():
+                                        self.logger.info("✅ [实时监控] 题目弹窗已消失，用户已处理")
+                                        break
+                                    # 每30秒提示一次
+                                    if waited % 30 == 0:
+                                        self.logger.info(f"⏳ [实时监控] 仍在等待用户处理题目... (已等待 {waited}秒)")
                             self.quiz_handling = False
                             self.quiz_detected.clear()  # 清除事件，恢复主线程
                             self.logger.info("✅ [实时监控] 题目处理完毕，恢复主循环")
