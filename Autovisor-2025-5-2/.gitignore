@@ -1,0 +1,14 @@
+Releases/
+build/
+dist/
+res/userdata.json
+res/cookies.json
+.obsidian/
+.idea/
+__pycache__/
+.vscode/
+.venv/
+captcha/
+logs/
+./preview/*
+

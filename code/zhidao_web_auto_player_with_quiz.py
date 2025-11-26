@@ -21,6 +21,7 @@ import os
 import sys
 import random
 import logging
+import threading
 from datetime import datetime
 
 from selenium import webdriver
@@ -131,6 +132,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
         # 视频播放统计
         self.videos_watched_this_session = 0
         self.quizzes_answered_this_session = 0
+        
+        # 【新增】实时监控线程相关
+        self.quiz_monitor_thread = None
+        self.quiz_monitor_running = False
+        self.quiz_detected = threading.Event()  # 题目检测事件
+        self.quiz_handling = False  # 是否正在处理题目
         
         self.logger.info("="*60)
         self.logger.info("知到网页版自动播放器 - 有题目版本 v2.0")
@@ -3336,6 +3343,49 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.debug(f"选择多选项失败: {e}")
             return False
 
+    def start_quiz_monitor(self):
+        """启动实时题目监控线程（异步检测题目）"""
+        if self.quiz_monitor_running:
+            self.logger.debug("监控线程已经运行中")
+            return
+        
+        self.quiz_monitor_running = True
+        self.quiz_monitor_thread = threading.Thread(target=self._quiz_monitor_loop, daemon=True)
+        self.quiz_monitor_thread.start()
+        self.logger.info("✅ 已启动实时题目监控线程")
+    
+    def stop_quiz_monitor(self):
+        """停止实时题目监控线程"""
+        if not self.quiz_monitor_running:
+            return
+        
+        self.quiz_monitor_running = False
+        if self.quiz_monitor_thread:
+            self.quiz_monitor_thread.join(timeout=5)
+        self.logger.info("⛔ 已停止实时题目监控线程")
+    
+    def _quiz_monitor_loop(self):
+        """监控线程主循环（3秒检查一次）"""
+        while self.quiz_monitor_running:
+            try:
+                time.sleep(3)  # 每3秒检查一次
+                
+                # 检测题目弹窗
+                if self.check_for_quiz():
+                    if not self.quiz_handling:
+                        self.logger.info("🚨 [实时监控] 检测到题目弹窗，暂停主循环")
+                        self.quiz_detected.set()  # 通知主线程暂停
+                        self.quiz_handling = True
+                        
+                        # 处理题目
+                        self.answer_quiz()
+                        
+                        self.quiz_handling = False
+                        self.quiz_detected.clear()  # 清除事件，恢复主线程
+                        self.logger.info("✅ [实时监控] 题目处理完毕，恢复主循环")
+            except Exception as e:
+                self.logger.debug(f"题目监控线程异常: {e}")
+
     def answer_quiz(self):
         """处理题目弹窗：识别题型，滚动查看答案，并选择选项"""
         try:
@@ -3388,9 +3438,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
         start_time = time.time()
         
         while elapsed_time < max_wait_time:
-            # 检查是否有题目弹窗
-            if self.check_for_quiz():
-                self.answer_quiz()
+            # 【新增】检查是否有题目弹窗，如有则等待处理完成
+            if self.quiz_detected.is_set():
+                self.logger.debug("⏸️  主循环暂停，等待题目处理...")
+                self.quiz_detected.wait()  # 阻塞，直到题目处理完毕
+                self.logger.debug("▶️  主循环恢夏")
+                continue
             
             # 检查视频是否还在播放
             if not self.ensure_video_playing():
