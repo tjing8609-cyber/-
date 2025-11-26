@@ -3206,9 +3206,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             # 尝试普通点击
                             try:
                                 close_btn.click()
-                                self.logger.info(f"✅ 已关闭题目弹窗: {selector[:60]}")
+                                self.logger.info(f"✅ 已点击关闭按钮: {selector[:60]}")
                                 self.smart_wait(1)
-                                return True
+                                
+                                # 【新增】验证是否关闭成功
+                                if not self.check_for_quiz():
+                                    self.logger.info("✅ 题目弹窗已成功关闭")
+                                    return True
+                                else:
+                                    self.logger.warning("⚠️  点击关闭按钮后，题目弹窗仍然存在，尝试下一个按钮")
+                                    continue
                             except:
                                 # 如果普通点击失败，尝试ActionChains点击
                                 try:
@@ -3217,9 +3224,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                     actions.move_to_element(close_btn)
                                     actions.click()
                                     actions.perform()
-                                    self.logger.info(f"✅ 已关闭题目弹窗(ActionChains): {selector[:60]}")
+                                    self.logger.info(f"✅ 已点击关闭按钮(ActionChains): {selector[:60]}")
                                     self.smart_wait(1)
-                                    return True
+                                    
+                                    # 【新增】验证是否关闭成功
+                                    if not self.check_for_quiz():
+                                        self.logger.info("✅ 题目弹窗已成功关闭")
+                                        return True
+                                    else:
+                                        self.logger.warning("⚠️  点击关闭按钮后，题目弹窗仍然存在，尝试下一个按钮")
+                                        continue
                                 except:
                                     continue
                 except:
