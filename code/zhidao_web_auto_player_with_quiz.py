@@ -3426,9 +3426,27 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.scroll_quiz_dialog('bottom')
                 return True
             else:
-                # 未识别出答案，等待人工介入
-                self.logger.info("🔔 未识别到答案，请手动选择；程序将继续播放监控")
-                return False
+                # 【新增】未识别出答案，随机选择一个选项
+                self.logger.info("🎲 未识别到答案，随机选择一个选项...")
+                import random
+                random_index = random.randint(0, len(options) - 1)
+                random_letter = chr(65 + random_index)  # A=65, B=66, C=67, D=68
+                self.logger.info(f"🎯 随机选择了选项 {random_letter}")
+                
+                try:
+                    # 点击随机选项
+                    self.click_correct_answer(random_letter, options)
+                    self.smart_wait(1)
+                    
+                    # 滚动到底部
+                    self.scroll_quiz_dialog('bottom')
+                    self.smart_wait(1)
+                    
+                    self.logger.info("✅ 已随机选择并确认")
+                    return True
+                except Exception as e:
+                    self.logger.warning(f"随机选择失败: {e}")
+                    return False
         except Exception as e:
             self.logger.debug(f"处理题目弹窗失败: {e}")
             return False
