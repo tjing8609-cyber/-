@@ -1,0 +1,23 @@
+这是一个简要使用说明，详细版可在“文档”文件夹中查看，里面有对项目的详细说明和一些常见问题的解决方法
+
+0.在开始前请确保已经安装python3，并且pip指令是可用的,本脚本需要chrome浏览器！！！
+
+1.在首次开始进程时，需要配置一些环境，具体的需求可以查看“文档”文件夹中的requirements.txt文件，下给出可在cmd运行的指令（逐行运行）
+pip install selenium>=4.0.0
+pip install webdriver-manager>=3.0.0
+pip install openai>=1.0.0
+pip install python-dotenv>=0.19.0
+pip install tenacity>=8.0.0
+
+2.在确保所有依赖安装完成后，可以运行进程，在cmd中运行下指令即可(逐行运行)
+[首先要进入主文件夹，这个的命令根据保存文件夹的位置不同而不同，推荐保存在桌面，如果保存在桌面，则可以运行下指令]cd desktop\zhidao
+python code/zhidao_launcher.py --account 启动/account.json
+
+
+其中指令python code/zhidao_launcher.py --account 启动/account.json中account后的数字可以根据配置文档的改变而改变。
+
+
+！！！
+新版更新了图形化界面，点击根目录内的“启动图形化界面.bat”就可以启动脚本啦！
+
+记得登录界面要手动登录！！
