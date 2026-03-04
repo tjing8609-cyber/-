@@ -123,11 +123,33 @@ class ZhidaoWebAutoPlayerFinal:
     
     def load_progress(self):
         """加载进度记录"""
+        default_progress = {
+            "completed_videos": [],
+            "total_watched": 0,
+            "last_update": None,
+            "run_count": 0
+        }
+
         if os.path.exists(self.progress_file):
             try:
                 # 使用utf-8-sig编码自动处理BOM（字节顺序标记）
                 with open(self.progress_file, 'r', encoding='utf-8-sig') as f:
-                    return json.load(f)
+                    loaded_progress = json.load(f)
+
+                if not isinstance(loaded_progress, dict):
+                    return default_progress
+
+                merged_progress = default_progress.copy()
+                merged_progress.update(loaded_progress)
+
+                if not isinstance(merged_progress.get('completed_videos'), list):
+                    merged_progress['completed_videos'] = []
+                if not isinstance(merged_progress.get('total_watched'), int):
+                    merged_progress['total_watched'] = 0
+                if not isinstance(merged_progress.get('run_count'), int):
+                    merged_progress['run_count'] = 0
+
+                return merged_progress
             except json.JSONDecodeError as e:
                 print(f"⚠️  进度文件解析失败: {e}")
                 print(f"⚠️  将使用默认进度，原文件将被覆盖")
@@ -139,13 +161,8 @@ class ZhidaoWebAutoPlayerFinal:
                     pass
             except Exception as e:
                 print(f"加载进度文件失败: {e}")
-        
-        return {
-            "completed_videos": [],
-            "total_watched": 0,
-            "last_update": None,
-            "run_count": 0
-        }
+
+        return default_progress
     
     def save_progress(self):
         """保存进度记录"""
@@ -281,7 +298,7 @@ class ZhidaoWebAutoPlayerFinal:
         self.logger.info(f"日志系统初始化完成，日志文件: {log_file}")
 
     def setup_driver(self, headless=False):
-        """设置Chrome浏览器驱动，使用webdriver-manager（国内镜像优化）"""
+        """设置Chrome浏览器驱动，自动下载ChromeDriver（多重备用方案）"""
         chrome_options = Options()
 
         # 基础设置
@@ -300,70 +317,99 @@ class ZhidaoWebAutoPlayerFinal:
         if headless:
             chrome_options.add_argument('--headless')
 
-        try:
-            # 【优化】优先尝试国内镜像下载
+        self.logger.info("🚀 开始初始化ChromeDriver（自动下载模式）")
+        self.logger.info("="*60)
+        
+        driver_initialized = False
+        last_error = None
+        
+        # 方案1：使用淘宝镜像（推荐）
+        if not driver_initialized:
             try:
-                self.logger.info("🌐 尝试使用国内镜像下载ChromeDriver...")
-                # 设置淘宝镜像
+                self.logger.info("📦 方案1: 使用淘宝NPM镜像下载ChromeDriver")
                 os.environ['WDM_SSL_VERIFY'] = '0'
                 
-                # 使用淘宝NPM镜像（速度更快）
-                from webdriver_manager.core.download_manager import WDMDownloadManager
-                from webdriver_manager.core.http import WDMHttpClient
+                from webdriver_manager.chrome import ChromeDriverManager
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                self.logger.info("✅ 方案1成功: ChromeDriver已通过淘宝镜像下载")
+                driver_initialized = True
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️  方案1失败: {str(e)[:100]}")
+        
+        # 方案2：强制重新下载最新版本
+        if not driver_initialized:
+            try:
+                self.logger.info("📦 方案2: 强制下载最新版ChromeDriver")
+                import shutil
+                cache_path = os.path.join(os.path.expanduser('~'), '.wdm')
+                if os.path.exists(cache_path):
+                    self.logger.info("🗑️  清除旧的ChromeDriver缓存")
+                    shutil.rmtree(cache_path, ignore_errors=True)
                 
-                class TaobaoMirrorManager(WDMDownloadManager):
-                    def __init__(self):
-                        super().__init__()
-                        
-                    def download_file(self, url):
-                        # 将Google官方源替换为淘宝镜像
-                        if 'chromedriver.storage.googleapis.com' in url or 'edgedl.me.gvt1.com' in url:
-                            # 提取版本号
-                            import re
-                            version_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', url)
-                            if version_match:
-                                version = version_match.group(1)
-                                # 使用淘宝镜像
-                                url = f'https://registry.npmmirror.com/-/binary/chromedriver/{version}/chromedriver_win32.zip'
-                                self.logger.info(f"📥 使用淘宝镜像: {url}")
-                        return super().download_file(url)
-                
-                # 尝试使用镜像下载
-                try:
-                    service = Service(ChromeDriverManager(download_manager=TaobaoMirrorManager()).install())
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                    self.logger.info("✅ 使用国内镜像下载成功")
-                except:
-                    # 镜像下载失败，尝试官方源
-                    self.logger.info("🔄 镜像下载失败，尝试官方源...")
-                    service = Service(ChromeDriverManager().install())
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                    self.logger.info("✅ 使用官方源下载成功")
-                    
-            except Exception as download_error:
-                # 如果下载失败，尝试使用系统自带的ChromeDriver
-                self.logger.warning(f"⚠️  webdriver-manager下载失败: {str(download_error)[:100]}")
-                self.logger.info("🔄 尝试使用系统环境中的ChromeDriver...")
-                
-                try:
-                    # 直接使用Chrome，不指定service（使用PATH中的chromedriver）
+                from webdriver_manager.chrome import ChromeDriverManager
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                self.logger.info("✅ 方案2成功: 已下载最新版ChromeDriver")
+                driver_initialized = True
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️  方案2失败: {str(e)[:100]}")
+        
+        # 方案3：使用selenium-manager（Selenium 4.6+自带）
+        if not driver_initialized:
+            try:
+                self.logger.info("📦 方案3: 使用Selenium Manager自动管理驱动")
+                self.driver = webdriver.Chrome(options=chrome_options)
+                self.logger.info("✅ 方案3成功: Selenium Manager自动配置完成")
+                driver_initialized = True
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️  方案3失败: {str(e)[:100]}")
+        
+        # 方案4：检查系统PATH中的chromedriver
+        if not driver_initialized:
+            try:
+                self.logger.info("📦 方案4: 使用系统PATH中的ChromeDriver")
+                import subprocess
+                result = subprocess.run(['chromedriver', '--version'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    self.logger.info(f"🔍 找到系统ChromeDriver: {result.stdout.strip()}")
                     self.driver = webdriver.Chrome(options=chrome_options)
-                    self.logger.info("✅ 使用系统 ChromeDriver 初始化成功")
-                except Exception as system_error:
-                    self.logger.error(f"❌ 系统ChromeDriver也失败: {system_error}")
-                    self.logger.error("\n解决方案：")
-                    self.logger.error("1. 手动下载ChromeDriver: https://registry.npmmirror.com/binary.html?path=chromedriver/")
-                    self.logger.error("2. 将chromedriver.exe放入系统PATH或当前目录")
-                    self.logger.error("3. 或使用VPN后重试自动下载")
-                    raise
-
-            # 隐藏自动化特征
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.wait = WebDriverWait(self.driver, 30)
-            self.logger.info("浏览器驱动初始化完成")
-        except Exception as e:
-            self.logger.error(f"浏览器驱动初始化失败: {e}")
-            raise
+                    self.logger.info("✅ 方案4成功: 使用系统ChromeDriver")
+                    driver_initialized = True
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️  方案4失败: {str(e)[:100]}")
+        
+        # 所有方案都失败
+        if not driver_initialized:
+            self.logger.error("\n" + "="*60)
+            self.logger.error("❌ ChromeDriver初始化失败 - 所有自动下载方案均失败")
+            self.logger.error("="*60)
+            self.logger.error(f"最后一次错误: {last_error}")
+            self.logger.error("\n💡 手动解决方案：")
+            self.logger.error("\n1. 检查网络连接")
+            self.logger.error("   - 确保可以访问 registry.npmmirror.com")
+            self.logger.error("   - 或开启VPN后重试")
+            self.logger.error("\n2. 更新依赖包")
+            self.logger.error("   pip install --upgrade selenium webdriver-manager")
+            self.logger.error("\n3. 手动下载ChromeDriver")
+            self.logger.error("   a) 访问: chrome://version/ 查看Chrome版本")
+            self.logger.error("   b) 下载: https://registry.npmmirror.com/binary.html?path=chromedriver/")
+            self.logger.error(f"   c) 解压到: {os.path.join(os.getcwd(), 'chromedriver.exe')}")
+            self.logger.error("   d) 或添加到系统PATH环境变量")
+            self.logger.error("="*60)
+            raise RuntimeError(f"ChromeDriver自动下载失败: {last_error}")
+        
+        # 隐藏自动化特征
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        self.wait = WebDriverWait(self.driver, 30)
+        self.logger.info("="*60)
+        self.logger.info("✅ 浏览器驱动初始化完成")
+        self.logger.info("="*60)
 
     def smart_wait(self, seconds=None):
         """智能等待，随机延迟避免被检测"""
@@ -2085,7 +2131,6 @@ class ZhidaoWebAutoPlayerFinal:
                                 video = self.driver.find_element(By.XPATH, "//video")
                                 
                                 from selenium.webdriver.common.action_chains import ActionChains
-                                import random
                                 
                                 size = video.size
                                 width = size['width']
