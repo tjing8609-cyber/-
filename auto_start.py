@@ -795,8 +795,10 @@ class ZhidaoGUILauncher:
             messagebox.showerror("错误", "请填写密码！")
             return False
         
-        if not self.course_name_var.get().strip():
-            messagebox.showerror("错误", "请填写课程名称！")
+        has_course_name = bool(self.course_name_var.get().strip())
+        has_course_url = bool(self.course_url_var.get().strip())
+        if not has_course_name and not has_course_url:
+            messagebox.showerror("错误", "请填写课程名称或课程URL！")
             return False
         
         if self.mode_var.get() == "quiz_only" and not self.api_key_var.get().strip():
