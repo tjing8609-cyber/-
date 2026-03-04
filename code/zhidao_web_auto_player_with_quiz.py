@@ -2434,7 +2434,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.error(f"恢复卡停视频失败: {e}")
             return False
     
-    def check_for_quiz(self):
+    def check_for_quiz_legacy(self):
         """检查是否有题目弹窗"""
         try:
             # 先检查是否是ss2077自定义弹窗（AI助手），如果是则不是题目
@@ -2471,7 +2471,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.debug(f"检查题目弹窗失败: {e}")
             return False
     
-    def answer_quiz(self):
+    def answer_quiz_legacy(self):
         """回答题目（支持多次作答，识别正确/错误答案）"""
         try:
             self.logger.info("📝 开始回答题目...")
@@ -3369,47 +3369,23 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
 
     def start_quiz_monitor(self):
-        """启动实时题目监控线程（异步检测题目）"""
+        """启用题目监控标志（主线程轮询处理）"""
         if self.quiz_monitor_running:
-            self.logger.debug("监控线程已经运行中")
+            self.logger.debug("监控标志已经启用")
             return
-        
         self.quiz_monitor_running = True
-        self.quiz_monitor_thread = threading.Thread(target=self._quiz_monitor_loop, daemon=True)
-        self.quiz_monitor_thread.start()
-        self.logger.info("✅ 已启动实时题目监控线程")
+        self.logger.info("✅ 已启用题目监控标志（主线程轮询）")
     
     def stop_quiz_monitor(self):
-        """停止实时题目监控线程"""
+        """关闭题目监控标志"""
         if not self.quiz_monitor_running:
             return
-        
         self.quiz_monitor_running = False
-        if self.quiz_monitor_thread:
-            self.quiz_monitor_thread.join(timeout=5)
-        self.logger.info("⛔ 已停止实时题目监控线程")
+        self.logger.info("⛔ 已关闭题目监控标志")
     
     def _quiz_monitor_loop(self):
-        """监控线程主循环（3秒检查一次）"""
-        while self.quiz_monitor_running:
-            try:
-                time.sleep(3)  # 每3秒检查一次
-                
-                # 检测题目弹窗
-                if self.check_for_quiz():
-                    if not self.quiz_handling:
-                        self.logger.info("🚨 [实时监控] 检测到题目弹窗，暂停主循环")
-                        self.quiz_detected.set()  # 通知主线程暂停
-                        self.quiz_handling = True
-                        
-                        # 处理题目
-                        self.answer_quiz()
-                        
-                        self.quiz_handling = False
-                        self.quiz_detected.clear()  # 清除事件，恢复主线程
-                        self.logger.info("✅ [实时监控] 题目处理完毕，恢复主循环")
-            except Exception as e:
-                self.logger.debug(f"题目监控线程异常: {e}")
+        """保留接口：题目处理已切换为主线程轮询"""
+        return
 
     def answer_quiz(self):
         """处理题目弹窗：识别题型，滚动查看答案，并选择选项"""
