@@ -7,12 +7,19 @@ ROOT = Path(__file__).resolve().parents[1]
 PY_FILES = [
     ROOT / "auto_start.py",
     ROOT / "code" / "zhidao_launcher.py",
+    ROOT / "code" / "runtime_center.py",
+    ROOT / "code" / "task_orchestrator.py",
     ROOT / "code" / "zhidao_quiz_only_player.py",
     ROOT / "code" / "zhidao_web_auto_player_final.py",
     ROOT / "code" / "zhidao_web_auto_player_with_quiz.py",
+    ROOT / "tools" / "selector_profile_switch.py",
+    ROOT / "tools" / "runtime_control.py",
 ]
 JSON_FILES = [
     ROOT / "启动" / "account.json.template",
+    ROOT / "启动" / "selectors.default.json",
+    ROOT / "启动" / "selectors.active.json",
+    ROOT / "启动" / "selectors_versions" / "v1.json",
 ]
 
 

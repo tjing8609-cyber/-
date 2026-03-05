@@ -34,6 +34,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from runtime_center import load_selectors, selector_value
 
 
 class ZhidaoWebAutoPlayerFinal:
@@ -46,6 +47,7 @@ class ZhidaoWebAutoPlayerFinal:
         
         # 获取项目根目录（code文件夹的上级目录）
         self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.selectors = load_selectors(self.project_root)
         
         # 根据账号配置文件名生成独立的进度文件
         # 例如: account1.json -> progress_account1.json
@@ -1962,7 +1964,8 @@ class ZhidaoWebAutoPlayerFinal:
             
             # 策略1：直接点击video元素的中心（最可靠）
             try:
-                video = self.driver.find_element(By.XPATH, "//video")
+                video_xpath = selector_value(self.selectors, "video.video_xpath", "//video")
+                video = self.driver.find_element(By.XPATH, video_xpath)
                 self.logger.info("找到video元素，点击中央区域")
                 
                 # 使用ActionChains模拟真实点击视频中心（避免JS触发防脚本检测）
@@ -2025,7 +2028,8 @@ class ZhidaoWebAutoPlayerFinal:
             # 策略3：使用ActionChains点击视频中央确保播放
             self.logger.info("使用ActionChains点击视频中央启动播放")
             try:
-                video = self.driver.find_element(By.TAG_NAME, 'video')
+                video_xpath = selector_value(self.selectors, "video.video_xpath", "//video")
+                video = self.driver.find_element(By.XPATH, video_xpath)
                 from selenium.webdriver.common.action_chains import ActionChains
                 import random
                 

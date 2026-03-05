@@ -19,6 +19,7 @@ import json
 import sys
 import os
 import importlib
+from runtime_center import run_health_check, update_observability, write_failure_snapshot
 
 # 【修复】设置stdout编码为UTF-8，避免Windows下emoji输出错误
 if sys.platform == 'win32':
@@ -103,6 +104,7 @@ def main():
     parser = argparse.ArgumentParser(description='知到网页版自动播放器 - 智能启动器')
     parser.add_argument('--account', type=str, default='account.json', help='账号配置文件（默认: account.json）')
     parser.add_argument('--headless', action='store_true', help='无头模式运行')
+    parser.add_argument('--skip-health-check', action='store_true', help='跳过启动前健康检查')
     
     args = parser.parse_args()
     
@@ -121,6 +123,19 @@ def main():
     print(f"[配置] {args.account}")
     print(f"[课程] {course_name}")
     print(f"[模式] {mode}")
+
+    project_root = os.path.dirname(code_dir)
+    if not args.skip_health_check:
+        report, report_file = run_health_check(config, args.account, project_root)
+        print(f"[健康检查] 报告: {report_file}")
+        if report['warnings']:
+            for item in report['warnings']:
+                print(f"[警告] {item}")
+        if not report['ok']:
+            for item in report['errors']:
+                print(f"[错误] {item}")
+            print("[终止] 健康检查未通过")
+            sys.exit(1)
     
     run_target = resolve_run_target(mode, course_type)
     if run_target is None:
@@ -145,11 +160,42 @@ def main():
         module = importlib.import_module(run_target['module_name'])
         player_class = getattr(module, run_target['class_name'])
         player = player_class(account_file=args.account, headless=args.headless)
+        update_observability(project_root, {
+            "status": "running",
+            "account_file": args.account,
+            "mode": mode,
+            "module": run_target['module_name']
+        })
         player.run()
+        update_observability(project_root, {
+            "status": "completed",
+            "account_file": args.account,
+            "mode": mode,
+            "module": run_target['module_name']
+        })
     except ImportError as e:
         print(run_target['import_error_message'].format(error=e))
         print(run_target['missing_file_message'])
+        update_observability(project_root, {
+            "status": "import_error",
+            "account_file": args.account,
+            "mode": mode,
+            "module": run_target['module_name'],
+            "error": str(e)
+        })
         sys.exit(1)
+    except Exception as e:
+        snapshot_file = write_failure_snapshot(project_root, args.account, run_target['module_name'], locals().get('player'), e)
+        print(f"[失败快照] {snapshot_file}")
+        update_observability(project_root, {
+            "status": "failed",
+            "account_file": args.account,
+            "mode": mode,
+            "module": run_target['module_name'],
+            "error": str(e),
+            "snapshot": snapshot_file
+        })
+        raise
 
 
 if __name__ == '__main__':

@@ -32,6 +32,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
+from runtime_center import load_selectors, selector_value
 
 
 def bezier_curve(start, end, control1=None, control2=None, steps=20):
@@ -97,6 +98,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def __init__(self, account_file='account.json', headless=False):
         """初始化播放器"""
         self.account_file = account_file
+        self.project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.selectors = load_selectors(self.project_root)
         
         # 加载配置
         self.config = self.load_config()
@@ -2223,11 +2226,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if isinstance(letters, str):
                 letters = [letters]
             # 查找所有可见的选项容器
-            option_xpaths = [
-                "//div[contains(@class,'topic-item')]",
-                "//li[contains(@class,'option')]",
-                "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
-            ]
+            option_xpaths = selector_value(
+                self.selectors,
+                "with_quiz.option_xpaths",
+                [
+                    "//div[contains(@class,'topic-item')]",
+                    "//li[contains(@class,'option')]",
+                    "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
+                ]
+            )
             options = []
             for xp in option_xpaths:
                 try:
@@ -3242,11 +3249,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def get_quiz_options(self):
         """获取当前题目选项元素列表（可见）"""
         try:
-            option_xpaths = [
-                "//li[contains(@class,'topic-item')]",
-                "//li[contains(@class,'option')]",
-                "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
-            ]
+            option_xpaths = selector_value(
+                self.selectors,
+                "with_quiz.option_xpaths",
+                [
+                    "//li[contains(@class,'topic-item')]",
+                    "//li[contains(@class,'option')]",
+                    "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
+                ]
+            )
             options = []
             for xp in option_xpaths:
                 try:
@@ -3299,7 +3310,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def check_for_quiz(self):
         """检测是否出现题目弹窗"""
         try:
-            dialogs = self.driver.find_elements(By.XPATH, "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]")
+            dialog_xpath = selector_value(
+                self.selectors,
+                "with_quiz.dialog_xpath",
+                "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+            )
+            dialogs = self.driver.find_elements(By.XPATH, dialog_xpath)
             for d in dialogs:
                 if d.is_displayed():
                     return True

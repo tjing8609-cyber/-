@@ -35,6 +35,9 @@ ENV/
 
 # 日志文件
 *.log
+/log/failure_snapshots/
+/log/*.lock
+/runtime/
 
 # 调试文件
 debug_*.html
