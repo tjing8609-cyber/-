@@ -1688,33 +1688,40 @@ class ZhidaoWebAutoPlayerFinal:
         except Exception as e:
             self.logger.warning(f"无法获取视频进度: {e}")
             return 0
+
+    def click_video_center_with_offset(self, offset_min=-30, offset_max=30, success_prefix="✅ 已点击视频中央"):
+        try:
+            video = self.driver.find_element(By.XPATH, "//video")
+            from selenium.webdriver.common.action_chains import ActionChains
+
+            size = video.size
+            width = size['width']
+            height = size['height']
+
+            offset_x = width // 2 + random.randint(offset_min, offset_max)
+            offset_y = height // 2 + random.randint(offset_min, offset_max)
+
+            actions = ActionChains(self.driver)
+            actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
+            actions.click()
+            actions.perform()
+
+            self.logger.info(f"{success_prefix}(偏移: {offset_x}, {offset_y})")
+            return True
+        except Exception as e:
+            self.logger.warning(f"点击视频中央失败: {e}")
+            return False
     
     def ensure_video_playing(self):
         """确保视频正在播放（使用ActionChains点击视频）"""
         try:
             if not self.is_video_playing():
                 self.logger.info("视频未播放，尝试点击视频启动")
-                # 使用ActionChains点击视频中央启动播放
-                try:
-                    video = self.driver.find_element(By.XPATH, "//video")
-                    from selenium.webdriver.common.action_chains import ActionChains
-                    import random
-                    
-                    size = video.size
-                    width = size['width']
-                    height = size['height']
-                    
-                    offset_x = width // 2 + random.randint(-20, 20)
-                    offset_y = height // 2 + random.randint(-20, 20)
-                    
-                    actions = ActionChains(self.driver)
-                    actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
-                    actions.click()
-                    actions.perform()
-                    
-                    self.logger.info("✅ 已点击视频启动播放")
-                except Exception as e:
-                    self.logger.warning(f"点击视频失败: {e}")
+                self.click_video_center_with_offset(
+                    offset_min=-20,
+                    offset_max=20,
+                    success_prefix="✅ 已点击视频启动播放"
+                )
                 
                 self.smart_wait(2)
                 return self.is_video_playing()
@@ -2124,31 +2131,8 @@ class ZhidaoWebAutoPlayerFinal:
                         # 连续4次无进展就触发恢复（防脚本机制）
                         if no_progress_count >= 4:
                             self.logger.warning(f"⚠️ 连续{no_progress_count}次进度无变化，可能触发防脚本机制，尝试恢复...")
-                            
-                            # 策略：使用ActionChains点击视频中央恢复播放（避免JS触发防脚本检测）
-                            try:
-                                self.logger.info("尝试点击视频中央区域恢复播放...")
-                                video = self.driver.find_element(By.XPATH, "//video")
-                                
-                                from selenium.webdriver.common.action_chains import ActionChains
-                                
-                                size = video.size
-                                width = size['width']
-                                height = size['height']
-                                
-                                offset_x = width // 2 + random.randint(-30, 30)
-                                offset_y = height // 2 + random.randint(-30, 30)
-                                
-                                actions = ActionChains(self.driver)
-                                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
-                                actions.click()
-                                actions.perform()
-                                
-                                self.logger.info(f"✅ 已点击视频中央(偏移: {offset_x}, {offset_y})")
-                                self.smart_wait(2)
-                            except Exception as e:
-                                self.logger.warning(f"点击视频中央失败: {e}")
-                            
+                            self.logger.info("尝试点击视频中央区域恢复播放...")
+                            self.click_video_center_with_offset()
                             self.smart_wait(2)
                             no_progress_count = 0  # 重置计数
                     else:
