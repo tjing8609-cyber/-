@@ -15,7 +15,6 @@ import os
 import sys
 import threading
 import subprocess
-import queue
 from pathlib import Path
 
 # 【修复】Windows下设置UTF-8编码，避免乱码
@@ -44,16 +43,59 @@ class ZhidaoGUILauncher:
         # 运行状态
         self.is_running = False
         self.process = None
-        self.log_queue = queue.Queue()
+        self.instance_lock_file = os.path.join(self.project_root, 'log', 'launcher_single_instance.lock')
         
         # 创建界面
         self.create_widgets()
         
         # 加载配置
         self.load_config()
-        
-        # 启动日志监听
-        self.update_log()
+
+    def _is_pid_alive(self, pid):
+        if not isinstance(pid, int) or pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def _acquire_single_instance_lock(self):
+        os.makedirs(os.path.dirname(self.instance_lock_file), exist_ok=True)
+        if os.path.exists(self.instance_lock_file):
+            try:
+                with open(self.instance_lock_file, 'r', encoding='utf-8') as f:
+                    lock_data = json.load(f)
+                existing_pid = int(lock_data.get('pid', 0))
+            except Exception:
+                existing_pid = 0
+
+            if self._is_pid_alive(existing_pid):
+                return False, existing_pid
+            try:
+                os.remove(self.instance_lock_file)
+            except Exception:
+                return False, existing_pid
+
+        lock_payload = {
+            "pid": os.getpid(),
+            "account_file": self.current_account_file
+        }
+        with open(self.instance_lock_file, 'w', encoding='utf-8') as f:
+            json.dump(lock_payload, f, ensure_ascii=False, indent=2)
+        return True, os.getpid()
+
+    def _release_single_instance_lock(self):
+        if not os.path.exists(self.instance_lock_file):
+            return
+        try:
+            with open(self.instance_lock_file, 'r', encoding='utf-8') as f:
+                lock_data = json.load(f)
+            lock_pid = int(lock_data.get('pid', 0))
+            if lock_pid == os.getpid():
+                os.remove(self.instance_lock_file)
+        except Exception:
+            pass
     
     def create_widgets(self):
         """创建界面组件"""
@@ -834,6 +876,15 @@ class ZhidaoGUILauncher:
         """开始运行"""
         if not self.validate_config():
             return
+
+        if not self.multi_instance_var.get():
+            acquired, holder_pid = self._acquire_single_instance_lock()
+            if not acquired:
+                messagebox.showwarning(
+                    "实例冲突",
+                    f"检测到已有任务运行（PID: {holder_pid}）。\n\n如需并行运行，请勾选“允许多实例运行”。"
+                )
+                return
         
         # 保存配置
         self.save_config()
@@ -915,6 +966,7 @@ class ZhidaoGUILauncher:
             messagebox.showerror("错误", f"运行出错: {e}")
         
         finally:
+            self._release_single_instance_lock()
             self.root.after(0, self.reset_buttons)
     
     def stop_automation(self):
@@ -959,18 +1011,6 @@ class ZhidaoGUILauncher:
         else:
             append()
     
-    def update_log(self):
-        """更新日志（定时任务）"""
-        try:
-            while True:
-                msg = self.log_queue.get_nowait()
-                self.log(msg)
-        except queue.Empty:
-            pass
-        
-        self.root.after(100, self.update_log)
-
-
 def main():
     """主函数"""
     root = tk.Tk()
