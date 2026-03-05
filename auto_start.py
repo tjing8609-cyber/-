@@ -404,6 +404,39 @@ class ZhidaoGUILauncher:
             variable=self.multi_instance_var,
             font=("微软雅黑", 9)
         ).pack(side=tk.LEFT, padx=5)
+
+        row14 = tk.Frame(option_frame)
+        row14.pack(fill=tk.X, pady=3)
+        self.enable_orchestrator_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            row14,
+            text="启用任务编排中心（多账号队列）",
+            variable=self.enable_orchestrator_var,
+            font=("微软雅黑", 9)
+        ).pack(side=tk.LEFT, padx=5)
+
+        row15 = tk.Frame(option_frame)
+        row15.pack(fill=tk.X, pady=3)
+        tk.Label(row15, text="账号队列:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self.orchestrator_accounts_var = tk.StringVar(value="")
+        tk.Entry(row15, textvariable=self.orchestrator_accounts_var, font=("微软雅黑", 9), width=50).pack(side=tk.LEFT, padx=5)
+        tk.Label(row15, text="(逗号分隔，可留空)", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
+
+        row16 = tk.Frame(option_frame)
+        row16.pack(fill=tk.X, pady=3)
+        tk.Label(row16, text="最大并发:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self.orchestrator_concurrency_var = tk.IntVar(value=1)
+        tk.Spinbox(row16, from_=1, to=10, textvariable=self.orchestrator_concurrency_var, width=6, font=("微软雅黑", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Label(row16, text="失败重试:", font=("微软雅黑", 9)).pack(side=tk.LEFT, padx=(10, 5))
+        self.orchestrator_retry_var = tk.IntVar(value=1)
+        tk.Spinbox(row16, from_=0, to=5, textvariable=self.orchestrator_retry_var, width=6, font=("微软雅黑", 9)).pack(side=tk.LEFT, padx=5)
+        self.orchestrator_disable_health_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            row16,
+            text="编排时跳过健康检查",
+            variable=self.orchestrator_disable_health_var,
+            font=("微软雅黑", 9)
+        ).pack(side=tk.LEFT, padx=10)
         
         # ==================== 环境检查 ====================
         env_frame = tk.LabelFrame(
@@ -514,6 +547,58 @@ class ZhidaoGUILauncher:
             width=12,
             height=2
         ).pack(side=tk.LEFT, padx=5)
+
+        scheduler_row = tk.Frame(control_frame)
+        scheduler_row.pack(fill=tk.X, pady=5)
+
+        tk.Button(
+            scheduler_row,
+            text="⏸️ 暂停编排",
+            command=self.pause_orchestrator,
+            font=("微软雅黑", 9, "bold"),
+            bg="#F39C12",
+            fg="white",
+            cursor="hand2",
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+
+        tk.Button(
+            scheduler_row,
+            text="▶️ 恢复编排",
+            command=self.resume_orchestrator,
+            font=("微软雅黑", 9, "bold"),
+            bg="#27AE60",
+            fg="white",
+            cursor="hand2",
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+
+        tk.Button(
+            scheduler_row,
+            text="⛔ 停止编排",
+            command=self.stop_orchestrator_schedule,
+            font=("微软雅黑", 9, "bold"),
+            bg="#C0392B",
+            fg="white",
+            cursor="hand2",
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
+
+        selector_row = tk.Frame(control_frame)
+        selector_row.pack(fill=tk.X, pady=5)
+        tk.Label(selector_row, text="选择器版本:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self.selector_profile_var = tk.StringVar(value="v1")
+        tk.Entry(selector_row, textvariable=self.selector_profile_var, font=("微软雅黑", 9), width=20).pack(side=tk.LEFT, padx=5)
+        tk.Button(
+            selector_row,
+            text="🔁 切换版本",
+            command=self.switch_selector_profile,
+            font=("微软雅黑", 9),
+            bg="#8E44AD",
+            fg="white",
+            cursor="hand2",
+            width=12
+        ).pack(side=tk.LEFT, padx=5)
         
         # ==================== 日志输出 ====================
         self.log_frame = tk.LabelFrame(
@@ -596,7 +681,13 @@ class ZhidaoGUILauncher:
                 "deepseek_api_key": "",
                 "api_base_url": "",
                 "api_model": "",
-                "verify_api_on_start": False
+                "verify_api_on_start": False,
+                "enable_orchestrator": False,
+                "orchestrator_accounts": "",
+                "orchestrator_max_concurrency": 1,
+                "orchestrator_retry": 1,
+                "orchestrator_disable_health_check": False,
+                "selector_profile": "v1"
             }
             
             with open(new_file, 'w', encoding='utf-8') as f:
@@ -641,6 +732,12 @@ class ZhidaoGUILauncher:
                 self.api_base_url_var.set(config.get('api_base_url', ''))
                 self.api_model_var.set(config.get('api_model', ''))
                 self.verify_api_on_start_var.set(config.get('verify_api_on_start', False))
+                self.enable_orchestrator_var.set(config.get('enable_orchestrator', False))
+                self.orchestrator_accounts_var.set(config.get('orchestrator_accounts', ''))
+                self.orchestrator_concurrency_var.set(config.get('orchestrator_max_concurrency', 1))
+                self.orchestrator_retry_var.set(config.get('orchestrator_retry', 1))
+                self.orchestrator_disable_health_var.set(config.get('orchestrator_disable_health_check', False))
+                self.selector_profile_var.set(config.get('selector_profile', 'v1'))
                 
                 self.on_mode_change()
                 self.log("✅ 配置已加载")
@@ -668,6 +765,12 @@ class ZhidaoGUILauncher:
                 "api_base_url": self.api_base_url_var.get(),
                 "api_model": self.api_model_var.get(),
                 "verify_api_on_start": self.verify_api_on_start_var.get(),
+                "enable_orchestrator": self.enable_orchestrator_var.get(),
+                "orchestrator_accounts": self.orchestrator_accounts_var.get(),
+                "orchestrator_max_concurrency": self.orchestrator_concurrency_var.get(),
+                "orchestrator_retry": self.orchestrator_retry_var.get(),
+                "orchestrator_disable_health_check": self.orchestrator_disable_health_var.get(),
+                "selector_profile": self.selector_profile_var.get(),
                 "note": "知到自动播放器配置文件"
             }
             
@@ -874,7 +977,7 @@ class ZhidaoGUILauncher:
     
     def start_automation(self):
         """开始运行"""
-        if not self.validate_config():
+        if not self.enable_orchestrator_var.get() and not self.validate_config():
             return
 
         if not self.multi_instance_var.get():
@@ -899,11 +1002,77 @@ class ZhidaoGUILauncher:
             self.log_text.delete(1.0, tk.END)
         
         self.log("\n" + "="*70)
-        self.log("🚀 开始运行自动化任务...")
+        if self.enable_orchestrator_var.get():
+            self.log("🚀 开始运行任务编排...")
+        else:
+            self.log("🚀 开始运行自动化任务...")
         self.log("="*70)
         
         # 在新线程中运行
-        threading.Thread(target=self.run_automation, daemon=True).start()
+        if self.enable_orchestrator_var.get():
+            threading.Thread(target=self.run_orchestrator, daemon=True).start()
+        else:
+            threading.Thread(target=self.run_automation, daemon=True).start()
+
+    def run_orchestrator(self):
+        try:
+            orchestrator_path = os.path.join(self.code_dir, 'task_orchestrator.py')
+            cmd = [
+                sys.executable,
+                orchestrator_path,
+                '--default-account',
+                self.current_account_file,
+                '--max-concurrency',
+                str(max(1, int(self.orchestrator_concurrency_var.get()))),
+                '--retry',
+                str(max(0, int(self.orchestrator_retry_var.get())))
+            ]
+
+            accounts_text = self.orchestrator_accounts_var.get().strip()
+            if accounts_text:
+                cmd.extend(['--accounts', accounts_text])
+            if self.headless_var.get():
+                cmd.append('--headless')
+            if self.orchestrator_disable_health_var.get():
+                cmd.append('--disable-health-check')
+
+            self.log(f"📌 编排命令: {' '.join(cmd)}\n")
+            self.log(f"📁 工作目录: {self.project_root}\n")
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+                cwd=self.project_root
+            )
+
+            for line in self.process.stdout:
+                if not self.is_running:
+                    break
+                line = line.rstrip()
+                if line:
+                    if self.show_realtime_log_var.get():
+                        self.log(line)
+                    elif any(keyword in line for keyword in ['ERROR', 'CRITICAL', '错误', '失败', '异常']):
+                        self.log(f"⚠️ {line}")
+
+            self.process.wait()
+            if self.is_running:
+                self.log("\n" + "="*70)
+                if self.process.returncode == 0:
+                    self.log("✅ 编排任务完成")
+                else:
+                    self.log(f"⚠️ 编排任务结束（退出码: {self.process.returncode}）")
+                self.log("="*70 + "\n")
+        except Exception as e:
+            self.log(f"\n❌ 编排运行出错: {e}\n")
+            messagebox.showerror("错误", f"编排运行出错: {e}")
+        finally:
+            self._release_single_instance_lock()
+            self.root.after(0, self.reset_buttons)
     
     def run_automation(self):
         """运行自动化"""
@@ -975,6 +1144,77 @@ class ZhidaoGUILauncher:
             self.is_running = False
             self.process.terminate()
             self.log("\n⏹️ 已停止运行\n")
+
+    def apply_runtime_control(self, paused=None, stop=None):
+        cmd = [sys.executable, os.path.join(self.project_root, 'tools', 'runtime_control.py')]
+        if paused is not None:
+            cmd.extend(['--paused', 'true' if paused else 'false'])
+        if stop is not None:
+            cmd.extend(['--stop', 'true' if stop else 'false'])
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            cwd=self.project_root
+        )
+        output = []
+        for line in process.stdout:
+            line = line.rstrip()
+            if line:
+                output.append(line)
+        process.wait()
+        for line in output:
+            self.log(line)
+        return process.returncode == 0
+
+    def pause_orchestrator(self):
+        if self.apply_runtime_control(paused=True):
+            self.log("⏸️ 已发出暂停编排指令")
+
+    def resume_orchestrator(self):
+        if self.apply_runtime_control(paused=False, stop=False):
+            self.log("▶️ 已发出恢复编排指令")
+
+    def stop_orchestrator_schedule(self):
+        if self.apply_runtime_control(stop=True):
+            self.log("⛔ 已发出停止编排指令")
+
+    def switch_selector_profile(self):
+        profile = self.selector_profile_var.get().strip()
+        if not profile:
+            messagebox.showerror("错误", "请选择或输入选择器版本！")
+            return
+        cmd = [
+            sys.executable,
+            os.path.join(self.project_root, 'tools', 'selector_profile_switch.py'),
+            '--profile',
+            profile
+        ]
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            cwd=self.project_root
+        )
+        output = []
+        for line in process.stdout:
+            line = line.rstrip()
+            if line:
+                output.append(line)
+        process.wait()
+        for line in output:
+            self.log(line)
+        if process.returncode == 0:
+            self.log(f"✅ 已切换选择器版本: {profile}")
+            self.save_config()
+        else:
+            messagebox.showerror("错误", f"选择器版本切换失败: {profile}")
     
     def reset_buttons(self):
         """重置按钮"""
