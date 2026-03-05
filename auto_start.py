@@ -308,6 +308,16 @@ class ZhidaoGUILauncher:
         self.api_model_var = tk.StringVar()
         tk.Entry(row10, textvariable=self.api_model_var, font=("微软雅黑", 9), width=50).pack(side=tk.LEFT, padx=5)
         tk.Label(row10, text="(可选)", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
+
+        row10b = tk.Frame(self.quiz_frame)
+        row10b.pack(fill=tk.X, pady=3)
+        self.verify_api_on_start_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            row10b,
+            text="启动前验证 API 可用性（可能增加启动耗时）",
+            variable=self.verify_api_on_start_var,
+            font=("微软雅黑", 9)
+        ).pack(side=tk.LEFT, padx=5)
         
         # ==================== 运行选项 ====================
         option_frame = tk.LabelFrame(
@@ -535,6 +545,7 @@ class ZhidaoGUILauncher:
                 "username": "",
                 "password": "",
                 "course_name": "",
+                "course_url": "",
                 "course_type": 1,
                 "use_sidebar_layout": False,
                 "max_watch_minutes": 0,
@@ -542,7 +553,8 @@ class ZhidaoGUILauncher:
                 "quiz_type": "课程测试",
                 "deepseek_api_key": "",
                 "api_base_url": "",
-                "api_model": ""
+                "api_model": "",
+                "verify_api_on_start": False
             }
             
             with open(new_file, 'w', encoding='utf-8') as f:
@@ -586,6 +598,7 @@ class ZhidaoGUILauncher:
                 self.api_key_var.set(config.get('deepseek_api_key', ''))
                 self.api_base_url_var.set(config.get('api_base_url', ''))
                 self.api_model_var.set(config.get('api_model', ''))
+                self.verify_api_on_start_var.set(config.get('verify_api_on_start', False))
                 
                 self.on_mode_change()
                 self.log("✅ 配置已加载")
@@ -612,7 +625,7 @@ class ZhidaoGUILauncher:
                 "deepseek_api_key": self.api_key_var.get(),
                 "api_base_url": self.api_base_url_var.get(),
                 "api_model": self.api_model_var.get(),
-                "verify_api_on_start": False,
+                "verify_api_on_start": self.verify_api_on_start_var.get(),
                 "note": "知到自动播放器配置文件"
             }
             
