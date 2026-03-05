@@ -88,15 +88,17 @@ class ZhidaoQuizOnlyPlayer:
             # 【新增】创建OpenAI客户端
             self.api_client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
         
-        # 【新增】验证API连接
-        if self.api_key:
+        verify_api_on_start = self.account_config.get('verify_api_on_start', False)
+        if self.api_key and verify_api_on_start:
             if not self.verify_api_connection():
                 self.logger.error("❌ API连接验证失败，程序退出")
                 self.logger.error("请检查以下配置：")
                 self.logger.error(f"  - API密钥是否正确")
                 self.logger.error(f"  - API Base URL: {self.api_base_url}")
                 self.logger.error(f"  - 网络连接是否正常")
-                sys.exit(1)  # 退出程序
+                sys.exit(1)
+        elif self.api_key:
+            self.logger.info("ℹ️ 已跳过启动API连通性校验（verify_api_on_start=false）")
         
         # 初始化浏览器
         self.setup_driver(headless)

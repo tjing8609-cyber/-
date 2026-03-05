@@ -612,6 +612,7 @@ class ZhidaoGUILauncher:
                 "deepseek_api_key": self.api_key_var.get(),
                 "api_base_url": self.api_base_url_var.get(),
                 "api_model": self.api_model_var.get(),
+                "verify_api_on_start": False,
                 "note": "知到自动播放器配置文件"
             }
             
