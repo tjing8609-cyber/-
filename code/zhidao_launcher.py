@@ -18,6 +18,7 @@ See the Mulan PSL v2 for more details.
 import json
 import sys
 import os
+import importlib
 
 # 【修复】设置stdout编码为UTF-8，避免Windows下emoji输出错误
 if sys.platform == 'win32':
@@ -52,6 +53,49 @@ def load_account_config(account_file):
         sys.exit(1)
 
 
+def resolve_run_target(mode, course_type):
+    if mode == 'quiz_only' or course_type == 3:
+        return {
+            'detect_message': "[检测] 纯答题模式",
+            'extra_messages': ["[提示] 建议使用 mode='quiz_only' 代替 course_type=3"] if course_type == 3 else [],
+            'type_message': None,
+            'module_name': 'zhidao_quiz_only_player',
+            'class_name': 'ZhidaoQuizOnlyPlayer',
+            'start_message': "[启动] zhidao_quiz_only_player.py",
+            'import_error_message': "[错误] 无法导入纯答题播放器: {error}",
+            'missing_file_message': "请确保 zhidao_quiz_only_player.py 文件存在"
+        }
+
+    video_targets = {
+        1: {
+            'detect_message': "[检测] 无题目课程",
+            'module_name': 'zhidao_web_auto_player_final',
+            'class_name': 'ZhidaoWebAutoPlayerFinal',
+            'start_message': "[启动] zhidao_web_auto_player_final.py",
+            'import_error_message': "[错误] 无法导入旧版播放器: {error}",
+            'missing_file_message': "请确保 zhidao_web_auto_player_final.py 文件存在"
+        },
+        2: {
+            'detect_message': "[检测] 有题目课程",
+            'module_name': 'zhidao_web_auto_player_with_quiz',
+            'class_name': 'ZhidaoWebAutoPlayerWithQuiz',
+            'start_message': "[启动] zhidao_web_auto_player_with_quiz.py",
+            'import_error_message': "[错误] 无法导入新版播放器: {error}",
+            'missing_file_message': "请确保 zhidao_web_auto_player_with_quiz.py 文件存在"
+        }
+    }
+
+    if mode == 'video' and course_type in video_targets:
+        target = video_targets[course_type].copy()
+        target.update({
+            'extra_messages': [],
+            'type_message': f"[类型] {course_type}"
+        })
+        return target
+
+    return None
+
+
 def main():
     """主函数"""
     import argparse
@@ -78,69 +122,33 @@ def main():
     print(f"[课程] {course_name}")
     print(f"[模式] {mode}")
     
-    # 【新增】优先检查mode字段，向后兼容course_type
-    if mode == 'quiz_only' or course_type == 3:
-        # 纯答题模式
-        print("[检测] 纯答题模式")
-        if course_type == 3:
-            print("[提示] 建议使用 mode='quiz_only' 代替 course_type=3")
-        print(f"[测试] {quiz_type}")
-        print("[启动] zhidao_quiz_only_player.py")
-        print("=" * 60)
-        
-        try:
-            from zhidao_quiz_only_player import ZhidaoQuizOnlyPlayer
-            
-            player = ZhidaoQuizOnlyPlayer(account_file=args.account, headless=args.headless)
-            player.run()
-            
-        except ImportError as e:
-            print(f"[错误] 无法导入纯答题播放器: {e}")
-            print("请确保 zhidao_quiz_only_player.py 文件存在")
-            sys.exit(1)
-    
-    elif mode == 'video' and course_type == 1:
-        # 无题目视频模式
-        print("[检测] 无题目课程")
-        print(f"[类型] {course_type}")
-        print("[启动] zhidao_web_auto_player_final.py")
-        print("=" * 60)
-        
-        try:
-            from zhidao_web_auto_player_final import ZhidaoWebAutoPlayerFinal
-            
-            player = ZhidaoWebAutoPlayerFinal(account_file=args.account, headless=args.headless)
-            player.run()
-            
-        except ImportError as e:
-            print(f"[错误] 无法导入旧版播放器: {e}")
-            print("请确保 zhidao_web_auto_player_final.py 文件存在")
-            sys.exit(1)
-    
-    elif mode == 'video' and course_type == 2:
-        # 有题目视频模式
-        print("[检测] 有题目课程")
-        print(f"[类型] {course_type}")
-        print("[启动] zhidao_web_auto_player_with_quiz.py")
-        print("=" * 60)
-        
-        try:
-            from zhidao_web_auto_player_with_quiz import ZhidaoWebAutoPlayerWithQuiz
-            
-            player = ZhidaoWebAutoPlayerWithQuiz(account_file=args.account, headless=args.headless)
-            player.run()
-            
-        except ImportError as e:
-            print(f"[错误] 无法导入新版播放器: {e}")
-            print("请确保 zhidao_web_auto_player_with_quiz.py 文件存在")
-            sys.exit(1)
-    
-    else:
+    run_target = resolve_run_target(mode, course_type)
+    if run_target is None:
         print(f"[错误] 未知的运行模式: mode={mode}, course_type={course_type}")
         print("运行模式说明:")
         print("  - mode='video' + course_type=1: 无题目视频课程")
         print("  - mode='video' + course_type=2: 有题目视频课程")
         print("  - mode='quiz_only' 或 course_type=3: 纯答题模式")
+        sys.exit(1)
+
+    print(run_target['detect_message'])
+    if run_target['type_message']:
+        print(run_target['type_message'])
+    for message in run_target['extra_messages']:
+        print(message)
+    if run_target['module_name'] == 'zhidao_quiz_only_player':
+        print(f"[测试] {quiz_type}")
+    print(run_target['start_message'])
+    print("=" * 60)
+
+    try:
+        module = importlib.import_module(run_target['module_name'])
+        player_class = getattr(module, run_target['class_name'])
+        player = player_class(account_file=args.account, headless=args.headless)
+        player.run()
+    except ImportError as e:
+        print(run_target['import_error_message'].format(error=e))
+        print(run_target['missing_file_message'])
         sys.exit(1)
 
 
