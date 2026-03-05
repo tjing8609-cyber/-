@@ -2074,15 +2074,11 @@ class ZhidaoWebAutoPlayerFinal:
                 # 添加一些随机性（5-15秒）
                 watch_time += random.randint(5, 15)
             
-            # 记录本次视频播放的起始累计时间
-            start_total_watch_time = self.total_watch_time_seconds
-            
             self.logger.info(f"模拟观看视频，预计时间: {watch_time}秒 ({watch_time/60:.1f}分钟)")
             self.logger.info(f"🎯 目标播放进度: {watch_time}秒，视频总时长: {video_duration if video_duration else '未知'}秒")
 
             start_time = time.time()
             last_progress_check = 0
-            stuck_count = 0
             no_progress_count = 0  # 连续无进展次数
             last_check_time = start_time  # 上次检查时间
 
