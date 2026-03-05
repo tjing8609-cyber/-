@@ -2154,7 +2154,7 @@ class ZhidaoWebAutoPlayerFinal:
 
                 # 显示进度（以实际播放进度为准）
                 progress_percentage = min(100, int((video_progress / watch_time) * 100))
-                total_minutes = self.total_watch_time_seconds / 60
+                total_minutes = (self.total_watch_time_seconds + video_progress) / 60
                 self.logger.info(f"观看进度: {progress_percentage}% ({video_progress:.0f}/{watch_time}秒) | 等待时间: {int(elapsed)}秒 | 视频总长: {video_duration if video_duration else '未知'}秒 | 已播放时间: {total_minutes:.1f}分钟")
 
             # 累加本次实际播放时间到总观看时间
