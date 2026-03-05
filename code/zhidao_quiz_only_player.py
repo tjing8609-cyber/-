@@ -64,13 +64,16 @@ class ZhidaoQuizOnlyPlayer:
         self.api_client = None  # 【新增】OpenAI客户端
         
         if not self.api_key:
-            # 尝试从系统环境变量加载
-            self.api_key = os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
-            self.api_base_url = os.getenv('ANTHROPIC_BASE_URL', '').strip()
-            self.api_model = os.getenv('ANTHROPIC_MODEL', 'deepseek-chat').strip()  # 【修改】默认改为deepseek-chat
+            self.api_key = os.getenv('DEEPSEEK_API_KEY', '').strip() or os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
+            self.api_base_url = os.getenv('DEEPSEEK_BASE_URL', '').strip() or os.getenv('ANTHROPIC_BASE_URL', '').strip()
+            self.api_model = os.getenv('DEEPSEEK_MODEL', '').strip() or os.getenv('ANTHROPIC_MODEL', 'deepseek-chat').strip()
             
             if self.api_key:
                 self.logger.info("✅ 从系统环境变量加载API配置成功")
+                if os.getenv('DEEPSEEK_API_KEY', '').strip():
+                    self.logger.info("🔑 API Key来源: DEEPSEEK_API_KEY")
+                else:
+                    self.logger.info("🔑 API Key来源: ANTHROPIC_AUTH_TOKEN（兼容）")
                 self.logger.info(f"📡 API Base URL: {self.api_base_url}")
                 self.logger.info(f"🤖 API Model: {self.api_model}")
                 # 【新增】创建OpenAI客户端
@@ -561,7 +564,7 @@ class ZhidaoQuizOnlyPlayer:
             self.logger.error("🚫 错误类型: 401 - 认证失败")
             self.logger.error("💡 原因: API Key 错误，认证失败")
             self.logger.error("🔧 解决方法:")
-            self.logger.error("   1. 检查环境变量 ANTHROPIC_AUTH_TOKEN 是否正确")
+            self.logger.error("   1. 检查环境变量 DEEPSEEK_API_KEY（优先）或 ANTHROPIC_AUTH_TOKEN（兼容）是否正确")
             self.logger.error("   2. 确认API Key来自 https://platform.deepseek.com/api_keys")
             self.logger.error("   3. 检查API Key是否有多余空格或换行")
         elif '402' in error_str:

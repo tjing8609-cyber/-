@@ -731,36 +731,44 @@ class ZhidaoGUILauncher:
             self.log("🔍 开始读取系统环境配置...")
             self.log("="*70)
             
-            # 读取环境变量
-            api_key = os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
-            api_base_url = os.getenv('ANTHROPIC_BASE_URL', '').strip()
-            api_model = os.getenv('ANTHROPIC_MODEL', '').strip()
+            api_key = os.getenv('DEEPSEEK_API_KEY', '').strip() or os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
+            api_base_url = os.getenv('DEEPSEEK_BASE_URL', '').strip() or os.getenv('ANTHROPIC_BASE_URL', '').strip()
+            api_model = os.getenv('DEEPSEEK_MODEL', '').strip() or os.getenv('ANTHROPIC_MODEL', '').strip()
             
             found_count = 0
             
             # 填充API密钥
             if api_key:
                 self.api_key_var.set(api_key)
-                self.log("✅ ANTHROPIC_AUTH_TOKEN: 已读取")
+                if os.getenv('DEEPSEEK_API_KEY', '').strip():
+                    self.log("✅ DEEPSEEK_API_KEY: 已读取")
+                else:
+                    self.log("✅ ANTHROPIC_AUTH_TOKEN: 已读取（兼容）")
                 found_count += 1
             else:
-                self.log("⚠️  ANTHROPIC_AUTH_TOKEN: 未设置")
+                self.log("⚠️  DEEPSEEK_API_KEY / ANTHROPIC_AUTH_TOKEN: 未设置")
             
             # 填充API Base URL
             if api_base_url:
                 self.api_base_url_var.set(api_base_url)
-                self.log(f"✅ ANTHROPIC_BASE_URL: {api_base_url}")
+                if os.getenv('DEEPSEEK_BASE_URL', '').strip():
+                    self.log(f"✅ DEEPSEEK_BASE_URL: {api_base_url}")
+                else:
+                    self.log(f"✅ ANTHROPIC_BASE_URL: {api_base_url}（兼容）")
                 found_count += 1
             else:
-                self.log("⚠️  ANTHROPIC_BASE_URL: 未设置")
+                self.log("⚠️  DEEPSEEK_BASE_URL / ANTHROPIC_BASE_URL: 未设置")
             
             # 填充API Model
             if api_model:
                 self.api_model_var.set(api_model)
-                self.log(f"✅ ANTHROPIC_MODEL: {api_model}")
+                if os.getenv('DEEPSEEK_MODEL', '').strip():
+                    self.log(f"✅ DEEPSEEK_MODEL: {api_model}")
+                else:
+                    self.log(f"✅ ANTHROPIC_MODEL: {api_model}（兼容）")
                 found_count += 1
             else:
-                self.log("⚠️  ANTHROPIC_MODEL: 未设置")
+                self.log("⚠️  DEEPSEEK_MODEL / ANTHROPIC_MODEL: 未设置")
             
             self.log("="*70)
             
@@ -775,9 +783,10 @@ class ZhidaoGUILauncher:
                     "提示", 
                     "未找到系统环境配置！\n\n"
                     "请设置以下环境变量：\n"
-                    "  - ANTHROPIC_AUTH_TOKEN（必需）\n"
-                    "  - ANTHROPIC_BASE_URL（可选）\n"
-                    "  - ANTHROPIC_MODEL（可选）"
+                    "  - DEEPSEEK_API_KEY（必需，优先）\n"
+                    "  - DEEPSEEK_BASE_URL（可选，优先）\n"
+                    "  - DEEPSEEK_MODEL（可选，优先）\n"
+                    "兼容旧变量：ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL / ANTHROPIC_MODEL"
                 )
         
         except Exception as e:
