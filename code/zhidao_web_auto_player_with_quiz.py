@@ -36,6 +36,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from course_catalog import classify_catalog_text, extract_catalog_title
+from course_entry import has_course_url, open_course_url
 from deepseek_agent import create_answering_service
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
 from quiz_popup_reader import build_popup_question_data
@@ -3543,42 +3544,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     waited += 2
             
             # 【新增】检查是否有course_url，决定是否跳过课程查找
-            if hasattr(self, 'course_url') and self.course_url:
-                # 有URL，直接跳转
-                self.logger.info(f"🌐 检测到course_url，直接跳转: {self.course_url}")
-                self.logger.info("✅ 跳过课程查找步骤")
-                try:
-                    self.driver.get(self.course_url)
-                    self.smart_wait(3)  # 等待页面加载
-                    self.logger.info("✅ 已成功跳转到课程URL")
-                    
-                    # 处理常见弹窗（承诺书/学前必读/提示框）
-                    try:
-                        candidates = [
-                            "//button[contains(@class,'agree-btn')]",
-                            "//button[contains(@class,'btn') and (contains(.,'同意') or contains(.,'确认') or contains(.,'知道了') or contains(.,'我知道了'))]",
-                            "//span[contains(.,'同意')]/ancestor::button",
-                            "//*[@role='dialog']//button[contains(.,'同意') or contains(.,'确认') or contains(.,'知道了')]",
-                            "//i[contains(@class,'iconguanbi')]"
-                        ]
-                        for xpath in candidates:
-                            elems = self.driver.find_elements(By.XPATH, xpath)
-                            if elems:
-                                try:
-                                    elems[0].click()
-                                    self.smart_wait(1)
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-                    
-                    if not self.wait_for_course_page_ready():
-                        return
-                except Exception as e:
-                    self.logger.error(f"❌ 跳转到课程URL失败: {e}")
-                    self.logger.info("🔔 请手动进入课程页面，程序将等待...")
-                    if not self.wait_for_course_page_ready():
-                        return
+            if has_course_url(getattr(self, 'course_url', '')):
+                if not open_course_url(
+                    self.driver,
+                    self.course_url,
+                    wait_ready_func=self.wait_for_course_page_ready,
+                    logger=self.logger,
+                    wait_func=self.smart_wait,
+                ):
+                    return
                 
                 # 跳过enter_study_page，因为已经在课程页面了
             else:
