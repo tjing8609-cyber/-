@@ -56,10 +56,12 @@ from quiz_popup_actions import (
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
-    close_common_dialogs,
+    is_captcha_present,
     is_course_page_ready as detect_course_page_ready,
     is_quiz_dialog_present,
     try_click_enter_study as detect_try_click_enter_study,
+    wait_for_captcha_completion as detect_wait_for_captcha_completion,
+    wait_for_course_page_ready as detect_wait_for_course_page_ready,
 )
 from video_playback import (
     ProgressStallMonitor,
@@ -606,67 +608,19 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def check_captcha(self):
         """检查是否有人机验证"""
         try:
-            captcha_indicators = [
-                "验证",
-                "captcha",
-                "人机",
-                "滑动",
-                "拼图",
-                "安全验证",
-                "verify",
-                "安全检测"
-            ]
-
-            page_source = self.driver.page_source
-            return any(indicator in page_source for indicator in captcha_indicators)
+            return is_captcha_present(self.driver)
         except Exception as e:
             self.logger.error(f"检查验证码时出错: {e}")
             return False
 
     def wait_for_captcha_completion(self, timeout=60):
         """等待用户完成人机验证"""
-        self.logger.info("检测到人机验证，请手动完成验证...")
-        
-        # 硬等待20秒，但每2秒检查一次是否已完成
-        self.logger.info("⏳ 等待20秒，期间每2秒检查一次验证状态...")
-        for i in range(10):  # 20秒分成10次，每次2秒
-            time.sleep(2)
-            
-            # 检查是否已登录（验证通过）
-            if self.check_login_success():
-                self.logger.info("✅ 登录成功，立即继续执行")
-                return True
-            
-            # 检查是否还有人机验证
-            if not self.check_captcha():
-                self.logger.info("✅ 人机验证已消失，立即继续执行")
-                return True
-        
-        # 20秒后，开始正常的循环检查
-        self.logger.info("⏰ 20秒已过，开始正常检查流程...")
-        start_time = time.time()
-        check_interval = 5  # 每5秒检查一次
-
-        while time.time() - start_time < timeout:
-            # 检查是否还有人机验证
-            if not self.check_captcha():
-                self.logger.info("人机验证已完成，继续执行程序")
-                return True
-
-            # 检查是否已登录（验证通过）
-            if self.check_login_success():
-                self.logger.info("登录成功，继续执行程序")
-                return True
-
-            # 显示等待信息
-            elapsed = int(time.time() - start_time)
-            remaining = int(timeout - elapsed)
-            self.logger.info(f"等待人机验证完成... 已等待 {elapsed} 秒，剩余 {remaining} 秒")
-
-            time.sleep(check_interval)
-
-        self.logger.error("人机验证等待超时")
-        return False
+        return detect_wait_for_captcha_completion(
+            self.check_captcha,
+            self.check_login_success,
+            logger=self.logger,
+            timeout=timeout,
+        )
 
     def check_login_success(self):
         """检查是否登录成功"""
@@ -3016,21 +2970,12 @@ class ZhidaoWebAutoPlayerWithQuiz:
 
     def wait_for_course_page_ready(self, timeout_seconds=600):
         """等待进入课程页面并在需要时尝试自动点击进入学习"""
-        self.logger.info("🔔 如有弹窗或未知提示，请手动处理；程序将等待进入课程页面...")
-        waited = 0
-        while waited < timeout_seconds:
-            try:
-                if self.is_course_page_ready():
-                    self.logger.info("✅ 已进入课程页面")
-                    return True
-                close_common_dialogs(self.driver, logger=self.logger)
-                self.try_click_enter_study()
-            except Exception:
-                pass
-            time.sleep(2)
-            waited += 2
-        self.logger.error("❌ 等待进入课程页面超时，请检查课程URL是否正确或手动进入学习页")
-        return False
+        return detect_wait_for_course_page_ready(
+            self.driver,
+            logger=self.logger,
+            wait_func=self.smart_wait,
+            timeout_seconds=timeout_seconds,
+        )
 
     def run(self):
         """运行自动播放程序"""

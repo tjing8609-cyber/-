@@ -47,9 +47,14 @@ from course_search import find_and_click_course_by_name
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
-    close_common_dialogs,
+    close_question_popup as detect_close_question_popup,
+    detect_course_layout as detect_course_layout_type,
+    is_captcha_present,
+    is_course_list_page,
     is_course_page_ready as detect_course_page_ready,
     try_click_enter_study as detect_try_click_enter_study,
+    wait_for_captcha_completion as detect_wait_for_captcha_completion,
+    wait_for_course_page_ready as detect_wait_for_course_page_ready,
 )
 from video_playback import (
     click_video_center as playback_click_video_center,
@@ -353,33 +358,7 @@ class ZhidaoWebAutoPlayerFinal:
     def check_and_close_question_popup(self):
         """检测并关闭题目弹窗（仅用于类型2课程）"""
         try:
-            # 常见的题目弹窗关闭按钮的XPath
-            close_button_xpaths = [
-                "//div[contains(@class, 'el-dialog__close')]",  # 元素UI关闭按钮
-                "//button[contains(@class, 'el-dialog__headerbtn')]",  # 元素UI关闭按钮
-                "//i[contains(@class, 'el-dialog__close')]",  # 元素UI关闭图标
-                "//div[contains(@class, 'topic_title')]//i[contains(@class, 'iconfont')]",  # 题目标题区域的关闭按钮
-                "//div[@class='btn_cancel' or @class='close-btn' or contains(@class, 'close')]",  # 取消/关闭按钮
-                "//span[text()='关闭' or text()='取消']/parent::button",  # 包含关闭/取消文字的按钮
-            ]
-            
-            for xpath in close_button_xpaths:
-                try:
-                    close_button = self.driver.find_element(By.XPATH, xpath)
-                    if close_button and close_button.is_displayed():
-                        self.logger.info(f"✅ 检测到题目弹窗，正在关闭...")
-                        close_button.click()
-                        self.smart_wait(1)
-                        self.logger.info("✅ 题目弹窗已关闭")
-                        return True
-                except NoSuchElementException:
-                    continue
-                except Exception as e:
-                    self.logger.debug(f"尝试关闭按钮失败 ({xpath}): {e}")
-                    continue
-            
-            return False  # 没有找到题目弹窗
-            
+            return detect_close_question_popup(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.error(f"检测题目弹窗时出错: {e}")
             return False
@@ -387,37 +366,7 @@ class ZhidaoWebAutoPlayerFinal:
     def detect_course_layout(self):
         """检测课程布局类型"""
         try:
-            self.logger.info("正在检测课程布局类型...")
-            
-            # 检测是否有右侧目录侧边栏（新版布局）
-            sidebar_selectors = [
-                "//div[contains(@class, 'catalog') or contains(@class, '目录')]",
-                "//div[contains(@class, 'sidebar')]",
-                "//div[contains(@class, 'directory')]",
-                "//aside",
-                "//div[contains(@class, 'right') and contains(@class, 'panel')]",
-            ]
-            
-            for selector in sidebar_selectors:
-                try:
-                    sidebar = self.driver.find_element(By.XPATH, selector)
-                    if sidebar and sidebar.is_displayed():
-                        # 检查侧边栏是否在右侧
-                        location = sidebar.location
-                        window_width = self.driver.execute_script("return window.innerWidth;")
-                        # 如果侧边栏的x坐标大于窗口宽度的50%，认为是右侧侧边栏
-                        if location['x'] > window_width * 0.5:
-                            self.logger.info("✅ 检测到新版布局（右侧目录侧边栏）")
-                            return 'sidebar'  # 新版布局
-                except NoSuchElementException:
-                    continue
-                except Exception as e:
-                    self.logger.debug(f"检测侧边栏失败: {e}")
-                    continue
-            
-            self.logger.info("✅ 检测到旧版布局（主区域课程列表）")
-            return 'main'  # 旧版布局
-            
+            return detect_course_layout_type(self.driver, logger=self.logger)
         except Exception as e:
             self.logger.error(f"检测课程布局时出错: {e}")
             return 'main'  # 默认使用旧版布局
@@ -491,19 +440,7 @@ class ZhidaoWebAutoPlayerFinal:
     def check_captcha(self):
         """检查是否有人机验证"""
         try:
-            captcha_indicators = [
-                "验证",
-                "captcha",
-                "人机",
-                "滑动",
-                "拼图",
-                "安全验证",
-                "verify",
-                "安全检测"
-            ]
-
-            page_source = self.driver.page_source
-            return any(indicator in page_source for indicator in captcha_indicators)
+            return is_captcha_present(self.driver)
         except Exception as e:
             self.logger.error(f"检查验证码时出错: {e}")
             return False
@@ -522,47 +459,12 @@ class ZhidaoWebAutoPlayerFinal:
                 winsound.Beep(1000, 500)  # 1000Hz，持续500ms
             except Exception:
                 pass
-        
-        # 硬等待20秒，但每2秒检查一次是否已完成
-        self.logger.info("⏳ 等待20秒，期间每2秒检查一次验证状态...")
-        for i in range(10):  # 20秒分成10次，每次2秒
-            time.sleep(2)
-            
-            # 检查是否已登录（验证通过）
-            if self.check_login_success():
-                self.logger.info("✅ 登录成功，立即继续执行")
-                return True
-            
-            # 检查是否还有人机验证
-            if not self.check_captcha():
-                self.logger.info("✅ 人机验证已消失，立即继续执行")
-                return True
-        
-        # 20秒后，开始正常的循环检查
-        self.logger.info("⏰ 20秒已过，开始正常检查流程...")
-        start_time = time.time()
-        check_interval = 5  # 每5秒检查一次
-
-        while time.time() - start_time < timeout:
-            # 检查是否还有人机验证
-            if not self.check_captcha():
-                self.logger.info("人机验证已完成，继续执行程序")
-                return True
-
-            # 检查是否已登录（验证通过）
-            if self.check_login_success():
-                self.logger.info("登录成功，继续执行程序")
-                return True
-
-            # 显示等待信息
-            elapsed = int(time.time() - start_time)
-            remaining = int(timeout - elapsed)
-            self.logger.info(f"等待人机验证完成... 已等待 {elapsed} 秒，剩余 {remaining} 秒")
-
-            time.sleep(check_interval)
-
-        self.logger.error("人机验证等待超时")
-        return False
+        return detect_wait_for_captcha_completion(
+            self.check_captcha,
+            self.check_login_success,
+            logger=self.logger,
+            timeout=timeout,
+        )
 
     def check_login_success(self):
         """检查是否登录成功"""
@@ -1655,9 +1557,7 @@ class ZhidaoWebAutoPlayerFinal:
     def verify_course_list(self):
         """验证是否在课程列表页面"""
         try:
-            page_source = self.driver.page_source
-            course_indicators = ['课程', '章节', 'chapter', 'lesson', '视频']
-            return any(indicator in page_source for indicator in course_indicators)
+            return is_course_list_page(self.driver)
         except Exception as e:
             self.logger.error(f"验证课程列表时出错: {e}")
             return False
@@ -1676,21 +1576,12 @@ class ZhidaoWebAutoPlayerFinal:
 
     def wait_for_course_page_ready(self, timeout_seconds=600):
         """等待进入课程页面并在需要时尝试自动点击进入学习"""
-        self.logger.info("🔔 如有弹窗或未知提示，请手动处理；程序将等待进入课程页面...")
-        waited = 0
-        while waited < timeout_seconds:
-            try:
-                if self.is_course_page_ready():
-                    self.logger.info("✅ 已进入课程页面")
-                    return True
-                close_common_dialogs(self.driver, logger=self.logger)
-                self.try_click_enter_study()
-            except Exception:
-                pass
-            time.sleep(2)
-            waited += 2
-        self.logger.error("❌ 等待进入课程页面超时，请检查课程URL是否正确或手动进入学习页")
-        return False
+        return detect_wait_for_course_page_ready(
+            self.driver,
+            logger=self.logger,
+            wait_func=self.smart_wait,
+            timeout_seconds=timeout_seconds,
+        )
 
     def run(self, username=None, password=None, max_videos=None):
         """运行自动播放程序"""

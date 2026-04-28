@@ -37,6 +37,10 @@ from selenium.webdriver.common.action_chains import ActionChains
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from deepseek_agent import create_deepseek_components
+from page_detection import (
+    is_captcha_present,
+    wait_for_captcha_completion as detect_wait_for_captcha_completion,
+)
 from quiz_answering import (
     allowed_option_labels,
     classify_api_error,
@@ -768,23 +772,7 @@ class ZhidaoQuizOnlyPlayer:
     def check_captcha(self):
         """检查是否存在人机验证"""
         try:
-            page_source = self.driver.page_source
-            # 检查常见的人机验证关键词
-            captcha_keywords = [
-                'captcha',
-                '验证码',
-                '人机验证',
-                '点击验证',
-                '滑动验证',
-                'geetest',
-                'verify',
-            ]
-            
-            for keyword in captcha_keywords:
-                if keyword in page_source.lower():
-                    return True
-            
-            return False
+            return is_captcha_present(self.driver)
         except Exception as e:
             self.logger.error(f"检查人机验证时出错: {e}")
             return False
@@ -799,48 +787,12 @@ class ZhidaoQuizOnlyPlayer:
     
     def wait_for_captcha_completion(self, timeout=60):
         """等待用户完成人机验证"""
-        self.logger.info("检测到人机验证，请手动完成验证...")
-        
-        # 硬等待20秒，但每2秒检查一次是否已完成
-        self.logger.info("⏳ 等待20秒，期间每2秒检查一次验证状态...")
-        for i in range(10):  # 20秒分成10次，每次2秒
-            time.sleep(2)
-            
-            # 检查是否已登录（验证通过）
-            if self.check_login_success():
-                self.logger.info("✅ 登录成功，立即继续执行")
-                return True
-            
-            # 检查是否还有人机验证
-            if not self.check_captcha():
-                self.logger.info("✅ 人机验证已消失，立即继续执行")
-                return True
-        
-        # 20秒后，开始正常的循环检查
-        self.logger.info("⏰ 20秒已过，开始正常检查流程...")
-        start_time = time.time()
-        check_interval = 5  # 每5秒检查一次
-
-        while time.time() - start_time < timeout:
-            # 检查是否还有人机验证
-            if not self.check_captcha():
-                self.logger.info("人机验证已完成，继续执行程序")
-                return True
-
-            # 检查是否已登录（验证通过）
-            if self.check_login_success():
-                self.logger.info("登录成功，继续执行程序")
-                return True
-
-            # 显示等待信息
-            elapsed = int(time.time() - start_time)
-            remaining = int(timeout - elapsed)
-            self.logger.info(f"等待人机验证完成... 已等待 {elapsed} 秒，剩余 {remaining} 秒")
-
-            time.sleep(check_interval)
-
-        self.logger.error("人机验证等待超时")
-        return False
+        return detect_wait_for_captcha_completion(
+            self.check_captcha,
+            self.check_login_success,
+            logger=self.logger,
+            timeout=timeout,
+        )
     
     def verify_api_connection(self):
         """验证DeepSeek API连接"""
