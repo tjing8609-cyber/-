@@ -587,8 +587,17 @@ class ZhidaoGUILauncher:
         selector_row = tk.Frame(control_frame)
         selector_row.pack(fill=tk.X, pady=5)
         tk.Label(selector_row, text="选择器版本:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
+        
         self.selector_profile_var = tk.StringVar(value="v1")
-        tk.Entry(selector_row, textvariable=self.selector_profile_var, font=("微软雅黑", 9), width=20).pack(side=tk.LEFT, padx=5)
+        self.selector_combo = ttk.Combobox(
+            selector_row, 
+            textvariable=self.selector_profile_var, 
+            font=("微软雅黑", 9), 
+            width=18,
+            postcommand=self.refresh_selector_profiles
+        )
+        self.selector_combo.pack(side=tk.LEFT, padx=5)
+        
         tk.Button(
             selector_row,
             text="🔁 切换版本",
@@ -599,6 +608,9 @@ class ZhidaoGUILauncher:
             cursor="hand2",
             width=12
         ).pack(side=tk.LEFT, padx=5)
+        
+        # 初始加载
+        self.refresh_selector_profiles()
         
         # ==================== 日志输出 ====================
         self.log_frame = tk.LabelFrame(
@@ -1181,6 +1193,22 @@ class ZhidaoGUILauncher:
     def stop_orchestrator_schedule(self):
         if self.apply_runtime_control(stop=True):
             self.log("⛔ 已发出停止编排指令")
+
+    def refresh_selector_profiles(self):
+        """刷新选择器版本列表"""
+        profiles_dir = os.path.join(self.launch_dir, 'selectors_versions')
+        if not os.path.exists(profiles_dir):
+            os.makedirs(profiles_dir, exist_ok=True)
+        
+        # 获取所有.json文件，去掉后缀
+        profiles = [f[:-5] for f in os.listdir(profiles_dir) if f.endswith('.json')]
+        if not profiles:
+            profiles = ["v1"]
+        
+        # 更新下拉列表
+        self.selector_combo['values'] = profiles
+        if self.selector_profile_var.get() not in profiles:
+            self.selector_profile_var.set(profiles[0])
 
     def switch_selector_profile(self):
         profile = self.selector_profile_var.get().strip()

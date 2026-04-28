@@ -28,11 +28,13 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from runtime_center import load_selectors, selector_value
+from course_outline import expand_collapsed_chapters
 
 
 def bezier_curve(start, end, control1=None, control2=None, steps=20):
@@ -338,74 +340,87 @@ class ZhidaoWebAutoPlayerWithQuiz:
         with open(progress_file, 'w', encoding='utf-8') as f:
             json.dump(self.progress, f, indent=2, ensure_ascii=False)
     
+    def _resolve_local_driver_paths(self):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_paths = [
+            os.path.join(base_dir, "code", "chromedriver.exe"),
+            os.path.join(base_dir, "chromedriver.exe"),
+            os.path.join(base_dir, "code", "chromedriver-win64", "chromedriver.exe"),
+            os.path.join(os.getcwd(), "chromedriver.exe")
+        ]
+        return [path for path in base_paths if os.path.exists(path)]
+
     def setup_driver(self, headless=False):
-        """设置Chrome浏览器驱动（国内镜像优化）"""
+        """设置Chrome浏览器驱动"""
         chrome_options = Options()
-        
         if headless:
             chrome_options.add_argument('--headless')
-        
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
-        chrome_options.add_argument('--window-size=1349,768')  # 设置窗口大小
+        chrome_options.add_argument('--window-size=1349,768')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-        
-        # 禁用自动化提示
         chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
         chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        try:
-            # 【优化】优先尝试国内镜像下载
+
+        self.driver = None
+        last_error = None
+
+        for driver_path in self._resolve_local_driver_paths():
+            try:
+                self.logger.info(f"📦 优先尝试本地驱动: {driver_path}")
+                self.driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
+                self.logger.info("✅ 本地驱动初始化成功")
+                break
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️ 本地驱动不可用: {str(e)[:120]}")
+                self.driver = None
+
+        if self.driver is None:
             try:
                 self.logger.info("🌐 尝试使用国内镜像下载ChromeDriver...")
                 os.environ['WDM_SSL_VERIFY'] = '0'
-                
-                from webdriver_manager.core.download_manager import WDMDownloadManager
-                
-                class TaobaoMirrorManager(WDMDownloadManager):
-                    def download_file(self, url):
-                        if 'chromedriver.storage.googleapis.com' in url or 'edgedl.me.gvt1.com' in url:
-                            import re
-                            version_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', url)
-                            if version_match:
-                                version = version_match.group(1)
-                                url = f'https://registry.npmmirror.com/-/binary/chromedriver/{version}/chromedriver_win32.zip'
-                        return super().download_file(url)
-                
-                try:
-                    service = Service(ChromeDriverManager(download_manager=TaobaoMirrorManager()).install())
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                    self.logger.info("✅ 使用国内镜像下载成功")
-                except:
-                    self.logger.info("🔄 镜像下载失败，尝试官方源...")
-                    service = Service(ChromeDriverManager().install())
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                    self.logger.info("✅ 使用官方源下载成功")
-                    
-            except Exception as download_error:
-                self.logger.warning(f"⚠️  webdriver-manager下载失败: {str(download_error)[:100]}")
-                self.logger.info("🔄 尝试使用系统环境中的ChromeDriver...")
-                
-                try:
-                    self.driver = webdriver.Chrome(options=chrome_options)
-                    self.logger.info("✅ 使用系统 ChromeDriver 初始化成功")
-                except Exception as system_error:
-                    self.logger.error(f"❌ 系统ChromeDriver也失败: {system_error}")
-                    self.logger.error("\n解决方案：")
-                    self.logger.error("1. 手动下载ChromeDriver: https://registry.npmmirror.com/binary.html?path=chromedriver/")
-                    self.logger.error("2. 将chromedriver.exe放入系统PATH或当前目录")
-                    self.logger.error("3. 或使用VPN后重试自动下载")
-                    raise
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                self.logger.info("✅ 使用镜像下载成功")
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️ webdriver-manager下载失败: {str(e)[:120]}")
 
-            # 隐藏自动化特征
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.wait = WebDriverWait(self.driver, 30)
-            self.logger.info("浏览器驱动初始化完成")
-        except Exception as e:
-            self.logger.error(f"浏览器驱动初始化失败: {e}")
-            raise
+        if self.driver is None:
+            try:
+                self.logger.info("🔄 尝试使用系统环境中的ChromeDriver...")
+                self.driver = webdriver.Chrome(options=chrome_options)
+                self.logger.info("✅ 使用系统 ChromeDriver 初始化成功")
+            except Exception as e:
+                last_error = e
+
+        if self.driver is None:
+            self.logger.error(f"❌ 浏览器驱动初始化失败: {last_error}")
+            self.logger.error("🔄 尝试回退到 Edge 浏览器...")
+            try:
+                edge_options = EdgeOptions()
+                edge_options.add_argument('--disable-blink-features=AutomationControlled')
+                edge_options.add_argument('--no-sandbox')
+                edge_options.add_argument('--disable-dev-shm-usage')
+                edge_options.add_argument('--disable-gpu')
+                edge_options.add_argument('--window-size=1349,768')
+                if headless:
+                    edge_options.add_argument('--headless')
+                self.driver = webdriver.Edge(options=edge_options)
+                self.logger.info("✅ Edge 初始化成功，已自动切换为 Edge 继续运行")
+            except Exception as edge_error:
+                self.logger.error(f"❌ Edge 初始化失败: {edge_error}")
+                self.logger.error("请下载与本机Chrome主版本一致的chromedriver.exe")
+                self.logger.error("下载地址: https://registry.npmmirror.com/binary.html?path=chromedriver/")
+                self.logger.error(f"建议放置路径: {os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'code', 'chromedriver.exe')}")
+                raise RuntimeError(f"ChromeDriver初始化失败: {last_error}")
+
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        self.wait = WebDriverWait(self.driver, 30)
+        self.logger.info("浏览器驱动初始化完成")
     
     def smart_wait(self, seconds):
         """智能等待（随机波动）"""
@@ -1611,6 +1626,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     # 最后使用sidebar本身
                     scroll_container = sidebar
                     self.logger.info("使用侧边栏本身作为滚动容器")
+
+            # 新版页面会把后续章节折叠起来，例如需要先点击“第二章”
+            # 才能看到该章下的视频。先展开可见章节，再进入原有扫描逻辑。
+            expand_collapsed_chapters(
+                self.driver,
+                sidebar,
+                logger=self.logger,
+                wait_func=self.smart_wait,
+                max_passes=8,
+            )
             
             # 使用鼠标滚轮事件模拟真实滚动
             self.logger.info("🔄 开始使用鼠标滚轮模拟滚动...")
@@ -3498,6 +3523,70 @@ class ZhidaoWebAutoPlayerWithQuiz:
         if elapsed_time >= max_wait_time:
             self.logger.warning(f"⚠️  达到最长等待时间 {max_wait_minutes} 分钟")
     
+    def is_course_page_ready(self):
+        """判断是否已进入可继续播放的课程页面"""
+        try:
+            current_url = (self.driver.current_url or "").lower()
+            if "studyvideo" in current_url or "study" in current_url:
+                return True
+            if self.driver.find_elements(By.TAG_NAME, "video"):
+                return True
+            page_source = self.driver.page_source
+            markers = ["继续学习", "开始学习", "学习进度", "章节", "课程目录", "视频"]
+            return any(marker in page_source for marker in markers)
+        except Exception:
+            return False
+
+    def try_click_enter_study(self):
+        """尝试点击进入学习按钮"""
+        xpaths = [
+            "//*[contains(text(),'继续学习')]",
+            "//*[contains(text(),'开始学习')]",
+            "//*[contains(text(),'进入学习')]",
+            "//*[contains(text(),'去学习')]"
+        ]
+        for xpath in xpaths:
+            try:
+                buttons = self.driver.find_elements(By.XPATH, xpath)
+                for button in buttons:
+                    if not button.is_displayed():
+                        continue
+                    try:
+                        button.click()
+                    except Exception:
+                        self.driver.execute_script("arguments[0].click();", button)
+                    self.logger.info("✅ 已尝试点击“继续学习/开始学习”按钮")
+                    self.smart_wait(2)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def wait_for_course_page_ready(self, timeout_seconds=600):
+        """等待进入课程页面并在需要时尝试自动点击进入学习"""
+        self.logger.info("🔔 如有弹窗或未知提示，请手动处理；程序将等待进入课程页面...")
+        waited = 0
+        while waited < timeout_seconds:
+            try:
+                if self.is_course_page_ready():
+                    self.logger.info("✅ 已进入课程页面")
+                    return True
+                dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'el-dialog__wrapper')]")
+                if dialogs:
+                    close_btns = self.driver.find_elements(By.XPATH, "//button[contains(.,'同意') or contains(.,'确认') or contains(.,'关闭') or contains(.,'知道了')] | //i[contains(@class,'iconguanbi')]")
+                    if close_btns:
+                        try:
+                            close_btns[0].click()
+                        except Exception:
+                            pass
+                self.try_click_enter_study()
+            except Exception:
+                pass
+            time.sleep(2)
+            waited += 2
+        self.logger.error("❌ 等待进入课程页面超时，请检查课程URL是否正确或手动进入学习页")
+        return False
+
     def run(self):
         """运行自动播放程序"""
         try:
@@ -3558,39 +3647,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     except Exception:
                         pass
                     
-                    # 等待课程页面或用户处理未知弹窗
-                    self.logger.info("🔔 如有弹窗或未知提示，请手动处理；程序将等待进入课程页面...")
-                    waited = 0
-                    while waited < 600:
-                        try:
-                            if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
-                                self.logger.info("✅ 已进入课程页面")
-                                break
-                            dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'el-dialog__wrapper')]")
-                            if dialogs:
-                                close_btns = self.driver.find_elements(By.XPATH, "//button[contains(.,'同意') or contains(.,'确认') or contains(.,'关闭') or contains(.,'知道了')] | //i[contains(@class,'iconguanbi')]")
-                                if close_btns:
-                                    try:
-                                        close_btns[0].click()
-                                    except Exception:
-                                        pass
-                        except Exception:
-                            pass
-                        time.sleep(2)
-                        waited += 2
+                    if not self.wait_for_course_page_ready():
+                        return
                 except Exception as e:
                     self.logger.error(f"❌ 跳转到课程URL失败: {e}")
                     self.logger.info("🔔 请手动进入课程页面，程序将等待...")
-                    waited = 0
-                    while waited < 600:
-                        try:
-                            if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
-                                self.logger.info("✅ 已进入课程页面")
-                                break
-                        except Exception:
-                            pass
-                        time.sleep(2)
-                        waited += 2
+                    if not self.wait_for_course_page_ready():
+                        return
                 
                 # 跳过enter_study_page，因为已经在课程页面了
             else:
@@ -3598,30 +3661,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 # 查找并进入课程
                 if not self.find_course():
                     self.logger.warning("⚠️ 未找到课程，等待用户手动进入课程页面...")
-                    waited = 0
-                    while waited < 600:
-                        try:
-                            if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
-                                self.logger.info("✅ 已进入课程页面")
-                                break
-                        except Exception:
-                            pass
-                        time.sleep(2)
-                        waited += 2
+                    if not self.wait_for_course_page_ready():
+                        return
                 else:
                     # 进入学习页面
                     if not self.enter_study_page():
                         self.logger.warning("⚠️ 进入学习页面失败，等待用户手动进入课程页面...")
-                        waited = 0
-                        while waited < 600:
-                            try:
-                                if "studyvideo" in self.driver.current_url or self.driver.find_elements(By.TAG_NAME, "video"):
-                                    self.logger.info("✅ 已进入课程页面")
-                                    break
-                            except Exception:
-                                pass
-                            time.sleep(2)
-                            waited += 2
+                        if not self.wait_for_course_page_ready():
+                            return
             
             # 查找未观看的视频
             # 弹窗安全处理：尝试关闭，失败则等待人工处理

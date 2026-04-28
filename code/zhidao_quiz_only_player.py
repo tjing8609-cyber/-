@@ -31,6 +31,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
@@ -225,65 +226,87 @@ class ZhidaoQuizOnlyPlayer:
         with open(progress_file, 'w', encoding='utf-8') as f:
             json.dump(self.progress, f, indent=2, ensure_ascii=False)
     
+    def _resolve_local_driver_paths(self):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_paths = [
+            os.path.join(base_dir, "code", "chromedriver.exe"),
+            os.path.join(base_dir, "chromedriver.exe"),
+            os.path.join(base_dir, "code", "chromedriver-win64", "chromedriver.exe"),
+            os.path.join(os.getcwd(), "chromedriver.exe")
+        ]
+        return [path for path in base_paths if os.path.exists(path)]
+
     def setup_driver(self, headless=False):
-        """设置Chrome浏览器驱动（国内镜像优化）"""
+        """设置Chrome浏览器驱动"""
         chrome_options = Options()
-        
         if headless:
             chrome_options.add_argument('--headless')
-        
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--window-size=1349,768')
         chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-        
-        # 禁用自动化提示
         chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
         chrome_options.add_experimental_option('useAutomationExtension', False)
-        
-        try:
+
+        self.driver = None
+        last_error = None
+
+        for driver_path in self._resolve_local_driver_paths():
+            try:
+                self.logger.info(f"📦 优先尝试本地驱动: {driver_path}")
+                self.driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
+                self.logger.info("✅ 本地驱动初始化成功")
+                break
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️ 本地驱动不可用: {str(e)[:120]}")
+                self.driver = None
+
+        if self.driver is None:
             try:
                 self.logger.info("🌐 尝试使用国内镜像下载ChromeDriver...")
                 os.environ['WDM_SSL_VERIFY'] = '0'
-                
-                from webdriver_manager.core.download_manager import WDMDownloadManager
-                
-                class TaobaoMirrorManager(WDMDownloadManager):
-                    def download_file(self, url):
-                        if 'chromedriver.storage.googleapis.com' in url or 'edgedl.me.gvt1.com' in url:
-                            import re
-                            version_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', url)
-                            if version_match:
-                                version = version_match.group(1)
-                                url = f'https://registry.npmmirror.com/-/binary/chromedriver/{version}/chromedriver_win32.zip'
-                        return super().download_file(url)
-                
-                try:
-                    service = Service(ChromeDriverManager(download_manager=TaobaoMirrorManager()).install())
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                    self.logger.info("✅ 使用国内镜像下载成功")
-                except:
-                    self.logger.info("🔄 镜像下载失败，尝试官方源...")
-                    service = Service(ChromeDriverManager().install())
-                    self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                    self.logger.info("✅ 使用官方源下载成功")
-                    
-            except Exception as download_error:
-                self.logger.warning(f"⚠️  webdriver-manager下载失败: {str(download_error)[:100]}")
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                self.logger.info("✅ 使用镜像下载成功")
+            except Exception as e:
+                last_error = e
+                self.logger.warning(f"⚠️ webdriver-manager下载失败: {str(e)[:120]}")
+
+        if self.driver is None:
+            try:
                 self.logger.info("🔄 尝试使用系统环境中的ChromeDriver...")
-                
                 self.driver = webdriver.Chrome(options=chrome_options)
                 self.logger.info("✅ 使用系统 ChromeDriver 初始化成功")
+            except Exception as e:
+                last_error = e
 
-            # 隐藏自动化特征
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.wait = WebDriverWait(self.driver, 30)
-            self.logger.info("浏览器驱动初始化完成")
-        except Exception as e:
-            self.logger.error(f"浏览器驱动初始化失败: {e}")
-            raise
+        if self.driver is None:
+            self.logger.error(f"❌ 浏览器驱动初始化失败: {last_error}")
+            self.logger.error("🔄 尝试回退到 Edge 浏览器...")
+            try:
+                edge_options = EdgeOptions()
+                edge_options.add_argument('--disable-blink-features=AutomationControlled')
+                edge_options.add_argument('--no-sandbox')
+                edge_options.add_argument('--disable-dev-shm-usage')
+                edge_options.add_argument('--disable-gpu')
+                edge_options.add_argument('--window-size=1349,768')
+                if headless:
+                    edge_options.add_argument('--headless')
+                self.driver = webdriver.Edge(options=edge_options)
+                self.logger.info("✅ Edge 初始化成功，已自动切换为 Edge 继续运行")
+            except Exception as edge_error:
+                self.logger.error(f"❌ Edge 初始化失败: {edge_error}")
+                self.logger.error("请下载与本机Chrome主版本一致的chromedriver.exe")
+                self.logger.error("下载地址: https://registry.npmmirror.com/binary.html?path=chromedriver/")
+                self.logger.error(f"建议放置路径: {os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'code', 'chromedriver.exe')}")
+                raise RuntimeError(f"ChromeDriver初始化失败: {last_error}")
+
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        self.wait = WebDriverWait(self.driver, 30)
+        self.logger.info("浏览器驱动初始化完成")
     
     def smart_wait(self, seconds):
         """智能等待（随机波动）"""
