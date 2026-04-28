@@ -8,7 +8,7 @@ CODE_DIR = ROOT / "code"
 if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
-from deepseek_agent import load_deepseek_config  # noqa: E402
+from deepseek_agent import create_deepseek_components, load_deepseek_config  # noqa: E402
 
 
 class DeepSeekAgentTests(unittest.TestCase):
@@ -45,6 +45,13 @@ class DeepSeekAgentTests(unittest.TestCase):
 
     def test_missing_key_is_not_configured(self):
         self.assertFalse(load_deepseek_config({}, env={}).configured)
+
+    def test_components_are_empty_without_key(self):
+        client, service, config = create_deepseek_components({}, env={})
+
+        self.assertIsNone(client)
+        self.assertIsNone(service)
+        self.assertFalse(config.configured)
 
 
 if __name__ == "__main__":

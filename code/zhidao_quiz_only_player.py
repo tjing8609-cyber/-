@@ -23,7 +23,6 @@ import random
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
-from openai import OpenAI  # 【新增】使用OpenAI SDK调用DeepSeek API
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -37,8 +36,8 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
+from deepseek_agent import create_deepseek_components
 from quiz_answering import (
-    QuizAnsweringService,
     allowed_option_labels,
     classify_api_error,
     parse_answer_letters,
@@ -66,44 +65,21 @@ class ZhidaoQuizOnlyPlayer:
         # 【新增】加载环境变量
         load_dotenv()
         
-        # 【优化】DeepSeek API配置 - 优先使用用户配置，否则从环境变量加载
-        self.api_key = self.account_config.get('deepseek_api_key', '').strip()
-        self.api_base_url = None
-        self.api_model = None
-        self.api_client = None  # 【新增】OpenAI客户端
-        self.answering_service = None
-        
-        if not self.api_key:
-            self.api_key = os.getenv('DEEPSEEK_API_KEY', '').strip() or os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
-            self.api_base_url = os.getenv('DEEPSEEK_BASE_URL', '').strip() or os.getenv('ANTHROPIC_BASE_URL', '').strip()
-            self.api_model = os.getenv('DEEPSEEK_MODEL', '').strip() or os.getenv('ANTHROPIC_MODEL', 'deepseek-chat').strip()
-            
-            if self.api_key:
-                self.logger.info("✅ 从系统环境变量加载API配置成功")
-                if os.getenv('DEEPSEEK_API_KEY', '').strip():
-                    self.logger.info("🔑 API Key来源: DEEPSEEK_API_KEY")
-                else:
-                    self.logger.info("🔑 API Key来源: ANTHROPIC_AUTH_TOKEN（兼容）")
-                self.logger.info(f"📡 API Base URL: {self.api_base_url}")
-                self.logger.info(f"🤖 API Model: {self.api_model}")
-                # 【新增】创建OpenAI客户端
-                self.api_client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
-            else:
-                self.logger.warning("⚠️  未配置API密钥（账号配置和环境变量均未找到），答题功能将受限")
-        else:
-            self.logger.info("✅ 使用账号配置文件中的API密钥")
-            # 用户自定义API，使用默认配置
-            self.api_base_url = self.account_config.get('api_base_url', 'https://api.deepseek.com').strip()
-            self.api_model = self.account_config.get('api_model', 'deepseek-chat').strip()
-            # 【新增】创建OpenAI客户端
-            self.api_client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
+        self.api_client, self.answering_service, self.deepseek_config = create_deepseek_components(
+            self.account_config,
+            logger=self.logger,
+        )
+        self.api_key = self.deepseek_config.api_key
+        self.api_base_url = self.deepseek_config.base_url
+        self.api_model = self.deepseek_config.model
 
         if self.api_client:
-            self.answering_service = QuizAnsweringService(
-                self.api_client,
-                self.api_model,
-                logger=self.logger
-            )
+            self.logger.info("✅ DeepSeek API配置加载成功")
+            self.logger.info(f"🔑 API Key来源: {self.deepseek_config.source}")
+            self.logger.info(f"📡 API Base URL: {self.api_base_url}")
+            self.logger.info(f"🤖 API Model: {self.api_model}")
+        else:
+            self.logger.warning("⚠️  未配置API密钥（账号配置和环境变量均未找到），答题功能将受限")
         
         verify_api_on_start = self.account_config.get('verify_api_on_start', False)
         if self.api_key and verify_api_on_start:

@@ -72,18 +72,29 @@ def create_openai_client(config):
     return OpenAI(api_key=config.api_key, base_url=config.base_url)
 
 
-def create_answering_service(account_config=None, logger=None, env=None):
+def create_deepseek_components(account_config=None, logger=None, env=None):
     config = load_deepseek_config(account_config=account_config, env=env)
     if not config.configured:
-        return None, config
+        return None, None, config
 
     client = create_openai_client(config)
-    return QuizAnsweringService(client, config.model, logger=logger), config
+    service = QuizAnsweringService(client, config.model, logger=logger)
+    return client, service, config
+
+
+def create_answering_service(account_config=None, logger=None, env=None):
+    _, service, config = create_deepseek_components(
+        account_config=account_config,
+        logger=logger,
+        env=env,
+    )
+    return service, config
 
 
 __all__ = [
     "DeepSeekConfig",
     "create_answering_service",
+    "create_deepseek_components",
     "create_openai_client",
     "load_deepseek_config",
 ]
