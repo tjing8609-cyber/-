@@ -26,11 +26,8 @@ from dotenv import load_dotenv
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.edge.options import Options as EdgeOptions
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
@@ -51,6 +48,14 @@ from quiz_page_actions import (
     click_next_button as action_click_next_button,
     find_clickable_option_element,
     select_answer_options,
+)
+from quiz_navigation import (
+    enter_quiz_page,
+    find_quiz_entrance as navigation_find_quiz_entrance,
+    handle_window_switch as navigation_handle_window_switch,
+    scroll_to_load_all_quizzes as navigation_scroll_to_load_all_quizzes,
+    switch_to_exam_tab as navigation_switch_to_exam_tab,
+    wait_for_quiz_page as navigation_wait_for_quiz_page,
 )
 from quiz_page_reader import clean_question_text, detect_question_type_from_text, parse_option_text
 from quiz_test_flow import (
@@ -729,73 +734,16 @@ class ZhidaoQuizOnlyPlayer:
     def find_quiz_entrance(self, quiz_type):
         """查找测试入口【优化】添加滚动功能"""
         try:
-            self.logger.info(f"正在查找测试入口: {quiz_type}")
-            
-            # 【优化】根据实际页面结构调整选择器
-            # 先切换到"作业考试"tab
-            self.switch_to_exam_tab()
-            
-            # 【新增】滚动页面以加载所有测试项
-            self.scroll_to_load_all_quizzes()
-            
-            # 测试入口的多种选择器（按优先级）
-            quiz_selectors = [
-                # 知到平台专用选择器
-                "//div[contains(@class, 'homework-item')]",
-                "//div[contains(@class, 'exam-item')]",
-                "//div[contains(@class, 'test-item')]",
-                # 通用选择器
-                f"//div[contains(text(), '{quiz_type}')]",
-                f"//span[contains(text(), '{quiz_type}')]",
-                f"//a[contains(text(), '{quiz_type}')]",
-                f"//button[contains(text(), '{quiz_type}')]",
-                f"//li[contains(text(), '{quiz_type}')]",
-                # 通用测试关键词
-                "//div[contains(text(), '测试')]",
-                "//span[contains(text(), '测试')]",
-                "//a[contains(text(), '测试')]",
-            ]
-            
-            self.quiz_element = None
-            self.quiz_container = None
-            
-            for selector in quiz_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for elem in elements:
-                        elem_text = elem.text
-                        # 精确匹配quiz_type或包含"测试"关键词
-                        if quiz_type in elem_text or '测试' in elem_text or '作业' in elem_text:
-                            # 【优化】排除已完成的测试（增加更多关键词）
-                            skip_keywords = [
-                                '已完成', '已提交', '已批阅', 
-                                '查看作业', '查看', '已做',
-                                '100%', '满分'
-                            ]
-                            
-                            # 检查是否包含任何跳过关键词
-                            should_skip = False
-                            for keyword in skip_keywords:
-                                if keyword in elem_text:
-                                    self.logger.info(f"⏭️  跳过已完成测试: {elem_text[:50]}... (包含'{keyword}')")
-                                    should_skip = True
-                                    break
-                            
-                            if should_skip:
-                                continue
-                            
-                            self.quiz_container = elem
-                            self.logger.info(f"找到未完成测试: {elem_text[:50]}...")
-                            
-                            # 查找容器内的"开始做题"按钮
-                            self.quiz_element = self.find_start_button(elem)
-                            if self.quiz_element:
-                                return True
-                except Exception as e:
-                    continue
-            
-            return False
-            
+            entrance = navigation_find_quiz_entrance(
+                self.driver,
+                quiz_type,
+                self.find_start_button,
+                logger=self.logger,
+                wait_func=self.smart_wait,
+            )
+            self.quiz_container = entrance.container
+            self.quiz_element = entrance.start_button
+            return entrance.found
         except Exception as e:
             self.logger.error(f"查找测试入口失败: {e}")
             return False
@@ -803,29 +751,7 @@ class ZhidaoQuizOnlyPlayer:
     def switch_to_exam_tab(self):
         """切换到作业考试tab"""
         try:
-            # 查找"作业考试"tab
-            tab_selectors = [
-                "//div[contains(text(), '作业考试')]",
-                "//span[contains(text(), '作业考试')]",
-                "//a[contains(text(), '作业考试')]",
-                "//div[contains(text(), '考试')]",
-            ]
-            
-            for selector in tab_selectors:
-                try:
-                    tabs = self.driver.find_elements(By.XPATH, selector)
-                    for tab in tabs:
-                        if '作业' in tab.text or '考试' in tab.text:
-                            self.logger.info(f"切换到tab: {tab.text}")
-                            tab.click()
-                            self.smart_wait(2)
-                            return True
-                except:
-                    continue
-            
-            self.logger.info("未找到作业考试tab，可能已在该页面")
-            return True
-            
+            return navigation_switch_to_exam_tab(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.error(f"切换tab失败: {e}")
             return False
@@ -833,54 +759,7 @@ class ZhidaoQuizOnlyPlayer:
     def scroll_to_load_all_quizzes(self):
         """滚动页面以加载所有测试项目"""
         try:
-            self.logger.info("📜 滚动页面加载所有测试...")
-            
-            # 尝试查找作业列表容器
-            container_selectors = [
-                "//div[contains(@class, 'homework-list')]",
-                "//div[contains(@class, 'exam-list')]",
-                "//div[contains(@class, 'test-list')]",
-                "//div[contains(@class, 'list-container')]",
-                "//div[contains(@class, 'content')]",
-            ]
-            
-            scroll_container = None
-            for selector in container_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    if elements:
-                        scroll_container = elements[0]
-                        self.logger.info(f"✅ 找到滚动容器: {selector}")
-                        break
-                except:
-                    continue
-            
-            # 如果找到容器，滚动它；否则滚动整个页面
-            if scroll_container:
-                # 滚动容器到底部
-                self.driver.execute_script(
-                    "arguments[0].scrollTop = arguments[0].scrollHeight",
-                    scroll_container
-                )
-                self.smart_wait(1)
-                # 再滚回顶部
-                self.driver.execute_script(
-                    "arguments[0].scrollTop = 0",
-                    scroll_container
-                )
-                self.logger.info("✅ 已滚动容器")
-            else:
-                # 滚动整个页面
-                # 先滚到页面底部
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                self.smart_wait(1)
-                # 再滚回顶部
-                self.driver.execute_script("window.scrollTo(0, 0);")
-                self.logger.info("✅ 已滚动页面")
-            
-            # 等待元素加载
-            self.smart_wait(2)
-            
+            return navigation_scroll_to_load_all_quizzes(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.warning(f"⚠️  滚动页面失败: {e}，继续查找...")
     
@@ -905,36 +784,12 @@ class ZhidaoQuizOnlyPlayer:
     def enter_quiz(self):
         """进入测试"""
         try:
-            if not self.quiz_element:
-                self.logger.error("测试元素不存在")
-                return False
-            
-            self.logger.info("正在进入测试...")
-            
-            # 滚动到元素可见
-            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", self.quiz_element)
-            self.smart_wait(1)
-            
-            # 使用ActionChains点击（反检测）
-            actions = ActionChains(self.driver)
-            actions.move_to_element(self.quiz_element)
-            actions.pause(random.uniform(0.5, 1.5))  # 模拟思考
-            actions.click()
-            actions.perform()
-            
-            self.logger.info("已点击测试入口")
-            self.smart_wait(3)
-            
-            # 检查是否需要切换窗口/iframe
-            self.handle_window_switch()
-            
-            # 等待答题页面加载
-            if self.wait_for_quiz_page():
-                return True
-            else:
-                self.logger.error("答题页面加载超时")
-                return False
-                
+            return enter_quiz_page(
+                self.driver,
+                self.quiz_element,
+                logger=self.logger,
+                wait_func=self.smart_wait,
+            )
         except Exception as e:
             self.logger.error(f"进入测试失败: {e}")
             import traceback
@@ -943,69 +798,12 @@ class ZhidaoQuizOnlyPlayer:
     
     def handle_window_switch(self):
         """处理窗口/iframe切换"""
-        try:
-            # 检查是否有新窗口打开
-            current_windows = self.driver.window_handles
-            if len(current_windows) > 1:
-                self.logger.info("检测到新窗口，切换到新窗口")
-                self.driver.switch_to.window(current_windows[-1])
-                self.smart_wait(2)
-            
-            # 检查是否有iframe需要切换
-            try:
-                iframes = self.driver.find_elements(By.TAG_NAME, 'iframe')
-                if iframes:
-                    self.logger.info(f"检测到 {len(iframes)} 个iframe")
-                    # 通常答题页面在第一个iframe中
-                    for iframe in iframes:
-                        try:
-                            self.driver.switch_to.frame(iframe)
-                            self.logger.info("已切换到iframe")
-                            self.smart_wait(1)
-                            break
-                        except:
-                            self.driver.switch_to.default_content()
-                            continue
-            except Exception as e:
-                self.logger.debug(f"iframe检查: {e}")
-                
-        except Exception as e:
-            self.logger.error(f"窗口切换处理失败: {e}")
+        navigation_handle_window_switch(self.driver, logger=self.logger, wait_func=self.smart_wait)
     
     def wait_for_quiz_page(self):
         """等待答题页面加载完成"""
         try:
-            self.logger.info("等待答题页面加载...")
-            
-            # 等待题目容器出现的多种选择器
-            quiz_page_selectors = [
-                "//div[contains(@class, 'topic')]",
-                "//div[contains(@class, 'question')]",
-                "//div[contains(@class, 'exam')]",
-                "//div[contains(@class, 'test')]",
-                "//li[contains(@class, 'topic-item')]",
-            ]
-            
-            for selector in quiz_page_selectors:
-                try:
-                    element = WebDriverWait(self.driver, 10).until(
-                        EC.presence_of_element_located((By.XPATH, selector))
-                    )
-                    if element:
-                        self.logger.info(f"✅ 答题页面加载成功，检测到元素: {selector}")
-                        return True
-                except TimeoutException:
-                    continue
-            
-            # 如果没有找到特定元素，检查URL是否变化
-            current_url = self.driver.current_url
-            if 'exam' in current_url or 'test' in current_url or 'quiz' in current_url:
-                self.logger.info(f"✅ 根据URL判断已进入答题页面: {current_url}")
-                return True
-            
-            self.logger.warning("⚠️  未检测到标准答题页面元素")
-            return False
-            
+            return navigation_wait_for_quiz_page(self.driver, logger=self.logger)
         except Exception as e:
             self.logger.error(f"等待答题页面加载失败: {e}")
             return False
