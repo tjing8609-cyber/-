@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """Scoped actions for in-video quiz popups."""
 
+import random
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 
@@ -73,6 +74,118 @@ def find_dialog_action_buttons(dialog):
         except Exception:
             continue
     return list(dict.fromkeys(_visible(buttons)))
+
+
+def visible_quiz_options(driver, option_xpaths):
+    options = []
+    for xpath in option_xpaths or []:
+        try:
+            options.extend(_visible(driver.find_elements(By.XPATH, xpath)))
+        except Exception:
+            continue
+    return list(dict.fromkeys(options))
+
+
+def is_multi_choice_dialog(driver):
+    try:
+        elems = driver.find_elements(By.XPATH, "//span[contains(@class,'title-tit')]")
+        for elem in elems:
+            if elem.is_displayed() and "多选题" in ((elem.text or "").strip()):
+                return True
+        checkboxes = driver.find_elements(By.XPATH, "//label[contains(@class,'el-checkbox')]")
+        return bool(_visible(checkboxes))
+    except Exception:
+        return False
+
+
+def scroll_quiz_dialog(driver, position="bottom", wait_func=None):
+    try:
+        wrappers = driver.find_elements(
+            By.XPATH,
+            "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]",
+        )
+    except Exception:
+        return False
+
+    moved = False
+    for wrapper in wrappers:
+        try:
+            try:
+                view = wrapper.find_element(By.XPATH, ".//div[contains(@class,'el-scrollbar__wrap')]")
+            except Exception:
+                view = wrapper
+            if position == "top":
+                driver.execute_script("arguments[0].scrollTop = 0;", view)
+            elif position == "center":
+                driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight/2;", view)
+            else:
+                driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", view)
+            if wait_func:
+                wait_func(0.4)
+            moved = True
+        except Exception:
+            continue
+    return moved
+
+
+def click_option_element(driver, option, logger=None, wait_func=None, delay=0.5):
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", option)
+    except Exception:
+        pass
+    if wait_func and delay:
+        wait_func(delay)
+
+    if _click_element(driver, option):
+        return True
+
+    _log(logger, "debug", "选项点击失败")
+    return False
+
+
+def select_options_by_letters(
+    driver,
+    options,
+    letters,
+    logger=None,
+    wait_func=None,
+    shuffle=False,
+    confirm_last=False,
+    after_click=None,
+):
+    if isinstance(letters, str):
+        letters = [letters]
+    allowed = [chr(ord("A") + index) for index in range(len(options or []))]
+    to_click = [str(letter).strip().upper() for letter in (letters or []) if str(letter).strip().upper() in allowed]
+    if shuffle:
+        random.shuffle(to_click)
+
+    clicked = 0
+    last_clicked = None
+    for letter in to_click:
+        index = ord(letter) - ord("A")
+        option = options[index]
+        if click_option_element(
+            driver,
+            option,
+            logger=logger,
+            wait_func=wait_func,
+            delay=random.uniform(0.5, 1.5) if wait_func else 0,
+        ):
+            clicked += 1
+            last_clicked = option
+            if after_click:
+                after_click()
+
+    if confirm_last and last_clicked is not None:
+        click_option_element(
+            driver,
+            last_clicked,
+            logger=logger,
+            wait_func=wait_func,
+            delay=random.uniform(0.5, 1.0) if wait_func else 0,
+        )
+    return clicked > 0
 
 
 def click_quiz_popup_submit(driver, logger=None, dialog_xpath=None):

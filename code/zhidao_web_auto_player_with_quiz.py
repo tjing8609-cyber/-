@@ -41,7 +41,13 @@ from course_search import find_and_click_course_by_name
 from deepseek_agent import create_answering_service
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
 from quiz_popup_reader import build_popup_question_data
-from quiz_popup_actions import click_quiz_popup_submit
+from quiz_popup_actions import (
+    click_quiz_popup_submit,
+    is_multi_choice_dialog,
+    scroll_quiz_dialog as action_scroll_quiz_dialog,
+    select_options_by_letters as action_select_options_by_letters,
+    visible_quiz_options,
+)
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
@@ -2845,23 +2851,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
             answer_index = ord(answer_letter) - ord('A')
             
             if 0 <= answer_index < len(options):
-                correct_option = options[answer_index]
-                
-                try:
-                    correct_option.click()
-                    self.smart_wait(0.5)
-                    return True
-                except:
-                    try:
-                        from selenium.webdriver.common.action_chains import ActionChains
-                        actions = ActionChains(self.driver)
-                        actions.move_to_element(correct_option)
-                        actions.click()
-                        actions.perform()
-                        self.smart_wait(0.5)
-                        return True
-                    except:
-                        return False
+                return action_select_options_by_letters(
+                    self.driver,
+                    options,
+                    [answer_letter],
+                    logger=self.logger,
+                    wait_func=self.smart_wait,
+                )
             
             return False
             
@@ -2948,54 +2944,17 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
                 ]
             )
-            options = []
-            for xp in option_xpaths:
-                try:
-                    opts = self.driver.find_elements(By.XPATH, xp)
-                    options.extend([o for o in opts if o.is_displayed()])
-                except Exception:
-                    continue
-            return options
+            return visible_quiz_options(self.driver, option_xpaths)
         except Exception:
             return []
 
     def is_multi_choice(self):
         """判断是否为多选题"""
-        try:
-            elems = self.driver.find_elements(By.XPATH, "//span[contains(@class,'title-tit')]")
-            for e in elems:
-                if e.is_displayed():
-                    t = (e.text or '').strip()
-                    if '多选题' in t:
-                        return True
-            # 备用：有checkbox即视为多选
-            checkboxes = self.driver.find_elements(By.XPATH, "//label[contains(@class,'el-checkbox')]")
-            return len([c for c in checkboxes if c.is_displayed()]) > 0
-        except Exception:
-            return False
+        return is_multi_choice_dialog(self.driver)
 
     def scroll_quiz_dialog(self, position='bottom'):
         """滚动题目弹窗视图，确保答案或选项完全可见"""
-        try:
-            wrappers = self.driver.find_elements(By.XPATH, "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]")
-            for w in wrappers:
-                try:
-                    view = None
-                    try:
-                        view = w.find_element(By.XPATH, ".//div[contains(@class,'el-scrollbar__wrap')]")
-                    except Exception:
-                        view = w
-                    if position == 'top':
-                        self.driver.execute_script("arguments[0].scrollTop = 0;", view)
-                    elif position == 'center':
-                        self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight/2;", view)
-                    else:
-                        self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", view)
-                    self.smart_wait(0.4)
-                except Exception:
-                    continue
-        except Exception:
-            pass
+        return action_scroll_quiz_dialog(self.driver, position=position, wait_func=self.smart_wait)
 
     def check_for_quiz(self):
         """检测是否出现题目弹窗"""
@@ -3019,46 +2978,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if not options:
                 self.logger.debug("未找到可点击选项容器")
                 return False
-            # 构造按索引映射的字母序列（A,B,C...）
-            index_to_letter = [chr(ord('A') + i) for i in range(len(options))]
-            # 随机化点击顺序
-            to_click = [l for l in letters if l in index_to_letter]
-            random.shuffle(to_click)
-            last_clicked = None
-            for l in to_click:
-                idx = ord(l) - ord('A')
-                if 0 <= idx < len(options):
-                    opt = options[idx]
-                    try:
-                        # 滚动到视图中再点击
-                        try:
-                            self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", opt)
-                        except Exception:
-                            pass
-                        from selenium.webdriver.common.action_chains import ActionChains
-                        actions = ActionChains(self.driver)
-                        actions.move_to_element(opt)
-                        actions.click()
-                        actions.perform()
-                        last_clicked = opt
-                        # 选项间隔（0.5-1.5秒）
-                        self.smart_wait(random.uniform(0.5, 1.5))
-                        # 每次点击后滚动到底，确保答案可见
-                        self.scroll_quiz_dialog('bottom')
-                    except Exception:
-                        continue
-            # 二次点击最后一个选项以确认（某些页面需要）
-            if last_clicked is not None:
-                try:
-                    from selenium.webdriver.common.action_chains import ActionChains
-                    actions = ActionChains(self.driver)
-                    actions.move_to_element(last_clicked)
-                    actions.click()
-                    actions.perform()
-                    self.smart_wait(random.uniform(0.5, 1.0))
-                except Exception:
-                    pass
-            return True
+            return action_select_options_by_letters(
+                self.driver,
+                options,
+                letters,
+                logger=self.logger,
+                wait_func=self.smart_wait,
+                shuffle=True,
+                confirm_last=True,
+                after_click=lambda: self.scroll_quiz_dialog('bottom'),
+            )
         except Exception as e:
             self.logger.debug(f"选择多选项失败: {e}")
             return False
