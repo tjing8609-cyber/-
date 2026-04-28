@@ -13,6 +13,8 @@ PY_FILES = [
     ROOT / "code" / "browser_session.py",
     ROOT / "code" / "auth_flow.py",
     ROOT / "code" / "course_entry.py",
+    ROOT / "code" / "course_search.py",
+    ROOT / "code" / "element_actions.py",
     ROOT / "code" / "runtime_center.py",
     ROOT / "code" / "course_catalog.py",
     ROOT / "code" / "course_outline.py",

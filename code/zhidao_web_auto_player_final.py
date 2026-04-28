@@ -38,6 +38,7 @@ from selenium.webdriver.chrome.service import Service
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from course_entry import has_course_url, open_course_url
+from course_search import find_and_click_course_by_name
 from course_catalog import classify_catalog_text
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
@@ -844,107 +845,13 @@ class ZhidaoWebAutoPlayerFinal:
         # 如果没有传入课程名称，尝试从实例变量或config中获取
         if course_name is None:
             course_name = getattr(self, 'course_name', None) or self.config.get('course_name', '中国近现代史纲要')
-        
-        self.logger.info(f"正在查找'{course_name}'课程...")
-        
-        # 检查浏览器是否还在运行
-        try:
-            current_url = self.driver.current_url
-            self.logger.info(f"当前页面URL: {current_url}")
-        except Exception as e:
-            self.logger.error("⚠️  浏览器已关闭！请不要手动关闭浏览器窗口！")
-            self.logger.error(f"错误详情: {e}")
-            return False
-        
-        # 检查当前页面URL
-        current_url = self.driver.current_url
-        self.logger.info(f"当前页面URL: {current_url}")
-        
-        # 先尝试滚动页面，确保所有课程都加载出来
-        self.logger.info("滚动页面加载所有课程...")
-        for i in range(3):
-            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            self.smart_wait(1)
-            self.driver.execute_script("window.scrollTo(0, 0);")
-            self.smart_wait(1)
-
-        # 多种课程选择器
-        course_selectors = [
-            # 直接查找文本
-            f"//*[contains(text(), '{course_name}')]",
-            f"//div[contains(text(), '{course_name}')]",
-            f"//a[contains(text(), '{course_name}')]",
-            f"//span[contains(text(), '{course_name}')]",
-            f"//h3[contains(text(), '{course_name}')]",
-            f"//h4[contains(text(), '{course_name}')]",
-            f"//p[contains(text(), '{course_name}')]",
-            # 查找课程卡片
-            f"//div[contains(@class, 'course')]//*[contains(text(), '{course_name}')]",
-            f"//div[contains(@class, 'card')]//*[contains(text(), '{course_name}')]",
-            # 模糊匹配（去掉空格）
-            f"//*[contains(text(), '中国近现代史')]",
-            f"//*[contains(text(), '近现代史纲要')]",
-        ]
-        
-        # 尝试每个选择器
-        for selector in course_selectors:
-            try:
-                self.logger.info(f"尝试选择器: {selector}")
-                
-                # 查找所有匹配的元素
-                elements = self.driver.find_elements(By.XPATH, selector)
-                
-                if not elements:
-                    self.logger.info(f"选择器未找到元素")
-                    continue
-                
-                self.logger.info(f"找到 {len(elements)} 个匹配的元素")
-                
-                # 尝试点击每个匹配的元素
-                for idx, element in enumerate(elements):
-                    try:
-                        elem_text = element.text[:50] if element.text else "(无文本)"
-                        self.logger.info(f"尝试元素 {idx+1}: {elem_text}")
-                        
-                        # 滚动到元素
-                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
-                        self.smart_wait(1)
-                        
-                        # 尝试点击
-                        try:
-                            element.click()
-                            self.logger.info(f"成功点击'{course_name}'课程")
-                            self.smart_wait(5)
-                            return True
-                        except Exception as click_err:
-                            # 如果常规点击失败，尝试 ActionChains 点击
-                            self.logger.info(f"常规点击失败，尝试ActionChains点击")
-                            try:
-                                from selenium.webdriver.common.action_chains import ActionChains
-                                actions = ActionChains(self.driver)
-                                actions.move_to_element(element)
-                                actions.click()
-                                actions.perform()
-                                self.logger.info(f"通过ActionChains成功点击'{course_name}'课程")
-                                self.smart_wait(5)
-                                return True
-                            except Exception as ac_err:
-                                self.logger.warning(f"ActionChains点击也失败: {ac_err}")
-                                continue
-                    
-                    except Exception as elem_err:
-                        self.logger.warning(f"处理元素 {idx+1} 时出错: {elem_err}")
-                        continue
-
-            except Exception as e:
-                self.logger.warning(f"选择器 {selector} 失败: {e}")
-                continue
-
-        self.logger.error(f"未找到'{course_name}'课程")
-        self.logger.error("请检查：")
-        self.logger.error("1. 课程名称是否正确（当前配置：'" + course_name + "'）")
-        self.logger.error("2. 是否需要先点击某个标签页（如'共享课'）")
-        return False
+        return find_and_click_course_by_name(
+            self.driver,
+            course_name,
+            logger=self.logger,
+            wait_func=self.smart_wait,
+            include_history_fallback=True,
+        )
 
     def find_unwatched_videos(self):
         """查找未观看的视频（不包括PPT）"""
