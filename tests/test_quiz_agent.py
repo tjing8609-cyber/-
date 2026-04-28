@@ -34,6 +34,20 @@ class QuizAgentTests(unittest.TestCase):
         self.assertTrue(decision.should_close)
         self.assertEqual(decision.letters, ["A", "C"])
 
+    def test_auto_practice_can_use_api_popup_answers(self):
+        decision = QuizAutomationAgent("auto_practice").decide(["B"], option_count=4, source="api_popup")
+
+        self.assertTrue(decision.should_select)
+        self.assertTrue(decision.should_submit)
+        self.assertTrue(decision.should_close)
+
+    def test_semi_auto_selects_but_does_not_submit(self):
+        decision = QuizAutomationAgent("semi_auto").decide(["B"], option_count=4, source="api_popup")
+
+        self.assertTrue(decision.should_select)
+        self.assertFalse(decision.should_submit)
+        self.assertFalse(decision.should_close)
+
     def test_no_letters_never_clicks(self):
         decision = QuizAutomationAgent("auto_practice").decide([], option_count=4)
 

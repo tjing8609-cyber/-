@@ -36,7 +36,9 @@ from selenium.webdriver.common.action_chains import ActionChains
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from course_catalog import classify_catalog_text, extract_catalog_title
+from deepseek_agent import create_answering_service
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
+from quiz_popup_reader import build_popup_question_data
 from quiz_popup_actions import click_quiz_popup_submit
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
@@ -151,6 +153,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
         )
         self.quiz_agent = QuizAutomationAgent(self.answer_mode, logger=self.logger)
         self.logger.info(f"🤖 题目弹窗处理模式: {self.answer_mode}")
+        self.answering_service, self.deepseek_config = create_answering_service(
+            self.account_config,
+            logger=self.logger,
+        )
+        if self.answering_service:
+            self.logger.info(f"🤖 DeepSeek弹窗答题已启用: model={self.deepseek_config.model}, source={self.deepseek_config.source}")
+        else:
+            self.logger.info("🤖 DeepSeek弹窗答题未启用：未配置 deepseek_api_key 或环境变量")
         
         # 初始化浏览器
         self.setup_driver(headless)
@@ -3327,10 +3337,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if not options:
                 self.logger.info("🔔 未检测到选项，请手动处理；程序继续监控")
                 return False
+            source = "visible_answer"
+            if not letters:
+                api_letters = self.answer_popup_with_api(options)
+                if api_letters:
+                    letters = api_letters
+                    source = "api_popup"
             decision = self.quiz_agent.decide(
                 letters=letters,
                 option_count=len(options),
-                source="visible_answer",
+                source=source,
             )
             if decision.letters:
                 self.logger.info(f"🤖 Agent建议答案: {', '.join(decision.letters)} ({decision.reason})")
@@ -3361,6 +3377,36 @@ class ZhidaoWebAutoPlayerWithQuiz:
         except Exception as e:
             self.logger.debug(f"处理题目弹窗失败: {e}")
             return False
+
+    def answer_popup_with_api(self, options):
+        """Use DeepSeek for video popup questions when visible answers are not available."""
+        try:
+            if not self.answering_service:
+                return []
+            dialog_xpath = selector_value(
+                self.selectors,
+                "with_quiz.dialog_xpath",
+                "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+            )
+            question_type = "multiple" if self.is_multi_choice() else "single"
+            question_data = build_popup_question_data(
+                self.driver,
+                options,
+                question_type=question_type,
+                dialog_xpath=dialog_xpath,
+                logger=self.logger,
+            )
+            if not question_data:
+                return []
+            result = self.answering_service.answer(question_data)
+            if result.valid:
+                self.logger.info(f"🤖 DeepSeek弹窗答案: {', '.join(result.letters)}")
+                return result.letters
+            self.logger.warning(f"⚠️ DeepSeek弹窗答案无效: {result.reason}")
+            return []
+        except Exception as e:
+            self.logger.warning(f"⚠️ DeepSeek弹窗答题失败: {e}")
+            return []
 
     def submit_quiz_dialog(self):
         """点击视频题目弹窗内的提交/确认按钮，避免触碰整页考试提交。"""

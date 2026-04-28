@@ -7,6 +7,7 @@ from typing import Iterable, List, Optional
 
 
 VALID_MODES = {"manual", "assist", "semi_auto", "auto_practice"}
+AUTO_SELECT_SOURCES = {"visible_answer", "api_popup"}
 
 
 @dataclass
@@ -80,6 +81,16 @@ class QuizAutomationAgent:
                 reason="assist mode only reports suggested answer",
             )
 
+        if self.mode == "semi_auto" and source in AUTO_SELECT_SOURCES:
+            return QuizAgentDecision(
+                should_select=True,
+                should_submit=False,
+                should_close=False,
+                letters=normalized,
+                mode=self.mode,
+                reason="semi_auto selects answers and waits for user confirmation",
+            )
+
         if self.mode == "semi_auto":
             return QuizAgentDecision(
                 should_select=False,
@@ -87,17 +98,17 @@ class QuizAutomationAgent:
                 should_close=False,
                 letters=normalized,
                 mode=self.mode,
-                reason="semi_auto requires explicit user confirmation before clicking",
+                reason="semi_auto does not trust this answer source",
             )
 
-        if self.mode == "auto_practice" and source == "visible_answer":
+        if self.mode == "auto_practice" and source in AUTO_SELECT_SOURCES:
             return QuizAgentDecision(
                 should_select=True,
                 should_submit=True,
                 should_close=True,
                 letters=normalized,
                 mode=self.mode,
-                reason="auto_practice can select and submit visible popup answers",
+                reason="auto_practice can select and submit video popup answers",
             )
 
         return QuizAgentDecision(
