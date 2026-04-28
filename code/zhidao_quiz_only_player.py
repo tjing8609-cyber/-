@@ -35,6 +35,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
+from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from quiz_answering import (
     QuizAnsweringService,
@@ -593,24 +594,15 @@ class ZhidaoQuizOnlyPlayer:
         username = self.account_config.get('username')
         password = self.account_config.get('password')
         
-        self.logger.info(f"正在登录，账号: {username[:3]}****{username[-2:] if len(username) > 5 else '**'}")
+        self.logger.info(f"正在登录，账号: {mask_username(username)}")
 
         try:
             # 打开登录页面
             self.driver.get("https://onlineweb.zhihuishu.com/onlinestuh5")
             self.smart_wait(5)
 
-            # 检查当前页面状态
-            current_url = self.driver.current_url
-            page_source = self.driver.page_source
-
             # 判断是否需要登录
-            need_login = any([
-                "login" in current_url.lower(),
-                "登录" in page_source,
-                "手机号" in page_source,
-                "password" in page_source.lower()
-            ])
+            need_login = is_login_required(self.driver)
 
             if need_login:
                 self.logger.info("检测到需要登录")
@@ -823,17 +815,7 @@ class ZhidaoQuizOnlyPlayer:
     def check_login_success(self):
         """检查是否登录成功"""
         try:
-            # 检查是否在课程页面或主页
-            current_url = self.driver.current_url
-            if "onlinestuh5" in current_url and "login" not in current_url:
-                return True
-
-            # 检查页面内容
-            page_source = self.driver.page_source
-            if "我的课程" in page_source or "课程列表" in page_source:
-                return True
-
-            return False
+            return is_login_success(self.driver)
         except Exception as e:
             self.logger.error(f"检查登录状态时出错: {e}")
             return False
