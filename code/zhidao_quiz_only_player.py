@@ -34,6 +34,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
+from auth_actions import try_login_methods as auth_try_login_methods
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from deepseek_agent import create_deepseek_components
@@ -435,69 +436,15 @@ class ZhidaoQuizOnlyPlayer:
 
             if need_login:
                 self.logger.info("检测到需要登录")
-                
-                # 查找用户名输入框
-                username_input = None
-                username_selectors = [
-                    "//input[@type='text']",
-                    "//input[@placeholder='手机号']",
-                ]
-                
-                for selector in username_selectors:
-                    try:
-                        username_input = self.wait.until(EC.presence_of_element_located((By.XPATH, selector)))
-                        break
-                    except:
-                        continue
-                
-                if username_input:
-                    username_input.clear()
-                    username_input.send_keys(username)
-                    self.logger.info("已输入用户名")
-                    self.smart_wait(1)
-                
-                # 查找密码输入框
-                password_input = None
-                password_selectors = [
-                    "//input[@type='password']",
-                ]
-                
-                for selector in password_selectors:
-                    try:
-                        password_input = self.wait.until(EC.presence_of_element_located((By.XPATH, selector)))
-                        break
-                    except:
-                        continue
-                
-                if password_input:
-                    password_input.clear()
-                    password_input.send_keys(password)
-                    self.logger.info("已输入密码")
-                    self.smart_wait(1)
-                
-                # 查找登录按钮
-                login_btn = None
-                login_selectors = [
-                    "//button[contains(text(), '登录')]",
-                    "//span[contains(text(), '登录')]",
-                ]
-                
-                for selector in login_selectors:
-                    try:
-                        elements = self.driver.find_elements(By.XPATH, selector)
-                        for elem in elements:
-                            if '登录' in elem.text:
-                                login_btn = elem
-                                break
-                        if login_btn:
-                            break
-                    except:
-                        continue
-                
-                if login_btn:
-                    login_btn.click()
-                    self.logger.info("已点击登录按钮")
-                    self.smart_wait(3)
+                if not auth_try_login_methods(
+                    self.driver,
+                    self.wait,
+                    username,
+                    password,
+                    logger=self.logger,
+                    wait_func=self.smart_wait,
+                ):
+                    self.logger.warning("⚠️  自动登录动作未完成，继续等待登录状态")
                 
                 # 【新增】等待并持续检测登录状态（最多30秒）
                 max_wait = 30
