@@ -39,7 +39,6 @@ from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from course_entry import has_course_url, open_course_url
 from course_search import find_and_click_course_by_name
-from course_catalog import classify_catalog_text
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
@@ -54,6 +53,7 @@ from video_playback import (
     is_video_playing as playback_is_video_playing,
 )
 from video_catalog import is_catalog_video_completed
+from video_discovery import dedupe_elements_by_text, scan_video_candidates
 
 
 class ZhidaoWebAutoPlayerFinal:
@@ -952,67 +952,12 @@ class ZhidaoWebAutoPlayerFinal:
             unique_elements = list(dict.fromkeys(all_video_elements))
             self.logger.info(f"总共找到 {len(unique_elements)} 个去重后的视频元素")
             
-            # 筛选未观看视频
-            for idx, element in enumerate(unique_elements):
-                try:
-                    text = element.text
-                    if not text:
-                        continue
-                    
-                    self.logger.info(f"\n检查视频 {idx+1}/{len(unique_elements)}: {text[:50]}...")
-                    
-                    # 跳过空文本
-                    if not text or len(text) < 3:
-                        continue
-
-                    catalog_info = classify_catalog_text(text)
-                    if not catalog_info.is_video:
-                        if idx < 10:
-                            self.logger.info(f"  → 跳过：{catalog_info.reason} ({text[:30]}...)")
-                        continue
-                    
-                    # 【排除法】：排除非视频内容（PPT、PDF、作业）
-                    # 注意：不再强制要求包含.mp4，因为长标题会被截断成"..."
-                    # v3.7.4修复：只要不是PPT/PDF/作业，就当作视频处理
-                    
-                    # 跳过PPT文件（PPT单独处理）
-                    if '.pptx' in text.lower() or '.ppt' in text.lower():
-                        if idx < 10:
-                            self.logger.info(f"  → 跳过：PPT文件，稍后单独处理 ({text[:30]}...)")
-                        continue
-                    
-                    # 跳过PDF等其他文件
-                    if '.pdf' in text.lower():
-                        if idx < 10:
-                            self.logger.info(f"  → 跳过：PDF文件 ({text[:30]}...)")
-                        continue
-
-                    # 跳过作业
-                    if "作业" in text:
-                        self.logger.info("  → 跳过：包含'作业'")
-                        continue
-
-                    # 跳过已完成视频（检查绿色勾标记）
-                    if self.is_video_completed(element):
-                        self.logger.info("  → 跳过：已完成（有绿色勾标记）")
-                        continue
-
-                    # 跳过已记录的视频
-                    if text in self.progress['completed_videos']:
-                        self.logger.info("  → 跳过：已记录")
-                        continue
-
-                    # 尝试判断是否是视频
-                    if element.is_displayed() and element.is_enabled():
-                        unwatched_videos.append({
-                            'element': element,
-                            'text': text[:100]
-                        })
-                        self.logger.info(f"  → ✅ 找到未观看视频: {text[:50]}...")
-                        
-                except Exception as e:
-                    self.logger.warning(f"处理视频元素 {idx+1} 时出错: {e}")
-                    continue
+            scan_result = scan_video_candidates(
+                unique_elements,
+                completed_texts=self.progress.get('completed_videos', []),
+                logger=self.logger,
+            )
+            unwatched_videos.extend(scan_result.unwatched)
             
             self.logger.info(f"\n共找到 {len(unwatched_videos)} 个未观看视频")
             return unwatched_videos
@@ -1107,97 +1052,18 @@ class ZhidaoWebAutoPlayerFinal:
                     self.logger.error(f"保存页面HTML失败: {e}")
 
             # 去重
-            unique_elements = []
-            seen_texts = set()
-            for element in all_video_elements:
-                try:
-                    text = element.text.strip()
-                    if text and text not in seen_texts and len(text) > 2:  # 忽略太短的文本
-                        seen_texts.add(text)
-                        unique_elements.append(element)
-                except:
-                    continue
+            unique_elements = dedupe_elements_by_text(all_video_elements)
             
             self.logger.info(f"去重后剩余 {len(unique_elements)} 个元素")
 
-            # 筛选未观看视频
-            for idx, element in enumerate(unique_elements):
-                try:
-                    text = element.text
-                    
-                    # 输出每个元素的信息用于调试
-                    if idx < 20:  # 只输出前20个，避免日志过多
-                        self.logger.info(f"\n检查元素 {idx+1}: {text[:80]}...")
-
-                    # 跳过空文本
-                    if not text or len(text) < 3:
-                        continue
-                    
-                    # 跳过非视频内容（检查是否包含.mp4）
-                    # 注意：有些视频后面可能有百分比，如“007第九章.mp4 8%”
-                    # 所以不能用 endswith，而是用 in 检查
-                    if '.mp4' not in text.lower():  # v3.9.1修复：支持大小写.mp4/.MP4
-                        if idx < 10:  # 只输出前10个
-                            self.logger.info(f"  → 跳过：非视频文件 ({text[:30]}...)")
-                        continue
-                    
-                    # 跳过PPT文件（PPT单独处理）
-                    if '.pptx' in text or '.ppt' in text:
-                        if idx < 10:
-                            self.logger.info(f"  → 跳过：PPT文件，稍后单独处理 ({text[:30]}...)")
-                        continue
-                    
-                    # 跳过PDF等其他文件
-                    if '.pdf' in text:
-                        if idx < 10:
-                            self.logger.info(f"  → 跳过：PDF文件 ({text[:30]}...)")
-                        continue
-
-                    # 跳过作业
-                    if "作业" in text:
-                        self.logger.info("  → 跳过：包含'作业'")
-                        continue
-
-                    # 跳过已完成视频（检查绿色勾标记）
-                    if self.is_video_completed(element):
-                        self.logger.info("  → 跳过：已完成（有绿色勾标记）")
-                        continue
-                    
-                    # 跳过已记录的视频
-                    if text in self.progress['completed_videos']:
-                        self.logger.info("  → 跳过：已记录")
-                        continue
-
-                    # 尝试在元素内部找到真正可点击的<a>标签
-                    clickable_element = element
-                    
-                    # 如果当前元素不是<a>标签，尝试在内部查找
-                    if element.tag_name != 'a':
-                        try:
-                            # 在元素内部查找<a>标签
-                            link = element.find_element(By.XPATH, ".//a")
-                            if link and link.is_displayed() and link.is_enabled():
-                                clickable_element = link
-                                self.logger.info(f"  → 在元素内部找到可点击的<a>标签")
-                        except:
-                            # 没找到<a>标签，使用原元素
-                            pass
-                    
-                    # 尝试判断是否是视频
-                    # 放宽条件，只要是可点击的元素就加入
-                    try:
-                        if clickable_element.is_displayed() and clickable_element.is_enabled():
-                            unwatched_videos.append({
-                                'element': clickable_element,  # 使用找到的可点击元素
-                                'text': text[:100]  # 截取前100字符
-                            })
-                            self.logger.info(f"  → ✅ 找到未观看视频: {text[:50]}... [元素类型: {clickable_element.tag_name}]")
-                    except:
-                        continue
-
-                except Exception as e:
-                    self.logger.warning(f"处理视频元素 {idx+1} 时出错: {e}")
-                    continue
+            scan_result = scan_video_candidates(
+                unique_elements,
+                completed_texts=self.progress.get('completed_videos', []),
+                logger=self.logger,
+                require_mp4=True,
+                prefer_inner_link=True,
+            )
+            unwatched_videos.extend(scan_result.unwatched)
 
             self.logger.info(f"\n共找到 {len(unwatched_videos)} 个未观看视频")
             

@@ -35,7 +35,6 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
-from course_catalog import classify_catalog_text
 from course_entry import has_course_url, open_course_url
 from course_search import enter_study_page as search_enter_study_page
 from course_search import find_and_click_course_by_name
@@ -57,7 +56,8 @@ from video_playback import (
     get_video_progress as playback_get_video_progress,
     is_video_playing as playback_is_video_playing,
 )
-from video_catalog import is_catalog_video_completed, video_title_from_text
+from video_catalog import video_title_from_text
+from video_discovery import scan_video_candidates
 
 
 def bezier_curve(start, end, control1=None, control2=None, steps=20):
@@ -1580,162 +1580,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 except Exception as e:
                     self.logger.debug(f"保存HTML失败: {e}")
             
-            # 筛选未观看视频
-            for idx, element in enumerate(unique_elements):
-                try:
-                    text = element.text
-                    if not text or len(text) < 3:
-                        continue
-
-                    catalog_info = classify_catalog_text(text)
-                    if not catalog_info.is_video:
-                        self.logger.debug(f"  → 跳过：{catalog_info.reason} ({text[:30]}...)")
-                        continue
-                    
-                    # 跳过PPT文件
-                    if '.pptx' in text.lower() or '.ppt' in text.lower():
-                        self.logger.debug(f"  → 跳过：PPT文件 ({text[:30]}...)")
-                        continue
-                    
-                    # 跳过PDF等其他文件
-                    if '.pdf' in text.lower():
-                        self.logger.debug(f"  → 跳过：PDF文件 ({text[:30]}...)")
-                        continue
-
-                    # 跳过作业
-                    if "作业" in text:
-                        self.logger.debug(f"  → 跳过：作业 ({text[:30]}...)")
-                        continue
-                    
-                    # 跳过非视频内容（见面课、课程问答、课程表、成绩分析、课程资料、平时测试）
-                    skip_keywords = ["见面课", "课程问答", "课程表", "成绩分析", "课程资料", "平时测试"]
-                    if any(keyword in text for keyword in skip_keywords):
-                        self.logger.debug(f"  → 跳过：非视频内容 ({text[:30]}...)")
-                        continue
-                    
-                    # 跳过章节标题（只有章节名称，没有时长信息）
-                    # 例如："绪章\n绪论——增强适应能力，争做创造性人才"
-                    if not catalog_info.is_video and ':' not in text and 'px' not in text:  # 没有时长格式
-                        # 检查是否包含数字编号（如 0.1, 1.1, 2.1.1）
-                        import re
-                        # 匹配视频编号格式：至少一个数字 + 点 + 至少一个数字（可选再次重复）
-                        # 0.1, 1.2.3, 2.1.6 等是视频
-                        # 0.2, 1.1, 2.1 等可能是章节标题
-                        has_valid_number = re.search(r'\d+\.\d+\.\d+', text)  # 三级编号（如 2.1.6）
-                        
-                        if not has_valid_number:
-                            # 没有三级编号，检查是否是二级编号
-                            has_two_level = re.search(r'\d+\.\d+', text)
-                            
-                            if has_two_level:
-                                # 有二级编号但没有时长，检查是否是章节标题
-                                # 如果编号中间没有空格且后面紧跟\n，可能是章节标题
-                                # 例如："0.2\n大学生活..." 是章节标题
-                                # 而："2.1.6\n调节情绪\n11%\n00:07:14" 是视频
-                                match = re.search(r'^(\d+\.\d+)\s*\n', text)
-                                if match:
-                                    # 编号后直接换行，可能是章节标题
-                                    self.logger.debug(f"  → 跳过：章节标题 ({text[:30]}...)")
-                                    continue
-                            else:
-                                # 没有编号且没有时长，必定是章节标题
-                                self.logger.debug(f"  → 跳过：章节标题 ({text[:30]}...)")
-                                continue
-
-                    if is_catalog_video_completed(element, logger=self.logger):
-                        self.logger.debug(f"  → 跳过：已完成 ({text[:30]}...)")
-                        video_title = self._extract_video_title(text)
-                        if not any(v.get('title') == video_title for v in watched_videos):
-                            watched_videos.append({
-                                'text': text[:100],
-                                'title': video_title
-                            })
-                            self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
-                        continue
-
-                    # 检查是否已完成（查找蓝色勾选标记）
-                    try:
-                        # 方法1：查找 time_icofinish class（知到平台完成标记）
-                        parent_element = element  # 从当前元素开始
-                        
-                        # 如果是span，向上查找父元素
-                        try:
-                            if element.tag_name == 'span':
-                                parent_element = element.find_element(By.XPATH, "./..")
-                        except:
-                            pass
-                        
-                        # 查找完成标记（优先time_icofinish）
-                        completed_markers = parent_element.find_elements(By.XPATH, 
-                            ".//*[contains(@class, 'time_icofinish') or contains(@class, 'complete') or contains(@class, 'finish') or contains(@class, 'done') or contains(@class, '已完成')]")
-                        
-                        if completed_markers:
-                            self.logger.debug(f"  → 跳过：找到完成标记 ({text[:30]}...)")
-                            # 记录已观看视频（去重）
-                            video_title = self._extract_video_title(text)
-                            # 检查是否已存在
-                            if not any(v.get('title') == video_title for v in watched_videos):
-                                watched_videos.append({
-                                    'text': text[:100],
-                                    'title': video_title
-                                })
-                                self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
-                            continue
-                        
-                        # 方法2：检查进度是否100%
-                        try:
-                            progress_element = parent_element.find_element(By.XPATH, ".//*[contains(@class, 'progress-num')]")
-                            progress_text = progress_element.text.strip()
-                            # 提取数字
-                            import re
-                            progress_match = re.search(r'(\d+)%', progress_text)
-                            if progress_match:
-                                progress_value = int(progress_match.group(1))
-                                if progress_value == 100:
-                                    self.logger.debug(f"  → 跳过：进度100% ({text[:30]}...)")
-                                    # 记录已观看视频（去重）
-                                    video_title = self._extract_video_title(text)
-                                    if not any(v.get('title') == video_title for v in watched_videos):
-                                        watched_videos.append({
-                                            'text': text[:100],
-                                            'title': video_title
-                                        })
-                                        self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
-                                    continue
-                                elif progress_value > 0:
-                                    # 有进度但未完成，记录进度
-                                    self.logger.debug(f"  ℹ️  进度{progress_value}%: {text[:30]}...")
-                        except:
-                            pass
-                        
-                        # 方法3：检查文本中是否包含100%或完成关键词
-                        if '100%' in text or '已完成' in text or '已学完' in text:
-                            self.logger.debug(f"  → 跳过：文本包含完成标记 ({text[:30]}...)")
-                            # 记录已观看视频（去重）
-                            video_title = self._extract_video_title(text)
-                            if not any(v.get('title') == video_title for v in watched_videos):
-                                watched_videos.append({
-                                    'text': text[:100],
-                                    'title': video_title
-                                })
-                                self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
-                            continue
-                            
-                    except Exception as e:
-                        self.logger.debug(f"  检查完成状态失败: {e}")
-                        pass
-
-                    # 尝试判断是否是视频
-                    if element.is_displayed() and element.is_enabled():
-                        unwatched_videos.append({
-                            'element': element,
-                            'text': text[:100]
-                        })
-                        self.logger.info(f"  → ✅ 找到未观看视频: {text[:50]}...")
-                        
-                except Exception as e:
-                    self.logger.debug(f"处理视频元素 {idx+1} 时出错: {e}")
-                    continue
+            scan_result = scan_video_candidates(
+                unique_elements,
+                completed_texts=self.progress.get('completed_videos', []),
+                logger=self.logger,
+            )
+            unwatched_videos.extend(scan_result.unwatched)
+            for watched in scan_result.watched:
+                if not any(item.get('title') == watched.get('title') for item in watched_videos):
+                    watched_videos.append(watched)
             
             self.logger.info(f"\n🎯 共找到 {len(unwatched_videos)} 个未观看视频")
             self.logger.info(f"📚 共找到 {len(watched_videos)} 个已观看视频")

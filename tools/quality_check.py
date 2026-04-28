@@ -26,6 +26,7 @@ PY_FILES = [
     ROOT / "code" / "quiz_popup_actions.py",
     ROOT / "code" / "video_playback.py",
     ROOT / "code" / "video_catalog.py",
+    ROOT / "code" / "video_discovery.py",
     ROOT / "code" / "task_orchestrator.py",
     ROOT / "code" / "zhidao_quiz_only_player.py",
     ROOT / "code" / "zhidao_web_auto_player_final.py",
