@@ -15,11 +15,13 @@ See the Mulan PSL v2 for more details.
 根据课程类型自动选择对应的播放器版本
 """
 
-import json
 import sys
 import os
 import importlib
+from config_loader import ConfigLoadError
 from runtime_center import run_health_check, update_observability, write_failure_snapshot
+from run_context import create_run_context
+from run_target import resolve_run_target as resolve_target
 
 # 【修复】设置stdout编码为UTF-8，避免Windows下emoji输出错误
 if sys.platform == 'win32':
@@ -34,67 +36,18 @@ if code_dir not in sys.path:
 
 
 def load_account_config(account_file):
-    """加载账号配置"""
+    """加载账号配置。保留旧接口，实际解析逻辑已集中到 run_context/config_loader。"""
     try:
-        # 尝试多种编码
-        encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312']
-        for encoding in encodings:
-            try:
-                with open(account_file, 'r', encoding=encoding) as f:
-                    return json.load(f)
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                continue
-        # 如果所有编码都失败
-        raise Exception("无法解析配置文件")
-    except FileNotFoundError:
-        print(f"[错误] 找不到配置文件: {account_file}")
-        sys.exit(1)
-    except Exception as e:
-        print(f"[错误] 配置文件错误: {account_file} - {e}")
+        return create_run_context(account_file, code_dir=code_dir).config
+    except ConfigLoadError as e:
+        print(f"[错误] {e}")
         sys.exit(1)
 
 
 def resolve_run_target(mode, course_type):
-    if mode == 'quiz_only' or course_type == 3:
-        return {
-            'detect_message': "[检测] 纯答题模式",
-            'extra_messages': ["[提示] 建议使用 mode='quiz_only' 代替 course_type=3"] if course_type == 3 else [],
-            'type_message': None,
-            'module_name': 'zhidao_quiz_only_player',
-            'class_name': 'ZhidaoQuizOnlyPlayer',
-            'start_message': "[启动] zhidao_quiz_only_player.py",
-            'import_error_message': "[错误] 无法导入纯答题播放器: {error}",
-            'missing_file_message': "请确保 zhidao_quiz_only_player.py 文件存在"
-        }
-
-    video_targets = {
-        1: {
-            'detect_message': "[检测] 无题目课程",
-            'module_name': 'zhidao_web_auto_player_final',
-            'class_name': 'ZhidaoWebAutoPlayerFinal',
-            'start_message': "[启动] zhidao_web_auto_player_final.py",
-            'import_error_message': "[错误] 无法导入旧版播放器: {error}",
-            'missing_file_message': "请确保 zhidao_web_auto_player_final.py 文件存在"
-        },
-        2: {
-            'detect_message': "[检测] 有题目课程",
-            'module_name': 'zhidao_web_auto_player_with_quiz',
-            'class_name': 'ZhidaoWebAutoPlayerWithQuiz',
-            'start_message': "[启动] zhidao_web_auto_player_with_quiz.py",
-            'import_error_message': "[错误] 无法导入新版播放器: {error}",
-            'missing_file_message': "请确保 zhidao_web_auto_player_with_quiz.py 文件存在"
-        }
-    }
-
-    if mode == 'video' and course_type in video_targets:
-        target = video_targets[course_type].copy()
-        target.update({
-            'extra_messages': [],
-            'type_message': f"[类型] {course_type}"
-        })
-        return target
-
-    return None
+    """保留旧接口，返回旧版dict结构。"""
+    target = resolve_target(mode, course_type)
+    return target.as_legacy_dict() if target else None
 
 
 def main():
@@ -108,25 +61,28 @@ def main():
     
     args = parser.parse_args()
     
-    # 加载账号配置
-    config = load_account_config(args.account)
-    
-    # 获取运行模式（新增：优先检查mode字段）
-    mode = config.get('mode', 'video')  # 默认为视频模式
-    course_type = config.get('course_type', 1)
-    course_name = config.get('course_name', '未指定')
-    quiz_type = config.get('quiz_type', '课程测试')
+    try:
+        context = create_run_context(args.account, headless=args.headless, code_dir=code_dir)
+    except ConfigLoadError as e:
+        print(f"[错误] {e}")
+        sys.exit(1)
+
+    config = context.normalized_config
+    mode = context.mode
+    course_type = context.course_type
+    course_name = context.course_name
+    quiz_type = context.quiz_type
     
     print("=" * 60)
     print("知到网页版自动播放器 - 智能启动器")
     print("=" * 60)
-    print(f"[配置] {args.account}")
+    print(f"[配置] {context.account_path}")
     print(f"[课程] {course_name}")
     print(f"[模式] {mode}")
 
-    project_root = os.path.dirname(code_dir)
+    project_root = str(context.project_root)
     if not args.skip_health_check:
-        report, report_file = run_health_check(config, args.account, project_root)
+        report, report_file = run_health_check(config, str(context.account_path), project_root)
         print(f"[健康检查] 报告: {report_file}")
         if report['warnings']:
             for item in report['warnings']:
@@ -137,7 +93,7 @@ def main():
             print("[终止] 健康检查未通过")
             sys.exit(1)
     
-    run_target = resolve_run_target(mode, course_type)
+    run_target = resolve_target(context)
     if run_target is None:
         print(f"[错误] 未知的运行模式: mode={mode}, course_type={course_type}")
         print("运行模式说明:")
@@ -146,52 +102,58 @@ def main():
         print("  - mode='quiz_only' 或 course_type=3: 纯答题模式")
         sys.exit(1)
 
-    print(run_target['detect_message'])
-    if run_target['type_message']:
-        print(run_target['type_message'])
-    for message in run_target['extra_messages']:
+    print(run_target.detect_message)
+    if run_target.type_message:
+        print(run_target.type_message)
+    for message in run_target.extra_messages:
         print(message)
-    if run_target['module_name'] == 'zhidao_quiz_only_player':
+    if run_target.module_name == 'zhidao_quiz_only_player':
         print(f"[测试] {quiz_type}")
-    print(run_target['start_message'])
+    print(run_target.start_message)
     print("=" * 60)
 
     try:
-        module = importlib.import_module(run_target['module_name'])
-        player_class = getattr(module, run_target['class_name'])
-        player = player_class(account_file=args.account, headless=args.headless)
+        module = importlib.import_module(run_target.module_name)
+        player_class = getattr(module, run_target.class_name)
+        player = player_class(account_file=str(context.account_path), headless=context.headless)
         update_observability(project_root, {
             "status": "running",
-            "account_file": args.account,
+            "account_file": str(context.account_path),
             "mode": mode,
-            "module": run_target['module_name']
+            "module": run_target.module_name
         })
         player.run()
         update_observability(project_root, {
             "status": "completed",
-            "account_file": args.account,
+            "account_file": str(context.account_path),
             "mode": mode,
-            "module": run_target['module_name']
+            "module": run_target.module_name
         })
     except ImportError as e:
-        print(run_target['import_error_message'].format(error=e))
-        print(run_target['missing_file_message'])
+        print(run_target.import_error_message.format(error=e))
+        print(run_target.missing_file_message)
         update_observability(project_root, {
             "status": "import_error",
-            "account_file": args.account,
+            "account_file": str(context.account_path),
             "mode": mode,
-            "module": run_target['module_name'],
+            "module": run_target.module_name,
             "error": str(e)
         })
         sys.exit(1)
     except Exception as e:
-        snapshot_file = write_failure_snapshot(project_root, args.account, run_target['module_name'], locals().get('player'), e)
+        snapshot_file = write_failure_snapshot(
+            project_root,
+            str(context.account_path),
+            run_target.module_name,
+            locals().get('player'),
+            e
+        )
         print(f"[失败快照] {snapshot_file}")
         update_observability(project_root, {
             "status": "failed",
-            "account_file": args.account,
+            "account_file": str(context.account_path),
             "mode": mode,
-            "module": run_target['module_name'],
+            "module": run_target.module_name,
             "error": str(e),
             "snapshot": snapshot_file
         })

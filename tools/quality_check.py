@@ -7,6 +7,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PY_FILES = [
     ROOT / "auto_start.py",
     ROOT / "code" / "zhidao_launcher.py",
+    ROOT / "code" / "config_loader.py",
+    ROOT / "code" / "run_context.py",
+    ROOT / "code" / "run_target.py",
     ROOT / "code" / "runtime_center.py",
     ROOT / "code" / "course_catalog.py",
     ROOT / "code" / "course_outline.py",
