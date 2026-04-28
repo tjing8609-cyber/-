@@ -8,6 +8,7 @@ PY_FILES = [
     ROOT / "auto_start.py",
     ROOT / "code" / "zhidao_launcher.py",
     ROOT / "code" / "runtime_center.py",
+    ROOT / "code" / "course_catalog.py",
     ROOT / "code" / "course_outline.py",
     ROOT / "code" / "page_detection.py",
     ROOT / "code" / "quiz_answering.py",

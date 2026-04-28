@@ -33,6 +33,7 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
+from course_catalog import classify_catalog_text, extract_catalog_title
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
@@ -1754,6 +1755,11 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     text = element.text
                     if not text or len(text) < 3:
                         continue
+
+                    catalog_info = classify_catalog_text(text)
+                    if not catalog_info.is_video:
+                        self.logger.debug(f"  → 跳过：{catalog_info.reason} ({text[:30]}...)")
+                        continue
                     
                     # 跳过PPT文件
                     if '.pptx' in text.lower() or '.ppt' in text.lower():
@@ -1778,7 +1784,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     
                     # 跳过章节标题（只有章节名称，没有时长信息）
                     # 例如："绪章\n绪论——增强适应能力，争做创造性人才"
-                    if ':' not in text and 'px' not in text:  # 没有时长格式
+                    if not catalog_info.is_video and ':' not in text and 'px' not in text:  # 没有时长格式
                         # 检查是否包含数字编号（如 0.1, 1.1, 2.1.1）
                         import re
                         # 匹配视频编号格式：至少一个数字 + 点 + 至少一个数字（可选再次重复）
@@ -1906,16 +1912,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def _extract_video_title(self, text):
         """从元素文本中提取视频标题（去除进度、时长等信息）"""
-        import re
-        # 移除进度百分比（如 11%, 100%）
-        text = re.sub(r'\d+%', '', text)
-        # 移除时长（如 00:07:14）
-        text = re.sub(r'\d{2}:\d{2}:\d{2}', '', text)
-        text = re.sub(r'\d{2}:\d{2}', '', text)
-        # 移除多余的空格和换行
-        text = ' '.join(text.split())
-        # 取前50个字符作为标题
-        return text[:50].strip()
+        return extract_catalog_title(text, max_length=50)
     
     def get_current_video_title(self):
         """获取当前正在播放的视频标题（从左上角）"""

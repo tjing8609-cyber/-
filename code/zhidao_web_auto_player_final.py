@@ -35,6 +35,7 @@ from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from course_catalog import classify_catalog_text
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
@@ -1166,6 +1167,12 @@ class ZhidaoWebAutoPlayerFinal:
                     
                     # 跳过空文本
                     if not text or len(text) < 3:
+                        continue
+
+                    catalog_info = classify_catalog_text(text)
+                    if not catalog_info.is_video:
+                        if idx < 10:
+                            self.logger.info(f"  → 跳过：{catalog_info.reason} ({text[:30]}...)")
                         continue
                     
                     # 【排除法】：排除非视频内容（PPT、PDF、作业）
