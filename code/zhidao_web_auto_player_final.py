@@ -37,6 +37,11 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
+from page_detection import (
+    close_common_dialogs,
+    is_course_page_ready as detect_course_page_ready,
+    try_click_enter_study as detect_try_click_enter_study,
+)
 
 
 class ZhidaoWebAutoPlayerFinal:
@@ -2233,42 +2238,15 @@ class ZhidaoWebAutoPlayerFinal:
 
     def is_course_page_ready(self):
         """判断是否已进入可继续播放的课程页面"""
-        try:
-            current_url = (self.driver.current_url or "").lower()
-            if "studyvideo" in current_url or "study" in current_url:
-                return True
-            if self.driver.find_elements(By.TAG_NAME, "video"):
-                return True
-            page_source = self.driver.page_source
-            markers = ["继续学习", "开始学习", "学习进度", "章节", "课程目录", "视频"]
-            return any(marker in page_source for marker in markers)
-        except Exception:
-            return False
+        return detect_course_page_ready(self.driver)
 
     def try_click_enter_study(self):
         """尝试点击进入学习按钮"""
-        xpaths = [
-            "//*[contains(text(),'继续学习')]",
-            "//*[contains(text(),'开始学习')]",
-            "//*[contains(text(),'进入学习')]",
-            "//*[contains(text(),'去学习')]"
-        ]
-        for xpath in xpaths:
-            try:
-                buttons = self.driver.find_elements(By.XPATH, xpath)
-                for button in buttons:
-                    if not button.is_displayed():
-                        continue
-                    try:
-                        button.click()
-                    except Exception:
-                        self.driver.execute_script("arguments[0].click();", button)
-                    self.logger.info("✅ 已尝试点击“继续学习/开始学习”按钮")
-                    self.smart_wait(2)
-                    return True
-            except Exception:
-                continue
-        return False
+        return detect_try_click_enter_study(
+            self.driver,
+            logger=self.logger,
+            wait_func=self.smart_wait,
+        )
 
     def wait_for_course_page_ready(self, timeout_seconds=600):
         """等待进入课程页面并在需要时尝试自动点击进入学习"""
@@ -2279,14 +2257,7 @@ class ZhidaoWebAutoPlayerFinal:
                 if self.is_course_page_ready():
                     self.logger.info("✅ 已进入课程页面")
                     return True
-                dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'el-dialog__wrapper')]")
-                if dialogs:
-                    close_btns = self.driver.find_elements(By.XPATH, "//button[contains(.,'同意') or contains(.,'确认') or contains(.,'关闭') or contains(.,'知道了')] | //i[contains(@class,'iconguanbi')]")
-                    if close_btns:
-                        try:
-                            close_btns[0].click()
-                        except Exception:
-                            pass
+                close_common_dialogs(self.driver, logger=self.logger)
                 self.try_click_enter_study()
             except Exception:
                 pass
