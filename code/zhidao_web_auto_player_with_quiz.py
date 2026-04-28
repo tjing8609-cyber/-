@@ -35,6 +35,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from course_catalog import classify_catalog_text, extract_catalog_title
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
+from quiz_popup_actions import click_quiz_popup_submit
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
@@ -3432,6 +3433,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.click_correct_answer(first, options)
                     # 点击后再滚动一次以确认状态
                     self.scroll_quiz_dialog('bottom')
+
+                if decision.should_submit:
+                    self.smart_wait(1)
+                    self.submit_quiz_dialog()
                 
                 if decision.should_close:
                     self.smart_wait(2)
@@ -3440,6 +3445,23 @@ class ZhidaoWebAutoPlayerWithQuiz:
             return False
         except Exception as e:
             self.logger.debug(f"处理题目弹窗失败: {e}")
+            return False
+
+    def submit_quiz_dialog(self):
+        """点击视频题目弹窗内的提交/确认按钮，避免触碰整页考试提交。"""
+        try:
+            dialog_xpath = selector_value(
+                self.selectors,
+                "with_quiz.dialog_xpath",
+                "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+            )
+            return click_quiz_popup_submit(
+                self.driver,
+                logger=self.logger,
+                dialog_xpath=dialog_xpath,
+            )
+        except Exception as e:
+            self.logger.debug(f"点击题目弹窗提交按钮失败: {e}")
             return False
 
     def wait_for_video_complete(self, max_wait_minutes=60):

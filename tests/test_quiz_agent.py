@@ -30,6 +30,7 @@ class QuizAgentTests(unittest.TestCase):
         decision = QuizAutomationAgent("auto_practice").decide(["A", "C"], option_count=4)
 
         self.assertTrue(decision.should_select)
+        self.assertTrue(decision.should_submit)
         self.assertTrue(decision.should_close)
         self.assertEqual(decision.letters, ["A", "C"])
 

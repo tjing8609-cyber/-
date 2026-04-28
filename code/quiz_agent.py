@@ -12,6 +12,7 @@ VALID_MODES = {"manual", "assist", "semi_auto", "auto_practice"}
 @dataclass
 class QuizAgentDecision:
     should_select: bool
+    should_submit: bool
     should_close: bool
     letters: List[str]
     mode: str
@@ -52,6 +53,7 @@ class QuizAutomationAgent:
         if not normalized:
             return QuizAgentDecision(
                 should_select=False,
+                should_submit=False,
                 should_close=False,
                 letters=[],
                 mode=self.mode,
@@ -61,6 +63,7 @@ class QuizAutomationAgent:
         if self.mode == "manual":
             return QuizAgentDecision(
                 should_select=False,
+                should_submit=False,
                 should_close=False,
                 letters=normalized,
                 mode=self.mode,
@@ -70,6 +73,7 @@ class QuizAutomationAgent:
         if self.mode == "assist":
             return QuizAgentDecision(
                 should_select=False,
+                should_submit=False,
                 should_close=False,
                 letters=normalized,
                 mode=self.mode,
@@ -79,6 +83,7 @@ class QuizAutomationAgent:
         if self.mode == "semi_auto":
             return QuizAgentDecision(
                 should_select=False,
+                should_submit=False,
                 should_close=False,
                 letters=normalized,
                 mode=self.mode,
@@ -88,14 +93,16 @@ class QuizAutomationAgent:
         if self.mode == "auto_practice" and source == "visible_answer":
             return QuizAgentDecision(
                 should_select=True,
+                should_submit=True,
                 should_close=True,
                 letters=normalized,
                 mode=self.mode,
-                reason="auto_practice can select visible popup answers",
+                reason="auto_practice can select and submit visible popup answers",
             )
 
         return QuizAgentDecision(
             should_select=False,
+            should_submit=False,
             should_close=False,
             letters=normalized,
             mode=self.mode,
