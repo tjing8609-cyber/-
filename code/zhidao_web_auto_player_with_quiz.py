@@ -54,7 +54,6 @@ from quiz_popup_actions import (
     visible_quiz_options,
 )
 from runtime_center import load_selectors, selector_value
-from course_outline import expand_collapsed_chapters
 from page_detection import (
     is_captcha_present,
     is_course_page_ready as detect_course_page_ready,
@@ -70,7 +69,11 @@ from video_playback import (
     is_video_playing as playback_is_video_playing,
 )
 from video_catalog import video_title_from_text
-from video_discovery import scan_video_candidates
+from video_discovery import (
+    EXTENDED_SIDEBAR_SELECTORS,
+    EXTENDED_SIDEBAR_VIDEO_SELECTORS,
+    discover_sidebar_videos,
+)
 
 
 def bezier_curve(start, end, control1=None, control2=None, steps=20):
@@ -1244,165 +1247,22 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.debug(f"📚 加载现有已观看视频列表: {len(watched_videos)} 个")
         
         try:
-            # 查找右侧目录侧边栏
-            sidebar_selectors = [
-                "//div[contains(@class, 'box-right')]",  # 优先：右侧整个目录容器
-                "//div[contains(@class, 'catalog_box')]",  # 目录盒子
-                "//div[contains(@class, 'catalog')]",
-                "//div[contains(@class, 'sidebar')]",
-                "//div[contains(@class, 'directory')]",
-                "//aside",
-            ]
-            
-            sidebar = None
-            for selector in sidebar_selectors:
-                try:
-                    sidebar = self.driver.find_element(By.XPATH, selector)
-                    if sidebar and sidebar.is_displayed():
-                        self.logger.info(f"✅ 找到右侧目录: {selector}")
-                        break
-                except:
-                    continue
-            
-            if not sidebar:
-                self.logger.warning("⚠️  未找到右侧目录，可能不是新版布局")
-                return []
-            
-            # 滚动侧边栏加载所有内容
-            self.logger.info("📜 滚动右侧目录加载所有视频...")
-            
-            # 查找实际的滚动容器（el-scrollbar__wrap）
-            scroll_container = None
-            try:
-                # 优先查找 el-scrollbar__wrap
-                scroll_container = sidebar.find_element(By.XPATH, ".//*[contains(@class, 'el-scrollbar__wrap')]")
-                self.logger.info("✅ 找到滚动容器: el-scrollbar__wrap")
-            except:
-                try:
-                    # 备用：查找其他滚动容器
-                    scroll_container = sidebar.find_element(By.XPATH, ".//*[contains(@class, 'scrollbar-wrap') or contains(@class, 'scroll-wrap')]")
-                    self.logger.info("✅ 找到滚动容器: scrollbar-wrap")
-                except:
-                    # 最后使用sidebar本身
-                    scroll_container = sidebar
-                    self.logger.info("使用侧边栏本身作为滚动容器")
-
-            # 新版页面会把后续章节折叠起来，例如需要先点击“第二章”
-            # 才能看到该章下的视频。先展开可见章节，再进入原有扫描逻辑。
-            expand_collapsed_chapters(
+            debug_file = os.path.join(self.project_root, 'log', 'debug_sidebar.html')
+            scan_result = discover_sidebar_videos(
                 self.driver,
-                sidebar,
-                logger=self.logger,
-                wait_func=self.smart_wait,
-                max_passes=8,
-            )
-            
-            # 使用鼠标滚轮事件模拟真实滚动
-            self.logger.info("🔄 开始使用鼠标滚轮模拟滚动...")
-            
-            max_scroll_attempts = 20  # 最多滚动20次
-            scroll_no_change_count = 0  # 连续未变化次数
-            
-            for i in range(max_scroll_attempts):
-                # 记录滚动前的位置
-                scroll_before = self.driver.execute_script("return arguments[0].scrollTop;", scroll_container)
-                
-                # 使用JavaScript触发wheel事件（模拟鼠标滚轮）
-                self.driver.execute_script("""
-                    var element = arguments[0];
-                    var wheelEvent = new WheelEvent('wheel', {
-                        deltaY: 500,  // 向下滚动500像素
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    element.dispatchEvent(wheelEvent);
-                    
-                    // 备用方法：直接修改scrollTop
-                    element.scrollTop = element.scrollTop + 500;
-                """, scroll_container)
-                
-                self.smart_wait(0.8)  # 等待滚动动画和内容加载
-                
-                # 记录滚动后的位置
-                scroll_after = self.driver.execute_script("return arguments[0].scrollTop;", scroll_container)
-                scroll_height = self.driver.execute_script("return arguments[0].scrollHeight;", scroll_container)
-                
-                self.logger.info(f"  滚动 {i+1}/{max_scroll_attempts}: {scroll_before}px → {scroll_after}px (总高度: {scroll_height}px)")
-                
-                # 如果滚动位置没有变化
-                if scroll_after == scroll_before:
-                    scroll_no_change_count += 1
-                    self.logger.debug(f"  ⚠️  滚动位置未变化 ({scroll_no_change_count}/3)")
-                    
-                    # 连续3次未变化，说明已经到底
-                    if scroll_no_change_count >= 3:
-                        self.logger.info(f"  ✅ 滚动位置连续3次未变化，已到达底部")
-                        break
-                else:
-                    scroll_no_change_count = 0  # 重置计数
-                
-                # 如果已经到底，提前退出
-                if scroll_after >= scroll_height - 100:
-                    self.logger.info(f"  ✅ 已滚动到底部，提前结束滚动")
-                    break
-            
-            self.logger.info("✅ 滚动完成，等待内容加载...")
-            self.smart_wait(2)
-            
-            # 回到顶部
-            self.driver.execute_script("arguments[0].scrollTop = 0;", scroll_container)
-            self.smart_wait(1)
-            
-            # 在侧边栏中查找视频元素
-            self.logger.info("🔍 开始查找视频元素...")
-            
-            video_selectors = [
-                ".//li[contains(@class, 'clearfix')]",  # 优先：课程列表项
-                ".//div[contains(@class, 'video') or contains(@class, 'lesson')]",
-                ".//li[contains(@class, 'video') or contains(@class, 'lesson')]",
-                ".//a[contains(@class, 'video') or contains(@class, 'lesson')]",
-                ".//*[contains(@class, 'catalog_title')]",  # 课程标题
-                ".//div[contains(@class, 'item')]",
-                ".//div[contains(@class, 'chapter-item')]",
-                ".//span[contains(@class, 'catalog_title')]",  # span标签的课程标题
-                ".//li",  # 通用li元素
-            ]
-            
-            all_video_elements = []
-            for selector in video_selectors:
-                try:
-                    elements = sidebar.find_elements(By.XPATH, selector)
-                    if elements:
-                        self.logger.info(f"✅ 选择器 '{selector}' 找到 {len(elements)} 个元素")
-                        all_video_elements.extend(elements)
-                    else:
-                        self.logger.debug(f"⚠️  选择器 '{selector}' 未找到元素")
-                except Exception as e:
-                    self.logger.debug(f"❌ 选择器 '{selector}' 失败: {e}")
-            
-            # 去重
-            unique_elements = list(dict.fromkeys(all_video_elements))
-            self.logger.info(f"📋 总共找到 {len(unique_elements)} 个去重后的视频元素")
-            
-            # 如果找不到任何元素，保存HTML调试
-            if len(unique_elements) == 0:
-                try:
-                    debug_html = sidebar.get_attribute('outerHTML')
-                    # 保存到log文件夹，避免污染根目录
-                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                    debug_file = os.path.join(project_root, 'log', 'debug_sidebar.html')
-                    with open(debug_file, 'w', encoding='utf-8') as f:
-                        f.write(debug_html)
-                    self.logger.warning(f"⚠️  未找到任何视频元素，已保存侧边栏HTML到 {debug_file}")
-                    self.logger.info("🔍 请检查 log/debug_sidebar.html 文件，查看实际的HTML结构")
-                except Exception as e:
-                    self.logger.debug(f"保存HTML失败: {e}")
-            
-            scan_result = scan_video_candidates(
-                unique_elements,
                 completed_texts=self.progress.get('completed_videos', []),
                 logger=self.logger,
+                wait_func=self.smart_wait,
+                sidebar_selectors=EXTENDED_SIDEBAR_SELECTORS,
+                video_selectors=EXTENDED_SIDEBAR_VIDEO_SELECTORS,
+                use_wheel_scroll=True,
+                include_watched=True,
+                debug_html_path=debug_file,
             )
+            if scan_result is None:
+                self.logger.warning("⚠️  未找到右侧目录，可能不是新版布局")
+                return []
+
             unwatched_videos.extend(scan_result.unwatched)
             for watched in scan_result.watched:
                 if not any(item.get('title') == watched.get('title') for item in watched_videos):

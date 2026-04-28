@@ -45,7 +45,6 @@ from browser_session import create_browser_session, resolve_local_driver_paths
 from course_entry import has_course_url, open_course_url
 from course_search import find_and_click_course_by_name
 from runtime_center import load_selectors, selector_value
-from course_outline import expand_collapsed_chapters
 from page_detection import (
     close_question_popup as detect_close_question_popup,
     detect_course_layout as detect_course_layout_type,
@@ -64,7 +63,13 @@ from video_playback import (
     start_video_playback,
 )
 from video_catalog import is_catalog_video_completed
-from video_discovery import dedupe_elements_by_text, scan_video_candidates
+from video_discovery import (
+    DEFAULT_SIDEBAR_SELECTORS,
+    DEFAULT_SIDEBAR_VIDEO_SELECTORS,
+    dedupe_elements_by_text,
+    discover_sidebar_videos,
+    scan_video_candidates,
+)
 
 
 class ZhidaoWebAutoPlayerFinal:
@@ -640,86 +645,20 @@ class ZhidaoWebAutoPlayerFinal:
     def find_videos_from_sidebar(self):
         """从右侧目录侧边栏查找视频"""
         self.logger.info("从右侧目录侧边栏查找视频...")
-        unwatched_videos = []
-        
         try:
-            # 查找侧边栏元素
-            sidebar_selectors = [
-                "//div[contains(@class, 'catalog')]",
-                "//div[contains(@class, 'sidebar')]",
-                "//div[contains(@class, 'directory')]",
-                "//aside",
-            ]
-            
-            sidebar = None
-            for selector in sidebar_selectors:
-                try:
-                    sidebar = self.driver.find_element(By.XPATH, selector)
-                    if sidebar and sidebar.is_displayed():
-                        self.logger.info(f"找到侧边栏: {selector}")
-                        break
-                except:
-                    continue
-            
-            if not sidebar:
+            scan_result = discover_sidebar_videos(
+                self.driver,
+                completed_texts=self.progress.get('completed_videos', []),
+                logger=self.logger,
+                wait_func=self.smart_wait,
+                sidebar_selectors=DEFAULT_SIDEBAR_SELECTORS,
+                video_selectors=DEFAULT_SIDEBAR_VIDEO_SELECTORS,
+            )
+            if scan_result is None:
                 self.logger.warning("未找到侧边栏，切换到主区域查找")
                 return self.find_videos_from_main_area()
 
-            # 新版页面会把后续章节折叠起来，例如需要先点击“第二章”
-            # 才能看到该章下的视频。先展开可见章节，再进入原有扫描逻辑。
-            expand_collapsed_chapters(
-                self.driver,
-                sidebar,
-                logger=self.logger,
-                wait_func=self.smart_wait,
-                max_passes=8,
-            )
-            
-            # 滚动侧边栏加载所有内容
-            self.logger.info("滚动侧边栏加载所有视频...")
-            for i in range(5):
-                self.driver.execute_script(
-                    "arguments[0].scrollTop = arguments[0].scrollHeight;", 
-                    sidebar
-                )
-                self.smart_wait(1)
-                self.logger.info(f"滚动进度: {i+1}/5")
-            
-            # 回到顶部
-            self.driver.execute_script("arguments[0].scrollTop = 0;", sidebar)
-            self.smart_wait(2)
-            
-            # 在侧边栏中查找视频元素
-            video_selectors = [
-                ".//div[contains(@class, 'video') or contains(@class, 'lesson')]",
-                ".//li[contains(@class, 'video') or contains(@class, 'lesson')]",
-                ".//a[contains(@class, 'video') or contains(@class, 'lesson')]",
-                ".//*[contains(text(), '视频')]",
-                ".//div[contains(@class, 'item')]",
-                ".//div[contains(@class, 'chapter-item')]",
-            ]
-            
-            all_video_elements = []
-            for selector in video_selectors:
-                try:
-                    elements = sidebar.find_elements(By.XPATH, selector)
-                    if elements:
-                        self.logger.info(f"选择器 {selector} 找到 {len(elements)} 个元素")
-                        all_video_elements.extend(elements)
-                except Exception as e:
-                    self.logger.debug(f"选择器 {selector} 失败: {e}")
-            
-            # 去重
-            unique_elements = list(dict.fromkeys(all_video_elements))
-            self.logger.info(f"总共找到 {len(unique_elements)} 个去重后的视频元素")
-            
-            scan_result = scan_video_candidates(
-                unique_elements,
-                completed_texts=self.progress.get('completed_videos', []),
-                logger=self.logger,
-            )
-            unwatched_videos.extend(scan_result.unwatched)
-            
+            unwatched_videos = scan_result.unwatched
             self.logger.info(f"\n共找到 {len(unwatched_videos)} 个未观看视频")
             return unwatched_videos
             

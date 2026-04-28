@@ -1,9 +1,40 @@
 from dataclasses import dataclass, field
 
 from course_catalog import classify_catalog_text
+from course_outline import expand_collapsed_chapters, find_outline_scroll_container
 from video_catalog import is_catalog_video_completed, video_title_from_text
 
 
+DEFAULT_SIDEBAR_SELECTORS = [
+    "//div[contains(@class, 'catalog')]",
+    "//div[contains(@class, 'sidebar')]",
+    "//div[contains(@class, 'directory')]",
+    "//aside",
+]
+EXTENDED_SIDEBAR_SELECTORS = [
+    "//div[contains(@class, 'box-right')]",
+    "//div[contains(@class, 'catalog_box')]",
+    *DEFAULT_SIDEBAR_SELECTORS,
+]
+DEFAULT_SIDEBAR_VIDEO_SELECTORS = [
+    ".//div[contains(@class, 'video') or contains(@class, 'lesson')]",
+    ".//li[contains(@class, 'video') or contains(@class, 'lesson')]",
+    ".//a[contains(@class, 'video') or contains(@class, 'lesson')]",
+    ".//*[contains(text(), '视频')]",
+    ".//div[contains(@class, 'item')]",
+    ".//div[contains(@class, 'chapter-item')]",
+]
+EXTENDED_SIDEBAR_VIDEO_SELECTORS = [
+    ".//li[contains(@class, 'clearfix')]",
+    ".//div[contains(@class, 'video') or contains(@class, 'lesson')]",
+    ".//li[contains(@class, 'video') or contains(@class, 'lesson')]",
+    ".//a[contains(@class, 'video') or contains(@class, 'lesson')]",
+    ".//*[contains(@class, 'catalog_title')]",
+    ".//div[contains(@class, 'item')]",
+    ".//div[contains(@class, 'chapter-item')]",
+    ".//span[contains(@class, 'catalog_title')]",
+    ".//li",
+]
 SKIP_TEXT_MARKERS = [
     ".pptx",
     ".ppt",
@@ -43,6 +74,158 @@ def is_interactable(element):
         return element.is_displayed() and element.is_enabled()
     except Exception:
         return False
+
+
+def find_visible_sidebar(driver, selectors=None, logger=None):
+    for selector in selectors or DEFAULT_SIDEBAR_SELECTORS:
+        try:
+            sidebar = driver.find_element("xpath", selector)
+            if sidebar and sidebar.is_displayed():
+                _log(logger, "info", f"✅ 找到右侧目录: {selector}")
+                return sidebar
+        except Exception:
+            continue
+    return None
+
+
+def collect_elements_by_selectors(root, selectors, logger=None, log_empty=False):
+    elements = []
+    for selector in selectors:
+        try:
+            found = root.find_elements("xpath", selector)
+            if found:
+                _log(logger, "info", f"✅ 选择器 '{selector}' 找到 {len(found)} 个元素")
+                elements.extend(found)
+            elif log_empty:
+                _log(logger, "debug", f"⚠️  选择器 '{selector}' 未找到元素")
+        except Exception as e:
+            _log(logger, "debug", f"❌ 选择器 '{selector}' 失败: {e}")
+    return elements
+
+
+def scroll_sidebar_simple(driver, sidebar, logger=None, wait_func=None, passes=5):
+    _log(logger, "info", "滚动侧边栏加载所有视频...")
+    for index in range(passes):
+        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", sidebar)
+        if wait_func:
+            wait_func(1)
+        _log(logger, "info", f"滚动进度: {index + 1}/{passes}")
+    driver.execute_script("arguments[0].scrollTop = 0;", sidebar)
+    if wait_func:
+        wait_func(2)
+
+
+def scroll_sidebar_with_wheel(driver, scroll_container, logger=None, wait_func=None, max_scroll_attempts=20):
+    _log(logger, "info", "🔄 开始使用鼠标滚轮模拟滚动...")
+    scroll_no_change_count = 0
+    for index in range(max_scroll_attempts):
+        scroll_before = driver.execute_script("return arguments[0].scrollTop;", scroll_container)
+        driver.execute_script(
+            """
+            var element = arguments[0];
+            var wheelEvent = new WheelEvent('wheel', {
+                deltaY: 500,
+                bubbles: true,
+                cancelable: true
+            });
+            element.dispatchEvent(wheelEvent);
+            element.scrollTop = element.scrollTop + 500;
+            """,
+            scroll_container,
+        )
+        if wait_func:
+            wait_func(0.8)
+        scroll_after = driver.execute_script("return arguments[0].scrollTop;", scroll_container)
+        scroll_height = driver.execute_script("return arguments[0].scrollHeight;", scroll_container)
+        _log(
+            logger,
+            "info",
+            f"  滚动 {index + 1}/{max_scroll_attempts}: {scroll_before}px → {scroll_after}px (总高度: {scroll_height}px)",
+        )
+        if scroll_after == scroll_before:
+            scroll_no_change_count += 1
+            _log(logger, "debug", f"  ⚠️  滚动位置未变化 ({scroll_no_change_count}/3)")
+            if scroll_no_change_count >= 3:
+                _log(logger, "info", "  ✅ 滚动位置连续3次未变化，已到达底部")
+                break
+        else:
+            scroll_no_change_count = 0
+        if scroll_after >= scroll_height - 100:
+            _log(logger, "info", "  ✅ 已滚动到底部，提前结束滚动")
+            break
+
+    _log(logger, "info", "✅ 滚动完成，等待内容加载...")
+    if wait_func:
+        wait_func(2)
+    driver.execute_script("arguments[0].scrollTop = 0;", scroll_container)
+    if wait_func:
+        wait_func(1)
+
+
+def write_debug_html(element, debug_html_path, logger=None):
+    if not debug_html_path:
+        return
+    try:
+        with open(debug_html_path, "w", encoding="utf-8") as file:
+            file.write(element.get_attribute("outerHTML") or "")
+        _log(logger, "warning", f"⚠️  未找到任何视频元素，已保存侧边栏HTML到 {debug_html_path}")
+    except Exception as e:
+        _log(logger, "debug", f"保存HTML失败: {e}")
+
+
+def discover_sidebar_videos(
+    driver,
+    completed_texts=None,
+    logger=None,
+    wait_func=None,
+    sidebar_selectors=None,
+    video_selectors=None,
+    expand_chapters=True,
+    use_wheel_scroll=False,
+    include_watched=False,
+    debug_html_path=None,
+):
+    sidebar = find_visible_sidebar(driver, selectors=sidebar_selectors, logger=logger)
+    if not sidebar:
+        return None
+
+    if expand_chapters:
+        expand_collapsed_chapters(
+            driver,
+            sidebar,
+            logger=logger,
+            wait_func=wait_func,
+            max_passes=8,
+        )
+
+    if use_wheel_scroll:
+        scroll_container = find_outline_scroll_container(sidebar)
+        if scroll_container is sidebar:
+            _log(logger, "info", "使用侧边栏本身作为滚动容器")
+        else:
+            _log(logger, "info", "✅ 找到滚动容器")
+        scroll_sidebar_with_wheel(driver, scroll_container, logger=logger, wait_func=wait_func)
+    else:
+        scroll_sidebar_simple(driver, sidebar, logger=logger, wait_func=wait_func)
+
+    _log(logger, "info", "🔍 开始查找视频元素...")
+    all_video_elements = collect_elements_by_selectors(
+        sidebar,
+        video_selectors or DEFAULT_SIDEBAR_VIDEO_SELECTORS,
+        logger=logger,
+        log_empty=use_wheel_scroll,
+    )
+    unique_elements = list(dict.fromkeys(all_video_elements))
+    _log(logger, "info", f"📋 总共找到 {len(unique_elements)} 个去重后的视频元素")
+    if not unique_elements:
+        write_debug_html(sidebar, debug_html_path, logger=logger)
+
+    return scan_video_candidates(
+        unique_elements,
+        completed_texts=completed_texts,
+        logger=logger,
+        record_watched=include_watched,
+    )
 
 
 def is_skippable_video_text(text, require_mp4=False):
@@ -149,9 +332,16 @@ def dedupe_elements_by_text(elements, min_length=3):
 
 
 __all__ = [
+    "DEFAULT_SIDEBAR_SELECTORS",
+    "DEFAULT_SIDEBAR_VIDEO_SELECTORS",
+    "EXTENDED_SIDEBAR_SELECTORS",
+    "EXTENDED_SIDEBAR_VIDEO_SELECTORS",
     "VideoDiscoveryResult",
     "clickable_video_element",
+    "collect_elements_by_selectors",
     "dedupe_elements_by_text",
+    "discover_sidebar_videos",
+    "find_visible_sidebar",
     "is_skippable_video_text",
     "scan_video_candidates",
 ]

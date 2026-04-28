@@ -9,7 +9,9 @@ if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
 from video_discovery import (  # noqa: E402
+    collect_elements_by_selectors,
     dedupe_elements_by_text,
+    discover_sidebar_videos,
     is_skippable_video_text,
     scan_video_candidates,
 )
@@ -37,6 +39,22 @@ class FakeElement:
         if items:
             return items[0]
         raise RuntimeError("not found")
+
+
+class FakeDriver:
+    def __init__(self, elements=None):
+        self.elements = elements or {}
+        self.scripts = []
+
+    def find_element(self, by, value):
+        items = self.elements.get(value, [])
+        if items:
+            return items[0]
+        raise RuntimeError("not found")
+
+    def execute_script(self, script, *args):
+        self.scripts.append((script, args))
+        return 0
 
 
 class VideoDiscoveryTests(unittest.TestCase):
@@ -79,6 +97,36 @@ class VideoDiscoveryTests(unittest.TestCase):
         second = FakeElement("1.2 背景")
 
         self.assertEqual(dedupe_elements_by_text([first, duplicate, second]), [first, second])
+
+    def test_collect_elements_by_selectors(self):
+        first = FakeElement("1.1 绪论")
+        second = FakeElement("1.2 背景")
+        root = FakeElement(children={
+            ".//li": [first],
+            ".//div": [second],
+        })
+
+        self.assertEqual(collect_elements_by_selectors(root, [".//li", ".//div"]), [first, second])
+
+    def test_discover_sidebar_videos(self):
+        video = FakeElement("1.1 绪论 00:10")
+        sidebar = FakeElement(children={".//li": [video]})
+        driver = FakeDriver({"//aside": [sidebar]})
+
+        result = discover_sidebar_videos(
+            driver,
+            sidebar_selectors=["//aside"],
+            video_selectors=[".//li"],
+            expand_chapters=False,
+        )
+
+        self.assertEqual(len(result.unwatched), 1)
+        self.assertIs(result.unwatched[0]["element"], video)
+
+    def test_discover_sidebar_videos_returns_none_without_sidebar(self):
+        result = discover_sidebar_videos(FakeDriver(), sidebar_selectors=["//aside"], expand_chapters=False)
+
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":
