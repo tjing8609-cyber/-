@@ -353,7 +353,7 @@ class ZhidaoGUILauncher:
 
         row10b = tk.Frame(self.quiz_frame)
         row10b.pack(fill=tk.X, pady=3)
-        self.verify_api_on_start_var = tk.BooleanVar(value=False)
+        self.verify_api_on_start_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
             row10b,
             text="启动前验证 API 可用性（可能增加启动耗时）",
@@ -693,7 +693,7 @@ class ZhidaoGUILauncher:
                 "deepseek_api_key": "",
                 "api_base_url": "",
                 "api_model": "",
-                "verify_api_on_start": False,
+                "verify_api_on_start": True,
                 "enable_orchestrator": False,
                 "orchestrator_accounts": "",
                 "orchestrator_max_concurrency": 1,

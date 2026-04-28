@@ -43,7 +43,7 @@ from browser_session import create_browser_session, resolve_local_driver_paths
 from course_entry import has_course_url, open_course_url
 from course_search import enter_study_page as search_enter_study_page
 from course_search import find_and_click_course_by_name
-from deepseek_agent import create_answering_service
+from deepseek_agent import create_deepseek_components, verify_deepseek_client
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
 from quiz_popup_agent import QuizPopupToolbox, run_quiz_popup_agent
 from quiz_popup_reader import build_popup_question_data
@@ -52,6 +52,7 @@ from quiz_popup_actions import (
     is_multi_choice_dialog,
     scroll_quiz_dialog as action_scroll_quiz_dialog,
     select_options_by_letters as action_select_options_by_letters,
+    visible_quiz_dialogs,
     visible_quiz_options,
 )
 from runtime_center import load_selectors, selector_value
@@ -176,12 +177,25 @@ class ZhidaoWebAutoPlayerWithQuiz:
         )
         self.quiz_agent = QuizAutomationAgent(self.answer_mode, logger=self.logger)
         self.logger.info(f"🤖 题目弹窗处理模式: {self.answer_mode}")
-        self.answering_service, self.deepseek_config = create_answering_service(
+        self.deepseek_client, self.answering_service, self.deepseek_config = create_deepseek_components(
             self.account_config,
             logger=self.logger,
         )
         if self.answering_service:
             self.logger.info(f"🤖 DeepSeek弹窗答题已启用: model={self.deepseek_config.model}, source={self.deepseek_config.source}")
+            verify_api_on_start = self.account_config.get('verify_api_on_start', True)
+            must_verify_for_agent = self.answer_mode == 'auto_practice'
+            if verify_api_on_start or must_verify_for_agent:
+                validation = verify_deepseek_client(
+                    self.deepseek_client,
+                    self.deepseek_config,
+                    logger=self.logger,
+                )
+                if not validation.ok:
+                    self.logger.error("❌ DeepSeek API不可用，已禁用弹窗API答题；请检查 deepseek_api_key/base_url/model")
+                    self.answering_service = None
+            else:
+                self.logger.info("ℹ️ 已跳过DeepSeek启动校验（verify_api_on_start=false）")
         else:
             self.logger.info("🤖 DeepSeek弹窗答题未启用：未配置 deepseek_api_key 或环境变量")
         
@@ -2637,6 +2651,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 "with_quiz.dialog_xpath",
                 "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
             )
+            if visible_quiz_dialogs(self.driver, dialog_xpath):
+                return True
             return is_quiz_dialog_present(self.driver, dialog_xpath)
         except Exception:
             return False
@@ -2690,6 +2706,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """Use DeepSeek for video popup questions when visible answers are not available."""
         try:
             if not self.answering_service:
+                self.logger.info("🤖 DeepSeek弹窗答题未启用或启动校验失败，跳过API答题")
                 return []
             dialog_xpath = selector_value(
                 self.selectors,

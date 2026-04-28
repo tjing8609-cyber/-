@@ -8,7 +8,41 @@ CODE_DIR = ROOT / "code"
 if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
-from deepseek_agent import create_deepseek_components, load_deepseek_config  # noqa: E402
+from deepseek_agent import create_deepseek_components, load_deepseek_config, verify_deepseek_client  # noqa: E402
+
+
+class FakeMessage:
+    def __init__(self, content):
+        self.content = content
+
+
+class FakeChoice:
+    def __init__(self, content):
+        self.message = FakeMessage(content)
+
+
+class FakeResponse:
+    def __init__(self, content):
+        self.choices = [FakeChoice(content)]
+
+
+class FakeCompletions:
+    def __init__(self, content="A", error=None):
+        self.content = content
+        self.error = error
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return FakeResponse(self.content)
+
+
+class FakeClient:
+    def __init__(self, content="A", error=None):
+        self.chat = type("Chat", (), {})()
+        self.chat.completions = FakeCompletions(content=content, error=error)
 
 
 class DeepSeekAgentTests(unittest.TestCase):
@@ -52,6 +86,22 @@ class DeepSeekAgentTests(unittest.TestCase):
         self.assertIsNone(client)
         self.assertIsNone(service)
         self.assertFalse(config.configured)
+
+    def test_verify_deepseek_client_success(self):
+        config = load_deepseek_config({"deepseek_api_key": "key"}, env={})
+        client = FakeClient("A")
+
+        result = verify_deepseek_client(client, config)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(client.chat.completions.calls[0]["model"], "deepseek-chat")
+
+    def test_verify_deepseek_client_failure(self):
+        config = load_deepseek_config({"deepseek_api_key": "key"}, env={})
+        result = verify_deepseek_client(FakeClient(error=RuntimeError("401 auth failed")), config)
+
+        self.assertFalse(result.ok)
+        self.assertIn("401", result.message)
 
 
 if __name__ == "__main__":

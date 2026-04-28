@@ -20,6 +20,12 @@ class DeepSeekConfig:
         return bool(self.api_key)
 
 
+@dataclass(frozen=True)
+class DeepSeekValidationResult:
+    ok: bool
+    message: str = ""
+
+
 def _first_text(*values, default=""):
     for value in values:
         text = str(value or "").strip()
@@ -82,6 +88,33 @@ def create_deepseek_components(account_config=None, logger=None, env=None):
     return client, service, config
 
 
+def verify_deepseek_client(client, config, logger=None):
+    if client is None or not config.configured:
+        return DeepSeekValidationResult(False, "DeepSeek API key is not configured")
+
+    try:
+        response = client.chat.completions.create(
+            model=config.model,
+            messages=[
+                {"role": "system", "content": "Return only the requested letter."},
+                {"role": "user", "content": "Return only A."},
+            ],
+            temperature=0,
+            max_tokens=4,
+            stream=False,
+        )
+        content = response.choices[0].message.content.strip()
+        if not content:
+            return DeepSeekValidationResult(False, "DeepSeek validation response is empty")
+        if logger:
+            logger.info(f"✅ DeepSeek API校验成功: model={config.model}, source={config.source}")
+        return DeepSeekValidationResult(True, content)
+    except Exception as e:
+        if logger:
+            logger.error(f"❌ DeepSeek API校验失败: {e}")
+        return DeepSeekValidationResult(False, str(e))
+
+
 def create_answering_service(account_config=None, logger=None, env=None):
     _, service, config = create_deepseek_components(
         account_config=account_config,
@@ -93,8 +126,10 @@ def create_answering_service(account_config=None, logger=None, env=None):
 
 __all__ = [
     "DeepSeekConfig",
+    "DeepSeekValidationResult",
     "create_answering_service",
     "create_deepseek_components",
     "create_openai_client",
     "load_deepseek_config",
+    "verify_deepseek_client",
 ]

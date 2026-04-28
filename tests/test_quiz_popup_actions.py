@@ -12,6 +12,7 @@ from quiz_popup_actions import (  # noqa: E402
     click_quiz_popup_submit,
     is_multi_choice_dialog,
     select_options_by_letters,
+    visible_quiz_dialogs,
     visible_quiz_options,
 )
 
@@ -92,6 +93,20 @@ class QuizPopupActionsTests(unittest.TestCase):
         self.assertTrue(select_options_by_letters(driver, [option_a, option_b], ["B"]))
         self.assertFalse(option_a.clicked)
         self.assertTrue(option_b.clicked)
+
+    def test_visible_quiz_dialogs_detects_ai_practice_popup(self):
+        page = FakeElement("页面背景")
+        dialog = FakeElement("AI随堂练习\n1.【多选题】\nA 政治安全\nB 人民安全\n提交作答")
+        driver = FakeDriver([page, dialog])
+
+        self.assertEqual(visible_quiz_dialogs(driver), [dialog])
+
+    def test_visible_quiz_dialogs_does_not_choose_submit_button_only(self):
+        submit = FakeElement("提交作答")
+        dialog = FakeElement("AI随堂练习\n1.【多选题】\nA 政治安全\nB 人民安全\n提交作答")
+        driver = FakeDriver([submit, dialog])
+
+        self.assertEqual(visible_quiz_dialogs(driver), [dialog])
 
 
 if __name__ == "__main__":

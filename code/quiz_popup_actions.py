@@ -8,8 +8,16 @@ from selenium.webdriver.common.by import By
 
 
 VISIBLE_DIALOG_XPATH = "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+FALLBACK_DIALOG_XPATHS = [
+    VISIBLE_DIALOG_XPATH,
+    "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'modal') or contains(@class,'popup') or contains(@class,'pop')]",
+    "//*[contains(normalize-space(.),'AI随堂练习')]",
+    "//*[contains(normalize-space(.),'提交作答')]",
+    "//*[contains(normalize-space(.),'单选题') or contains(normalize-space(.),'多选题')]",
+]
 SUBMIT_TEXTS = ["提交", "确定", "确认", "完成", "继续"]
 BLOCKED_TEXTS = ["交卷", "提交作业", "提交试卷", "提交测试", "提交考试", "确认提交", "考试提交", "作业提交"]
+QUIZ_DIALOG_MARKERS = ["AI随堂练习", "提交作答", "单选题", "多选题", "判断题"]
 
 
 def _log(logger, level, message):
@@ -29,12 +37,55 @@ def _visible(elements):
     return result
 
 
-def visible_quiz_dialogs(driver, dialog_xpath=None):
-    xpath = dialog_xpath or VISIBLE_DIALOG_XPATH
+def _text(element):
     try:
-        return _visible(driver.find_elements(By.XPATH, xpath))
+        return (element.text or "").strip()
     except Exception:
-        return []
+        return ""
+
+
+def _is_probable_quiz_dialog(element):
+    text = _text(element)
+    if not text:
+        return False
+    has_question_type = any(marker in text for marker in ["单选题", "多选题", "判断题"])
+    has_option_labels = ("A" in text and "B" in text) or ("A " in text and "B " in text)
+    if "AI随堂练习" in text:
+        return "提交作答" in text or has_question_type or has_option_labels
+    if "提交作答" in text:
+        return has_question_type or has_option_labels
+    if has_question_type:
+        return has_option_labels
+    return False
+
+
+def _dedupe_elements(elements):
+    result = []
+    seen = set()
+    for element in elements:
+        key = id(element)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(element)
+    return result
+
+
+def visible_quiz_dialogs(driver, dialog_xpath=None):
+    xpaths = [dialog_xpath] if dialog_xpath else []
+    xpaths.extend(xpath for xpath in FALLBACK_DIALOG_XPATHS if xpath and xpath not in xpaths)
+
+    candidates = []
+    for xpath in xpaths:
+        try:
+            candidates.extend(_visible(driver.find_elements(By.XPATH, xpath)))
+        except Exception:
+            continue
+
+    candidates = _dedupe_elements(candidates)
+    probable = [element for element in candidates if _is_probable_quiz_dialog(element)]
+    probable.sort(key=lambda element: len(_text(element)))
+    return probable or candidates[:1]
 
 
 def _button_text(element):
@@ -99,13 +150,7 @@ def is_multi_choice_dialog(driver):
 
 
 def scroll_quiz_dialog(driver, position="bottom", wait_func=None):
-    try:
-        wrappers = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]",
-        )
-    except Exception:
-        return False
+    wrappers = visible_quiz_dialogs(driver)
 
     moved = False
     for wrapper in wrappers:
