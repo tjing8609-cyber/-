@@ -34,6 +34,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from course_catalog import classify_catalog_text, extract_catalog_title
+from quiz_agent import QuizAutomationAgent, normalize_answer_mode
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
 from page_detection import (
@@ -140,6 +141,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.info(f"⏰ 预设观看时间限制: {self.max_watch_minutes} 分钟")
         else:
             self.logger.info("⏰ 未设置观看时间限制，将播放所有视频")
+
+        self.answer_mode = normalize_answer_mode(
+            self.account_config.get('answer_mode'),
+            default='auto_practice'
+        )
+        self.quiz_agent = QuizAutomationAgent(self.answer_mode, logger=self.logger)
+        self.logger.info(f"🤖 题目弹窗处理模式: {self.answer_mode}")
         
         # 初始化浏览器
         self.setup_driver(headless)
@@ -3403,49 +3411,33 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if not options:
                 self.logger.info("🔔 未检测到选项，请手动处理；程序继续监控")
                 return False
-            if letters:
+            decision = self.quiz_agent.decide(
+                letters=letters,
+                option_count=len(options),
+                source="visible_answer",
+            )
+            if decision.letters:
+                self.logger.info(f"🤖 Agent建议答案: {', '.join(decision.letters)} ({decision.reason})")
+            if not decision.should_select:
+                self.logger.info(f"🔔 当前模式不自动点击选项: {decision.reason}")
+                return False
+
+            if decision.letters:
                 if self.is_multi_choice():
                     # 多选：随机顺序点击，并在每步间滚动
-                    self.select_options_by_letters_v2(letters)
+                    self.select_options_by_letters_v2(decision.letters)
                 else:
                     # 单选：点击第一个答案
-                    first = letters[0]
+                    first = decision.letters[0]
                     self.click_correct_answer(first, options)
                     # 点击后再滚动一次以确认状态
                     self.scroll_quiz_dialog('bottom')
                 
-                # 【新增】关闭题目弹窗
-                self.smart_wait(2)
-                self.close_quiz_dialog()
-                return True
-            else:
-                # 【新增】未识别出答案，随机选择一个选项
-                self.logger.info("🎲 未识别到答案，随机选择一个选项...")
-                import random
-                # 【修复】限制随机索引在选项数量范围内
-                max_options = min(len(options), 4)  # 最多只能选择A-D
-                random_index = random.randint(0, max_options - 1)
-                random_letter = chr(65 + random_index)  # A=65, B=66, C=67, D=68
-                self.logger.info(f"🎯 随机选择了选项 {random_letter}")
-                
-                try:
-                    # 点击随机选项
-                    self.click_correct_answer(random_letter, options)
-                    self.smart_wait(1)
-                    
-                    # 滚动到底部
-                    self.scroll_quiz_dialog('bottom')
-                    self.smart_wait(1)
-                    
-                    self.logger.info("✅ 已随机选择并确认")
-                    
-                    # 【新增】关闭题目弹窗
+                if decision.should_close:
                     self.smart_wait(2)
                     self.close_quiz_dialog()
-                    return True
-                except Exception as e:
-                    self.logger.warning(f"随机选择失败: {e}")
-                    return False
+                return True
+            return False
         except Exception as e:
             self.logger.debug(f"处理题目弹窗失败: {e}")
             return False

@@ -12,6 +12,8 @@
   "verify_api_on_start": false,
   "max_watch_minutes": 0,
   "use_sidebar_layout": false,
+  "answer_mode": "auto_practice",
+  "submit_confirm_required": true,
   "note": "配置说明",
   "course_url_note": "课程URL(可选): 直接指定课程播放页URL，设置后将跳过课程查找步骤。留空则使用course_name查找课程",
   "mode_note": "运行模式: video=视频播放模式(默认), quiz_only=纯答题模式",
@@ -22,5 +24,7 @@
   "deepseek_api_key_note": "DeepSeek API密钥(纯答题模式必需): 优先使用此配置，留空则从系统环境变量DEEPSEEK_API_KEY加载（兼容ANTHROPIC_AUTH_TOKEN）",
   "api_base_url_note": "API基础URL(可选): 自定义API地址，留空使用环境变量或默认值",
   "api_model_note": "API模型(可选): 指定使用的模型，留空使用默认值deepseek-chat",
-  "verify_api_on_start_note": "启动时API连通性校验: false=跳过启动校验(默认), true=启动时先验证API可用性"
+  "verify_api_on_start_note": "启动时API连通性校验: false=跳过启动校验(默认), true=启动时先验证API可用性",
+  "answer_mode_note": "有题目视频弹窗处理模式: manual=只提示不处理, assist=仅给出建议, semi_auto=需人工确认后点击, auto_practice=自动处理可见答案的练习弹窗",
+  "submit_confirm_required_note": "提交/交卷前是否必须人工确认: true=需要确认(推荐), false=仅在明确允许的练习场景使用"
 }
