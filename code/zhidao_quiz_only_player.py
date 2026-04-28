@@ -47,6 +47,11 @@ from quiz_answering import (
     classify_api_error,
     parse_answer_letters,
 )
+from quiz_page_actions import (
+    click_next_button as action_click_next_button,
+    find_clickable_option_element,
+    select_answer_options,
+)
 from quiz_page_reader import clean_question_text, detect_question_type_from_text, parse_option_text
 from quiz_test_flow import (
     confirm_submit as test_confirm_submit,
@@ -1298,47 +1303,13 @@ class ZhidaoQuizOnlyPlayer:
     def select_answer(self, answer, question_data):
         """选择答案（使用ActionChains）"""
         try:
-            options = question_data['options']
-            question_type = question_data['type']
-            
-            # 确保答案是列表格式
-            if isinstance(answer, str):
-                answer = [answer]
-            
-            self.logger.info(f"👆 选择答案: {', '.join(answer)}")
-            
-            # 按顺序点击选项
-            for ans in answer:
-                if ans not in options:
-                    self.logger.warning(f"⚠️  答案 {ans} 不在选项中")
-                    continue
-                
-                option_elem = options[ans]['element']
-                
-                # 【优化】尝试查找元素内的单选/多选按钮
-                clickable_elem = self.find_clickable_element(option_elem)
-                
-                # 滚动到元素可见
-                self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", clickable_elem)
-                self.smart_wait(0.5)
-                
-                # 使用ActionChains点击（反检测）
-                actions = ActionChains(self.driver)
-                actions.move_to_element(clickable_elem)
-                actions.pause(random.uniform(0.3, 0.8))  # 模拟思考
-                actions.click()
-                actions.perform()
-                
-                self.logger.info(f"✅ 已点击选项: {ans}")
-                
-                # 多选题选项间稍微延时
-                if question_type == 'multiple' and len(answer) > 1:
-                    self.smart_wait(random.uniform(0.5, 1.0))
-            
-            # 选完答案后稍微停顿
-            self.smart_wait(random.uniform(1, 2))
-            return True
-            
+            return select_answer_options(
+                self.driver,
+                answer,
+                question_data,
+                logger=self.logger,
+                wait_func=self.smart_wait,
+            )
         except Exception as e:
             self.logger.error(f"选择答案失败: {e}")
             import traceback
@@ -1348,28 +1319,7 @@ class ZhidaoQuizOnlyPlayer:
     def find_clickable_element(self, parent_elem):
         """在选项元素内查找可点击的子元素"""
         try:
-            # 【优化】根据实际DOM结构，查找 el-radio__inner / el-checkbox__inner
-            clickable_selectors = [
-                ".//span[contains(@class, 'el-radio__inner')]",
-                ".//span[contains(@class, 'el-checkbox__inner')]",
-                ".//input[@type='radio']",
-                ".//input[@type='checkbox']",
-                ".//label",
-            ]
-            
-            for selector in clickable_selectors:
-                try:
-                    elem = parent_elem.find_element(By.XPATH, selector)
-                    if elem:
-                        self.logger.debug(f"找到可点击元素: {selector}")
-                        return elem
-                except:
-                    continue
-            
-            # 如果没找到子元素，返回父元素
-            self.logger.debug("使用父元素作为点击目标")
-            return parent_elem
-            
+            return find_clickable_option_element(parent_elem, logger=self.logger)
         except Exception as e:
             self.logger.error(f"查找可点击元素失败: {e}")
             return parent_elem
@@ -1377,62 +1327,7 @@ class ZhidaoQuizOnlyPlayer:
     def click_next_button(self):
         """点击下一题按钮，返回是否有下一题"""
         try:
-            # 【优化】先检查下一题按钮是否变灰（最后一题）
-            gray_next_selectors = [
-                "//span[contains(@class, 'Topicswitchingbtn-gray')]",
-                "//span[contains(@class, 'Topicswitchingbtn') and contains(@class, 'gray')]",
-                "//button[contains(@class, 'next') and (@disabled or contains(@class, 'disabled'))]",
-            ]
-            
-            for selector in gray_next_selectors:
-                try:
-                    gray_buttons = self.driver.find_elements(By.XPATH, selector)
-                    for btn in gray_buttons:
-                        if '下一题' in btn.text:
-                            self.logger.info("🏁 检测到下一题按钮变灰，已是最后一题")
-                            return False  # 没有下一题了
-                except:
-                    continue
-            
-            # 如果没有变灰，尝试点击下一题
-            next_selectors = [
-                # 知到平台专用class
-                "//span[contains(@class, 'Topicswitchingbtn') and contains(text(), '下一题')]",
-                "//div[contains(@class, 'Topicswitchingbtn') and contains(text(), '下一题')]",
-                # 通用选择器
-                "//button[contains(text(), '下一题')]",
-                "//span[contains(text(), '下一题')]",
-                "//div[contains(text(), '下一题')]",
-                "//a[contains(text(), '下一题')]",
-                "//button[contains(@class, 'next')]",
-            ]
-            
-            for selector in next_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for elem in elements:
-                        # 排除变灰的按钮
-                        elem_class = elem.get_attribute('class') or ''
-                        if 'gray' in elem_class.lower() or 'disabled' in elem_class.lower():
-                            continue
-                        
-                        if '下一题' in elem.text or 'next' in elem_class.lower():
-                            # 使用ActionChains点击
-                            actions = ActionChains(self.driver)
-                            actions.move_to_element(elem)
-                            actions.pause(random.uniform(0.5, 1.0))
-                            actions.click()
-                            actions.perform()
-                            
-                            self.logger.info("✅ 已点击下一题")
-                            self.smart_wait(2)
-                            return True
-                except:
-                    continue
-            
-            self.logger.info("ℹ️  未找到可点击的下一题按钮")
-            return False
-            
+            return action_click_next_button(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.error(f"点击下一题失败: {e}")
             return False
