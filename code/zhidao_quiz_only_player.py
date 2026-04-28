@@ -23,7 +23,6 @@ import random
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
-from tenacity import retry, stop_after_attempt, wait_exponential
 from openai import OpenAI  # 【新增】使用OpenAI SDK调用DeepSeek API
 
 from selenium import webdriver
@@ -36,6 +35,12 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
+from quiz_answering import (
+    QuizAnsweringService,
+    allowed_option_labels,
+    classify_api_error,
+    parse_answer_letters,
+)
 
 
 class ZhidaoQuizOnlyPlayer:
@@ -63,6 +68,7 @@ class ZhidaoQuizOnlyPlayer:
         self.api_base_url = None
         self.api_model = None
         self.api_client = None  # 【新增】OpenAI客户端
+        self.answering_service = None
         
         if not self.api_key:
             self.api_key = os.getenv('DEEPSEEK_API_KEY', '').strip() or os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
@@ -88,6 +94,13 @@ class ZhidaoQuizOnlyPlayer:
             self.api_model = self.account_config.get('api_model', 'deepseek-chat').strip()
             # 【新增】创建OpenAI客户端
             self.api_client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
+
+        if self.api_client:
+            self.answering_service = QuizAnsweringService(
+                self.api_client,
+                self.api_model,
+                logger=self.logger
+            )
         
         verify_api_on_start = self.account_config.get('verify_api_on_start', False)
         if self.api_key and verify_api_on_start:
@@ -579,6 +592,7 @@ class ZhidaoQuizOnlyPlayer:
         error_str = str(error)
         
         self.logger.error(f"❌ {context}失败: {error}")
+        self.logger.error(f"🚫 错误分类: {classify_api_error(error)}")
         
         # 检测并处理常见错误
         if '400' in error_str:
@@ -1718,59 +1732,15 @@ class ZhidaoQuizOnlyPlayer:
             self.logger.error(f"检测题型失败: {e}")
             return 'single'
     
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def get_answer_from_api(self, question_data):
         """调用API获取答案"""
         try:
-            if not self.api_key:
-                self.logger.warning("⚠️  未API配置密钥")
+            if not self.answering_service:
+                self.logger.warning("⚠️  未配置API客户端")
                 return None
-            
-            question = question_data['question']
-            options = question_data['options']
-            question_type = question_data['type']
-            
-            # 构造选项文本
-            options_text = '\n'.join([f"{k}. {v['text']}" for k, v in options.items()])
-            
-            # 构造Prompt
-            user_prompt = f"""请回答以下题目：
 
-题目：{question}
-
-选项：
-{options_text}
-
-请直接返回答案字母（单选题返回A/B/C/D，多选题返回AB/ABC等），不需要解释。"""
-            
-            self.logger.info(f"🤖 调用API获取答案...")
-            
-            # 【修改】使用OpenAI SDK调用API
-            response = self.api_client.chat.completions.create(
-                model=self.api_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "你是一个专业的答题助手，只返回答案字母，不要添加任何额外说明。"
-                    },
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-                ],
-                temperature=0.3,
-                max_tokens=10,
-                stream=False
-            )
-            
-            # 获取回复
-            answer_text = response.choices[0].message.content.strip()
-            
-            # 提取答案字母
-            answer = self.parse_answer(answer_text)
-            
-            self.logger.info(f"✅ API返回答案: {answer}")
-            return answer
+            result = self.answering_service.answer(question_data)
+            return result.value if result.valid else None
             
         except Exception as e:
             self.handle_api_error(e, "API答题调用")
@@ -1779,41 +1749,23 @@ class ZhidaoQuizOnlyPlayer:
     def parse_answer(self, answer_text):
         """解析API返回的答案"""
         try:
-            # 移除所有空格和特殊字符
-            answer_text = answer_text.upper().strip()
-            answer_text = ''.join(c for c in answer_text if c in 'ABCDEF')
-            
-            if not answer_text:
-                return None
-            
-            # 单选题只取第一个字母
-            if len(answer_text) == 1:
-                return answer_text
-            
-            # 多选题返回列表
-            return list(answer_text)
+            result = parse_answer_letters(answer_text, list("ABCDEF"), "multiple")
+            return result.value if result.valid else None
             
         except Exception as e:
             self.logger.error(f"解析答案失败: {e}")
             return None
     
     def random_answer(self, question_data):
-        """随机生成答案（兼底策略）"""
+        """保留兼容接口：无法可靠判断时不再随机作答。"""
         try:
-            options = list(question_data['options'].keys())
-            question_type = question_data['type']
-            
-            if question_type == 'multiple':
-                # 多选题随机选2-3个
-                num_choices = random.randint(2, min(3, len(options)))
-                return random.sample(options, num_choices)
-            else:
-                # 单选题随机选1个
-                return random.choice(options)
+            labels = allowed_option_labels(question_data)
+            self.logger.warning(f"⚠️  无法可靠判断答案，跳过随机作答；可选项: {', '.join(labels)}")
+            return None
                 
         except Exception as e:
             self.logger.error(f"随机答案生成失败: {e}")
-            return 'A'
+            return None
     
     def select_answer(self, answer, question_data):
         """选择答案（使用ActionChains）"""
