@@ -17,6 +17,7 @@ PY_FILES = [
     ROOT / "code" / "zhidao_web_auto_player_with_quiz.py",
     ROOT / "tools" / "selector_profile_switch.py",
     ROOT / "tools" / "runtime_control.py",
+    ROOT / "tools" / "run_tests.py",
 ]
 JSON_FILES = [
     ROOT / "启动" / "account.json.template",

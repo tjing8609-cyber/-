@@ -1,4 +1,4 @@
 @echo off
 cd /d "%~dp0"
-python tools\quality_check.py
+python tools\run_tests.py
 if %ERRORLEVEL% NEQ 0 pause
