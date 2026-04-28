@@ -45,6 +45,7 @@ from course_search import enter_study_page as search_enter_study_page
 from course_search import find_and_click_course_by_name
 from deepseek_agent import create_answering_service
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
+from quiz_popup_agent import QuizPopupToolbox, run_quiz_popup_agent
 from quiz_popup_reader import build_popup_question_data
 from quiz_popup_actions import (
     click_quiz_popup_submit,
@@ -2667,57 +2668,20 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def answer_quiz(self):
         """处理题目弹窗：识别题型，滚动查看答案，并选择选项"""
         try:
-            if not self.check_for_quiz():
-                return False
-            # 先滚动到底，避免答案不完整
-            self.scroll_quiz_dialog('bottom')
-            letters = self.extract_correct_answers()
-            if not letters:
-                # 单选题或答案未出现，滚动后重试
-                self.scroll_quiz_dialog('bottom')
-                letters = self.extract_correct_answers()
-            # 获取选项列表
-            options = self.get_quiz_options()
-            if not options:
-                self.logger.info("🔔 未检测到选项，请手动处理；程序继续监控")
-                return False
-            source = "visible_answer"
-            if not letters:
-                api_letters = self.answer_popup_with_api(options)
-                if api_letters:
-                    letters = api_letters
-                    source = "api_popup"
-            decision = self.quiz_agent.decide(
-                letters=letters,
-                option_count=len(options),
-                source=source,
+            toolbox = QuizPopupToolbox(
+                check_for_quiz=self.check_for_quiz,
+                scroll_dialog=self.scroll_quiz_dialog,
+                extract_visible_answers=self.extract_correct_answers,
+                get_options=self.get_quiz_options,
+                is_multi_choice=self.is_multi_choice,
+                select_options=self.select_options_by_letters_v2,
+                click_single_option=self.click_correct_answer,
+                submit=self.submit_quiz_dialog,
+                close=self.close_quiz_dialog,
+                answer_with_api=self.answer_popup_with_api,
+                wait=self.smart_wait,
             )
-            if decision.letters:
-                self.logger.info(f"🤖 Agent建议答案: {', '.join(decision.letters)} ({decision.reason})")
-            if not decision.should_select:
-                self.logger.info(f"🔔 当前模式不自动点击选项: {decision.reason}")
-                return False
-
-            if decision.letters:
-                if self.is_multi_choice():
-                    # 多选：随机顺序点击，并在每步间滚动
-                    self.select_options_by_letters_v2(decision.letters)
-                else:
-                    # 单选：点击第一个答案
-                    first = decision.letters[0]
-                    self.click_correct_answer(first, options)
-                    # 点击后再滚动一次以确认状态
-                    self.scroll_quiz_dialog('bottom')
-
-                if decision.should_submit:
-                    self.smart_wait(1)
-                    self.submit_quiz_dialog()
-                
-                if decision.should_close:
-                    self.smart_wait(2)
-                    self.close_quiz_dialog()
-                return True
-            return False
+            return run_quiz_popup_agent(self.quiz_agent, toolbox, logger=self.logger)
         except Exception as e:
             self.logger.debug(f"处理题目弹窗失败: {e}")
             return False
