@@ -61,6 +61,7 @@ from video_playback import (
     get_video_duration as playback_get_video_duration,
     get_video_progress as playback_get_video_progress,
     is_video_playing as playback_is_video_playing,
+    start_video_playback,
 )
 from video_catalog import is_catalog_video_completed
 from video_discovery import dedupe_elements_by_text, scan_video_candidates
@@ -1308,100 +1309,13 @@ class ZhidaoWebAutoPlayerFinal:
     def click_video_center(self):
         """点击视频中央黑色区域启动播放（最可靠的方法）"""
         try:
-            self.logger.info("尝试点击视频中央区域启动播放...")
-            
-            # 策略1：直接点击video元素的中心（最可靠）
-            try:
-                video_xpath = selector_value(self.selectors, "video.video_xpath", "//video")
-                video = self.driver.find_element(By.XPATH, video_xpath)
-                self.logger.info("找到video元素，点击中央区域")
-                
-                # 使用ActionChains模拟真实点击视频中心（避免JS触发防脚本检测）
-                from selenium.webdriver.common.action_chains import ActionChains
-                import random
-                
-                size = video.size
-                width = size['width']
-                height = size['height']
-                
-                # 添加随机偏移
-                offset_x = width // 2 + random.randint(-30, 30)
-                offset_y = height // 2 + random.randint(-30, 30)
-                
-                actions = ActionChains(self.driver)
-                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
-                actions.click()
-                actions.perform()
-                
-                self.logger.info(f"✅ 成功点击视频中央区域(偏移: {offset_x}, {offset_y})")
-                self.smart_wait(2)
-                
-            except Exception as e:
-                self.logger.warning(f"点击video元素中心失败: {e}")
-            
-            # 策略2：如果有可见的播放按钮，也尝试点击（作为补充）
-            try:
-                # 只查找最常见的播放按钮
-                play_button_selectors = [
-                    "//div[contains(@class, 'vjs-big-play-button')]",
-                    "//button[contains(@class, 'play-btn')]",
-                    "//div[contains(@class, 'play-btn')]",
-                ]
-                
-                for selector in play_button_selectors:
-                    try:
-                        buttons = self.driver.find_elements(By.XPATH, selector)
-                        for btn in buttons:
-                            if btn.is_displayed():
-                                self.logger.info(f"找到可见的播放按钮: {selector}")
-                                try:
-                                    btn.click()
-                                    self.logger.info("✅ 点击了播放按钮")
-                                    self.smart_wait(1)
-                                    break
-                                except:
-                                    from selenium.webdriver.common.action_chains import ActionChains
-                                    actions = ActionChains(self.driver)
-                                    actions.move_to_element(btn)
-                                    actions.click()
-                                    actions.perform()
-                                    self.logger.info("✅ ActionChains点击了播放按钮")
-                                    self.smart_wait(1)
-                                    break
-                    except:
-                        continue
-            except Exception as e:
-                self.logger.debug(f"查找播放按钮时出错（不影响）: {e}")
-            
-            # 策略3：使用ActionChains点击视频中央确保播放
-            self.logger.info("使用ActionChains点击视频中央启动播放")
-            try:
-                video_xpath = selector_value(self.selectors, "video.video_xpath", "//video")
-                video = self.driver.find_element(By.XPATH, video_xpath)
-                from selenium.webdriver.common.action_chains import ActionChains
-                import random
-                
-                size = video.size
-                width = size['width']
-                height = size['height']
-                
-                offset_x = width // 2 + random.randint(-30, 30)
-                offset_y = height // 2 + random.randint(-30, 30)
-                
-                actions = ActionChains(self.driver)
-                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
-                actions.click()
-                actions.perform()
-                
-                self.logger.info(f"✅ 已点击视频中央 (偏移: {offset_x}, {offset_y})")
-            except Exception as e:
-                self.logger.warning(f"点击视频失败: {e}")
-            
-            self.smart_wait(2)
-            
-            self.logger.info("✅ 视频启动流程完成")
-            return True
-            
+            video_xpath = selector_value(self.selectors, "video.video_xpath", "//video")
+            return start_video_playback(
+                self.driver,
+                logger=self.logger,
+                wait_func=self.smart_wait,
+                video_xpath=video_xpath,
+            )
         except Exception as e:
             self.logger.warning(f"点击视频中央时出错: {e}")
             return False

@@ -8,6 +8,14 @@ from dataclasses import dataclass
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.common.by import By
 
+from element_actions import click_element
+
+
+PLAY_BUTTON_SELECTORS = [
+    "//div[contains(@class, 'vjs-big-play-button')]",
+    "//button[contains(@class, 'play-btn')]",
+    "//div[contains(@class, 'play-btn')]",
+]
 
 @dataclass
 class VideoState:
@@ -87,6 +95,12 @@ def _log(logger, level, message):
     getattr(logger, level)(message)
 
 
+def _wait(wait_func, seconds):
+    if wait_func is None:
+        return
+    wait_func(seconds)
+
+
 def get_video_state(driver, logger=None):
     try:
         data = driver.execute_script(
@@ -135,9 +149,16 @@ def is_video_completed(driver, logger=None):
     return get_video_state(driver, logger=logger).completed
 
 
-def click_video_center(driver, logger=None, offset_min=-20, offset_max=20, success_message="已点击视频中央"):
+def click_video_center(
+    driver,
+    logger=None,
+    offset_min=-20,
+    offset_max=20,
+    success_message="已点击视频中央",
+    video_xpath="//video",
+):
     try:
-        video = driver.find_element(By.XPATH, "//video")
+        video = driver.find_element(By.XPATH, video_xpath)
         size = video.size
         width = size["width"]
         height = size["height"]
@@ -154,3 +175,53 @@ def click_video_center(driver, logger=None, offset_min=-20, offset_max=20, succe
     except Exception as exc:
         _log(logger, "warning", f"点击视频中央失败: {exc}")
         return False
+
+
+def click_visible_play_button(driver, logger=None, wait_func=None):
+    for selector in PLAY_BUTTON_SELECTORS:
+        try:
+            buttons = driver.find_elements(By.XPATH, selector)
+            for button in buttons:
+                if not button.is_displayed():
+                    continue
+                _log(logger, "info", f"找到可见的播放按钮: {selector}")
+                if click_element(driver, button, logger=logger, wait_func=wait_func, wait_seconds=1, scroll=False):
+                    _log(logger, "info", "✅ 点击了播放按钮")
+                    return True
+        except Exception:
+            continue
+    return False
+
+
+def start_video_playback(driver, logger=None, wait_func=None, video_xpath="//video"):
+    _log(logger, "info", "尝试点击视频中央区域启动播放...")
+    clicked_any = False
+
+    if click_video_center(
+        driver,
+        logger=logger,
+        offset_min=-30,
+        offset_max=30,
+        success_message="✅ 成功点击视频中央区域",
+        video_xpath=video_xpath,
+    ):
+        clicked_any = True
+        _wait(wait_func, 2)
+
+    if click_visible_play_button(driver, logger=logger, wait_func=wait_func):
+        clicked_any = True
+
+    _log(logger, "info", "使用ActionChains点击视频中央启动播放")
+    if click_video_center(
+        driver,
+        logger=logger,
+        offset_min=-30,
+        offset_max=30,
+        success_message="✅ 已点击视频中央",
+        video_xpath=video_xpath,
+    ):
+        clicked_any = True
+
+    _wait(wait_func, 2)
+    _log(logger, "info", "✅ 视频启动流程完成")
+    return clicked_any
