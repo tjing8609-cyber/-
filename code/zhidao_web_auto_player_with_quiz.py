@@ -51,6 +51,7 @@ from page_detection import (
 )
 from video_playback import (
     ProgressStallMonitor,
+    click_video_center as playback_click_video_center,
     get_video_progress as playback_get_video_progress,
     is_video_playing as playback_is_video_playing,
 )
@@ -2361,32 +2362,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.warning("🔧 检测到视频卡停，开始恢复...")
             
             # 策略1：使用ActionChains点击视频中央区域（模拟真实用户操作）
-            try:
-                self.logger.info("📍 尝试点击视频中央区域恢复播放...")
-                video = self.driver.find_element(By.XPATH, "//video")
-                
-                # 使用ActionChains模拟真实点击，添加随机偏移
-                import random
-                from selenium.webdriver.common.action_chains import ActionChains
-                
-                # 获取视频元素的大小
-                size = video.size
-                width = size['width']
-                height = size['height']
-                
-                # 计算中央位置，添加小范围随机偏移（避免每次点击完全相同的位置）
-                offset_x = width // 2 + random.randint(-20, 20)
-                offset_y = height // 2 + random.randint(-20, 20)
-                
-                # 使用ActionChains移动到视频中央并点击
-                actions = ActionChains(self.driver)
-                actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
-                actions.click()
-                actions.perform()
-                
-                self.logger.info(f"✅ 已点击视频中央 (偏移: {offset_x}, {offset_y})")
-            except Exception as e:
-                self.logger.warning(f"点击视频中央失败: {e}")
+            self.logger.info("📍 尝试点击视频中央区域恢复播放...")
+            playback_click_video_center(
+                self.driver,
+                logger=self.logger,
+                offset_min=-20,
+                offset_max=20,
+                success_message="✅ 已点击视频中央",
+            )
             
             self.smart_wait(2)
             return True
