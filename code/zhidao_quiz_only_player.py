@@ -47,6 +47,15 @@ from quiz_answering import (
     parse_answer_letters,
 )
 from quiz_page_reader import clean_question_text, detect_question_type_from_text, parse_option_text
+from quiz_test_flow import (
+    confirm_submit as test_confirm_submit,
+    find_start_button as test_find_start_button,
+    is_answer_card_ready_for_submit,
+    is_last_question as test_is_last_question,
+    is_quiz_completed as test_is_quiz_completed,
+    log_quiz_status_change,
+    submit_quiz,
+)
 
 
 class ZhidaoQuizOnlyPlayer:
@@ -320,65 +329,14 @@ class ZhidaoQuizOnlyPlayer:
     def check_quiz_status_change(self):
         """检查题目状态变化"""
         try:
-            self.logger.info("🔍 检查题目状态...")
-            
-            # 查找当前题目的状态
-            status_selectors = [
-                "//span[contains(text(), '已批阅')]",
-                "//span[contains(text(), '已提交')]",
-                "//span[contains(text(), '已完成')]",
-                "//span[contains(text(), '查看作业')]",
-                "//button[contains(text(), '查看作业')]",
-            ]
-            
-            for selector in status_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    if elements:
-                        status_text = elements[0].text.strip()
-                        self.logger.info(f"✅ 题目状态: {status_text}")
-                        return
-                except:
-                    continue
-            
-            self.logger.info("ℹ️  未检测到明确的状态变化")
-            
+            log_quiz_status_change(self.driver, logger=self.logger)
         except Exception as e:
             self.logger.error(f"检查题目状态失败: {e}")
     
     def is_last_question(self):
         """双重判断是否为最后一题"""
         try:
-            # 【判断1】检查下一题按钮是否变灰
-            next_button_gray = False
-            gray_next_selectors = [
-                "//span[contains(@class, 'Topicswitchingbtn-gray')]",
-                "//span[contains(@class, 'Topicswitchingbtn') and contains(@class, 'gray')]",
-            ]
-            
-            for selector in gray_next_selectors:
-                try:
-                    gray_buttons = self.driver.find_elements(By.XPATH, selector)
-                    if gray_buttons:
-                        self.logger.info("✅ 判断1: 下一题按钮变灰")
-                        next_button_gray = True
-                        break
-                except:
-                    continue
-            
-            if not next_button_gray:
-                self.logger.info("❌ 判断1: 下一题按钮未变灰")
-                return False
-            
-            # 【判断2】检查右侧答题卡
-            all_answered = self.check_answer_card()
-            
-            if next_button_gray and all_answered:
-                self.logger.info("✅ 双重确认: 这是最后一题！")
-                return True
-            else:
-                return False
-                
+            return test_is_last_question(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.error(f"检查是否最后一题失败: {e}")
             return False
@@ -386,117 +344,7 @@ class ZhidaoQuizOnlyPlayer:
     def check_answer_card(self):
         """检查右侧答题卡，判断是否除了最后一题外其余都已答"""
         try:
-            self.logger.info("📋 检查右侧答题卡...")
-            
-            # 根据截图，答题卡的题号在 li 元素中
-            # 已答: background: #D1F8EE（浅绿色）或 li.greenbgcur
-            # 正在答: border: 1px solid #F00C96 或 li.greenbordercur
-            # 未答: background: #9798A9（灰色）
-            
-            # 查找答题卡滚动容器
-            answer_card_container = None
-            container_selectors = [
-                "//div[contains(@class, 'el-scrollbar__view')]",
-                "//div[@class='el-dialog__body']",
-            ]
-            
-            for selector in container_selectors:
-                try:
-                    containers = self.driver.find_elements(By.XPATH, selector)
-                    if containers:
-                        answer_card_container = containers[0]
-                        break
-                except:
-                    continue
-            
-            # 滚动到底部以查看所有题号
-            if answer_card_container:
-                self.logger.info("📜 滚动答题卡到底部...")
-                self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", answer_card_container)
-                self.smart_wait(1)
-            
-            # 查找所有题号 li 元素
-            question_items = self.driver.find_elements(By.XPATH, "//li[contains(@class, 'questionlistall') or contains(@class, 'green')]")
-            
-            if not question_items:
-                # 如果找不到，尝试其他选择器
-                question_items = self.driver.find_elements(By.XPATH, "//div[@class='el-dialog__body']//li")
-            
-            answered_count = 0      # 已答题数
-            current_count = 0       # 正在答题数
-            unanswered_count = 0    # 未答题数
-            total_count = 0
-            
-            last_question_index = -1  # 最后一题的索引
-            current_question_index = -1  # 正在答的题索引
-            
-            for i, item in enumerate(question_items):
-                try:
-                    item_class = item.get_attribute('class') or ''
-                    
-                    # 过滤非题号元素
-                    if not item.text.strip().isdigit():
-                        continue
-                    
-                    total_count += 1
-                    last_question_index = i  # 更新最后一题索引
-                    
-                    # 获取背景颜色
-                    bg_color = item.value_of_css_property('background-color')
-                    
-                    # 检查状态（同时检查CSS类和背景颜色）
-                    is_answered = False
-                    is_current = False
-                    
-                    # 判断是否已答题
-                    if 'greenbgcur' in item_class:
-                        is_answered = True
-                    elif bg_color:
-                        # 转换背景颜色为hex格式进行判断
-                        import re
-                        rgb_match = re.search(r'rgba?\((\d+),\s*(\d+),\s*(\d+)', bg_color)
-                        if rgb_match:
-                            r, g, b = map(int, rgb_match.groups())
-                            hex_color = f"#{r:02x}{g:02x}{b:02x}".upper()
-                            # 已答题颜色: #D1F8EE（浅绿色）
-                            if hex_color == '#D1F8EE' or (r > 200 and g > 240 and b > 230):
-                                is_answered = True
-                    
-                    # 判断是否正在答题
-                    if 'greenbordercur' in item_class:
-                        is_current = True
-                    
-                    # 统计
-                    if is_current:
-                        # 正在答（绿色边框）
-                        current_count += 1
-                        current_question_index = i
-                        self.logger.debug(f"题号 {item.text}: 正在答题")
-                    elif is_answered:
-                        # 已答题（绿色背景）
-                        answered_count += 1
-                        self.logger.debug(f"题号 {item.text}: 已答题")
-                    else:
-                        # 未答题
-                        unanswered_count += 1
-                        self.logger.debug(f"题号 {item.text}: 未答题 (bg={bg_color})")
-                        
-                except:
-                    continue
-            
-            self.logger.info(f"📊 统计: 总题数={total_count}, 已答={answered_count}, 正在答={current_count}, 未答={unanswered_count}")
-            
-            # 判断条件：
-            # 1. 只有一道题正在答
-            # 2. 正在答的题是最后一题
-            # 3. 其余所有题都已答
-            if current_count == 1 and current_question_index == last_question_index and answered_count == total_count - 1 and unanswered_count == 0:
-                self.logger.info("✅ 判断2: 答题卡检查通过！除了最后一题正在答，其余均已答")
-                return True
-            else:
-                self.logger.warning(f"⚠️  判断2: 答题卡状态不符合（正在答={current_count}, 当前题是最后一题={current_question_index == last_question_index}, 未答={unanswered_count}）")
-                return False
-                
+            return is_answer_card_ready_for_submit(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.error(f"检查答题卡失败: {e}")
             import traceback
@@ -1087,71 +935,7 @@ class ZhidaoQuizOnlyPlayer:
     def find_start_button(self, container):
         """在测试容器内查找开始按钮"""
         try:
-            # 【优化】在容器内查找"开始做题"按钮（不要点击题目标题）
-            button_selectors = [
-                # 优先查找精确包含"开始做题"的按钮
-                ".//button[contains(text(), '开始做题')]",
-                ".//div[contains(text(), '开始做题')]",
-                ".//a[contains(text(), '开始做题')]",
-                ".//span[contains(text(), '开始做题')]",
-                # 绿色按钮的class
-                ".//div[contains(@class, 'btn') and contains(@class, 'start')]",
-                ".//div[contains(@class, 'btn') and contains(@class, 'do')]",
-                ".//button[contains(@class, 'start')]",
-                # 其他开始相关
-                ".//button[contains(text(), '开始')]",
-                ".//div[contains(text(), '开始')]",
-                ".//span[contains(text(), '开始')]",
-                ".//a[contains(text(), '开始')]",
-            ]
-            
-            for selector in button_selectors:
-                try:
-                    buttons = container.find_elements(By.XPATH, selector)
-                    for btn in buttons:
-                        btn_text = btn.text.strip()
-                        btn_class = btn.get_attribute('class') or ''
-                        
-                        # 【优化】精确匹配"开始做题"按钮
-                        if '开始做题' in btn_text:
-                            self.logger.info(f"✅ 找到'开始做题'按钮: {btn_text}")
-                            return btn
-                        # 其他"开始"按钮
-                        elif '开始' in btn_text and ('测试' in btn_text or '考试' in btn_text):
-                            self.logger.info(f"✅ 找到开始按钮: {btn_text}")
-                            return btn
-                        # 根据class匹配
-                        elif 'do' in btn_class.lower() or 'start' in btn_class.lower():
-                            if btn.is_displayed() and btn.is_enabled():
-                                self.logger.info(f"✅ 找到按钮class: {btn_class[:50]}")
-                                return btn
-                except:
-                    continue
-            
-            # 【修改】如果没找到具体按钮，记录警告但不返回容器
-            self.logger.warning("⚠️  未找到'开始做题'按钮，尝试在全页面查找...")
-            
-            # 尝试在全页面查找
-            global_selectors = [
-                "//button[contains(text(), '开始做题')]",
-                "//div[contains(text(), '开始做题')]",
-                "//a[contains(text(), '开始做题')]",
-            ]
-            
-            for selector in global_selectors:
-                try:
-                    buttons = self.driver.find_elements(By.XPATH, selector)
-                    for btn in buttons:
-                        if '开始做题' in btn.text and btn.is_displayed():
-                            self.logger.info(f"✅ 全页面找到'开始做题'按钮: {btn.text}")
-                            return btn
-                except:
-                    continue
-            
-            # 如果还是没找到，返回None而不是容器
-            self.logger.error("❌ 未找到'开始做题'按钮")
-            return None
-            
+            return test_find_start_button(self.driver, container, logger=self.logger)
         except Exception as e:
             self.logger.error(f"查找开始按钮失败: {e}")
             import traceback
@@ -1161,26 +945,7 @@ class ZhidaoQuizOnlyPlayer:
     def check_quiz_completed(self):
         """检查测试是否已完成"""
         try:
-            if not self.quiz_element:
-                return False
-            
-            # 检查是否包含"已完成"、"已提交"等关键词
-            element_text = self.quiz_element.text
-            completed_keywords = ['已完成', '已提交', '已做', '100%', '满分']
-            
-            for keyword in completed_keywords:
-                if keyword in element_text:
-                    self.logger.info(f"检测到测试已完成: {element_text[:30]}")
-                    return True
-            
-            # 检查进度记录
-            quiz_id = self.quiz_element.get_attribute('id') or element_text[:20]
-            if quiz_id in self.progress.get('completed_quizzes', []):
-                self.logger.info(f"进度记录显示该测试已完成: {quiz_id}")
-                return True
-            
-            return False
-            
+            return test_is_quiz_completed(self.quiz_element, progress=self.progress, logger=self.logger)
         except Exception as e:
             self.logger.error(f"检查测试完成状态失败: {e}")
             return False
@@ -1728,49 +1493,7 @@ class ZhidaoQuizOnlyPlayer:
     def check_and_submit(self):
         """检查并点击提交按钮"""
         try:
-            # 【优化】根据实际页面结构
-            submit_selectors = [
-                # 知到平台专用class
-                "//span[contains(@class, 'Submithomeworkbtn')]",
-                "//div[contains(@class, 'Submithomeworkbtn')]",
-                # 通用选择器
-                "//button[contains(text(), '提交')]",
-                "//span[contains(text(), '提交')]",
-                "//div[contains(text(), '提交')]",
-                "//button[contains(text(), '交卷')]",
-                "//span[contains(text(), '交卷')]",
-                "//span[contains(text(), '提交作业')]",
-            ]
-            
-            for selector in submit_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for elem in elements:
-                        if '提交' in elem.text or '交卷' in elem.text:
-                            self.logger.info("📝 找到提交按钮")
-                            
-                            # 提交前稍微等待（反检测）
-                            self.smart_wait(random.uniform(2, 4))
-                            
-                            # 使用ActionChains点击
-                            actions = ActionChains(self.driver)
-                            actions.move_to_element(elem)
-                            actions.pause(random.uniform(1.0, 2.0))
-                            actions.click()
-                            actions.perform()
-                            
-                            self.logger.info("✅ 已点击提交")
-                            self.smart_wait(3)
-                            
-                            # 处理确认弹窗
-                            self.handle_submit_confirm()
-                            
-                            return True
-                except:
-                    continue
-            
-            return False
-            
+            return submit_quiz(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.error(f"提交测试失败: {e}")
             return False
@@ -1778,42 +1501,7 @@ class ZhidaoQuizOnlyPlayer:
     def handle_submit_confirm(self):
         """处理提交确认弹窗"""
         try:
-            self.logger.info("🔍 查找确认弹窗...")
-            self.smart_wait(2)  # 等待弹窗出现
-            
-            # 【优化】根据截图，确认按钮的class是 el-button.Submissionbtn.el-button--primary
-            confirm_selectors = [
-                # 知到平台专用确认按钮
-                "//button[contains(@class, 'Submissionbtn') and contains(@class, 'el-button--primary')]",
-                "//button[contains(@class, 'Submissionbtn')]",
-                # 通用选择器（确认按钮通常在右侧）
-                "//button[contains(@class, 'el-button--primary') and contains(text(), '提交')]",
-                "//button[contains(@class, 'el-button--primary') and contains(text(), '确定')]",
-                "//button[contains(@class, 'el-button--primary') and contains(text(), '确认')]",
-                "//span[contains(text(), '提交')]/parent::button[contains(@class, 'el-button--primary')]",
-            ]
-            
-            for selector in confirm_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for elem in elements:
-                        if elem.is_displayed():
-                            # 使用ActionChains点击
-                            actions = ActionChains(self.driver)
-                            actions.move_to_element(elem)
-                            actions.pause(random.uniform(0.5, 1.0))
-                            actions.click()
-                            actions.perform()
-                            
-                            self.logger.info("✅ 已确认提交")
-                            self.smart_wait(3)  # 等待提交处理
-                            return True
-                except:
-                    continue
-            
-            self.logger.warning("⚠️  未找到确认按钮")
-            return False
-            
+            return test_confirm_submit(self.driver, logger=self.logger, wait_func=self.smart_wait)
         except Exception as e:
             self.logger.error(f"处理确认弹窗失败: {e}")
             return False
