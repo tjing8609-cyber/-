@@ -21,6 +21,7 @@ PY_FILES = [
     ROOT / "code" / "page_detection.py",
     ROOT / "code" / "quiz_answering.py",
     ROOT / "code" / "quiz_agent.py",
+    ROOT / "code" / "quiz_page_reader.py",
     ROOT / "code" / "deepseek_agent.py",
     ROOT / "code" / "quiz_popup_reader.py",
     ROOT / "code" / "quiz_popup_actions.py",

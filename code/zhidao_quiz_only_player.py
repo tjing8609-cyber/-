@@ -42,6 +42,7 @@ from quiz_answering import (
     classify_api_error,
     parse_answer_letters,
 )
+from quiz_page_reader import clean_question_text, detect_question_type_from_text, parse_option_text
 
 
 class ZhidaoQuizOnlyPlayer:
@@ -1479,17 +1480,7 @@ class ZhidaoQuizOnlyPlayer:
                         text = elem.text.strip()
                         # 过滤题目标识前缀
                         if text and len(text) > 5:
-                            # 移除题号和题型标识
-                            # 例如: "1. 【单选题】 (1分)\n题目内容"
-                            import re
-                            # 移除题号（数字. 或 数字、）
-                            text = re.sub(r'^\d+[.、]\s*', '', text)
-                            # 移除题型标识（【单选题】、【多选题】等）
-                            text = re.sub(r'【[^】]+】\s*', '', text)
-                            # 移除分数标识（(1分)、(2分)等）
-                            text = re.sub(r'\(\d+分\)\s*', '', text)
-                            
-                            text = text.strip()
+                            text = clean_question_text(text)
                             if text and len(text) > 5:
                                 return text
                 except:
@@ -1550,22 +1541,7 @@ class ZhidaoQuizOnlyPlayer:
                     if not text:
                         continue
                     
-                    # 智能识别选项标签
-                    detected_label = None
-                    for label in option_labels:
-                        # 支持多种格式: A. / A、 / A） / A
-                        if text.startswith(f'{label}.') or text.startswith(f'{label}、') or text.startswith(f'{label}）') or text.startswith(f'{label} '):
-                            detected_label = label
-                            # 移除选项前缀
-                            for prefix in [f'{label}.', f'{label}、', f'{label}）', f'{label} ']:
-                                if text.startswith(prefix):
-                                    text = text[len(prefix):].strip()
-                                    break
-                            break
-                    
-                    # 如果没检测到标签，使用顺序
-                    if not detected_label:
-                        detected_label = option_labels[i]
+                    detected_label, text = parse_option_text(text, option_labels[i])
                     
                     if text:
                         options[detected_label] = {
@@ -1597,25 +1573,21 @@ class ZhidaoQuizOnlyPlayer:
                 # 查找题目区域的文本
                 question_area = self.driver.find_element(By.XPATH, "//body").text
                 
-                # 优先检查题目标题
-                if '【多选题】' in question_area or '（多选）' in question_area:
-                    return 'multiple'
-                elif '【判断题】' in question_area or '（判断）' in question_area:
-                    return 'judge'
-                elif '【单选题】' in question_area or '（单选）' in question_area:
-                    return 'single'
+                detected = detect_question_type_from_text(question_area, default=None)
+                if detected:
+                    return detected
             except:
                 pass
             
             # 检查是否有checkbox（多选题）
             checkboxes = self.driver.find_elements(By.XPATH, "//input[@type='checkbox']")
             if checkboxes:
-                return 'multiple'
+                return detect_question_type_from_text("", has_checkbox=True)
             
             # 检查是否有radio（单选题）
             radios = self.driver.find_elements(By.XPATH, "//input[@type='radio']")
             if radios:
-                return 'single'
+                return detect_question_type_from_text("", has_radio=True)
             
             # 默认为单选题
             return 'single'
