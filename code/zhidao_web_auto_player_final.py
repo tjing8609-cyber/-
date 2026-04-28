@@ -35,6 +35,7 @@ from selenium.webdriver.edge.options import Options as EdgeOptions
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+from browser_session import create_browser_session, resolve_local_driver_paths
 from course_catalog import classify_catalog_text
 from runtime_center import load_selectors, selector_value
 from course_outline import expand_collapsed_chapters
@@ -314,118 +315,22 @@ class ZhidaoWebAutoPlayerFinal:
         self.logger.info(f"日志系统初始化完成，日志文件: {log_file}")
 
     def _resolve_local_driver_paths(self):
-        base_paths = [
-            os.path.join(self.project_root, "code", "chromedriver.exe"),
-            os.path.join(self.project_root, "chromedriver.exe"),
-            os.path.join(self.project_root, "code", "chromedriver-win64", "chromedriver.exe"),
-            os.path.join(os.getcwd(), "chromedriver.exe")
-        ]
-        return [path for path in base_paths if os.path.exists(path)]
+        return resolve_local_driver_paths(self.project_root)
 
     def setup_driver(self, headless=False):
         """设置Chrome浏览器驱动"""
-        chrome_options = Options()
-        chrome_options.add_argument('--no-sandbox')
-        chrome_options.add_argument('--disable-dev-shm-usage')
-        chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
-        chrome_options.add_argument('--window-size=1920,1080')
-        if headless:
-            chrome_options.add_argument('--headless')
-
         self.logger.info("🚀 开始初始化ChromeDriver")
         self.logger.info("=" * 60)
-
-        local_driver_paths = self._resolve_local_driver_paths()
-        for driver_path in local_driver_paths:
-            try:
-                self.logger.info(f"📦 优先尝试本地驱动: {driver_path}")
-                self.driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
-                self.logger.info("✅ 本地驱动初始化成功")
-                break
-            except Exception as e:
-                self.logger.warning(f"⚠️ 本地驱动不可用: {str(e)[:120]}")
-                self.driver = None
-
-        last_error = None
-        if self.driver is None:
-            try:
-                self.logger.info("📦 方案1: 使用淘宝NPM镜像下载ChromeDriver")
-                os.environ['WDM_SSL_VERIFY'] = '0'
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                self.logger.info("✅ 方案1成功: ChromeDriver已通过淘宝镜像下载")
-            except Exception as e:
-                last_error = e
-                self.logger.warning(f"⚠️ 方案1失败: {str(e)[:120]}")
-
-        if self.driver is None:
-            try:
-                self.logger.info("📦 方案2: 强制重新下载最新版ChromeDriver")
-                import shutil
-                cache_path = os.path.join(os.path.expanduser('~'), '.wdm')
-                if os.path.exists(cache_path):
-                    shutil.rmtree(cache_path, ignore_errors=True)
-                service = Service(ChromeDriverManager().install())
-                self.driver = webdriver.Chrome(service=service, options=chrome_options)
-                self.logger.info("✅ 方案2成功: 已下载最新版ChromeDriver")
-            except Exception as e:
-                last_error = e
-                self.logger.warning(f"⚠️ 方案2失败: {str(e)[:120]}")
-
-        if self.driver is None:
-            try:
-                self.logger.info("📦 方案3: 使用Selenium Manager自动管理驱动")
-                self.driver = webdriver.Chrome(options=chrome_options)
-                self.logger.info("✅ 方案3成功: Selenium Manager自动配置完成")
-            except Exception as e:
-                last_error = e
-                self.logger.warning(f"⚠️ 方案3失败: {str(e)[:120]}")
-
-        if self.driver is None:
-            try:
-                self.logger.info("📦 方案4: 使用系统PATH中的ChromeDriver")
-                import subprocess
-                result = subprocess.run(['chromedriver', '--version'], capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    self.logger.info(f"🔍 找到系统ChromeDriver: {result.stdout.strip()}")
-                    self.driver = webdriver.Chrome(options=chrome_options)
-                    self.logger.info("✅ 方案4成功: 使用系统ChromeDriver")
-            except Exception as e:
-                last_error = e
-                self.logger.warning(f"⚠️ 方案4失败: {str(e)[:120]}")
-
-        if self.driver is None:
-            self.logger.error("\n" + "=" * 60)
-            self.logger.error("❌ ChromeDriver初始化失败")
-            self.logger.error("=" * 60)
-            self.logger.error(f"最后一次错误: {last_error}")
-            self.logger.error("🔄 尝试回退到 Edge 浏览器...")
-            try:
-                edge_options = EdgeOptions()
-                edge_options.add_argument('--no-sandbox')
-                edge_options.add_argument('--disable-dev-shm-usage')
-                edge_options.add_argument('--disable-blink-features=AutomationControlled')
-                edge_options.add_argument('--window-size=1920,1080')
-                if headless:
-                    edge_options.add_argument('--headless')
-                self.driver = webdriver.Edge(options=edge_options)
-                self.logger.info("✅ Edge 初始化成功，已自动切换为 Edge 继续运行")
-            except Exception as edge_error:
-                self.logger.error(f"❌ Edge 初始化失败: {edge_error}")
-                self.logger.error("请执行以下修复：")
-                self.logger.error("1) 访问 chrome://version 记下主版本号（例如 141）")
-                self.logger.error("2) 从镜像下载相同主版本的驱动包：")
-                self.logger.error("   https://registry.npmmirror.com/binary.html?path=chromedriver/")
-                self.logger.error(f"3) 解压 chromedriver.exe 到: {os.path.join(self.project_root, 'code', 'chromedriver.exe')}")
-                self.logger.error("4) 重新运行 GUI（程序会优先使用本地驱动）")
-                self.logger.error("=" * 60)
-                raise RuntimeError(f"ChromeDriver初始化失败: {last_error}")
-
-        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        self.wait = WebDriverWait(self.driver, 30)
+        session = create_browser_session(
+            self.project_root,
+            headless=headless,
+            logger=self.logger,
+            window_size="1920,1080",
+            retry_clean_manager=True,
+            check_path_driver=True,
+        )
+        self.driver = session.driver
+        self.wait = session.wait
         self.logger.info("=" * 60)
         self.logger.info("✅ 浏览器驱动初始化完成")
         self.logger.info("=" * 60)
