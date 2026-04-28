@@ -10,6 +10,7 @@ PY_FILES = [
     ROOT / "code" / "config_loader.py",
     ROOT / "code" / "run_context.py",
     ROOT / "code" / "run_target.py",
+    ROOT / "code" / "player_runner.py",
     ROOT / "code" / "browser_session.py",
     ROOT / "code" / "auth_flow.py",
     ROOT / "code" / "course_entry.py",

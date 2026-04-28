@@ -17,9 +17,9 @@ See the Mulan PSL v2 for more details.
 
 import sys
 import os
-import importlib
 from config_loader import ConfigLoadError
 from runtime_center import run_health_check, update_observability, write_failure_snapshot
+from player_runner import PlayerImportError, execute_player
 from run_context import create_run_context
 from run_target import resolve_run_target as resolve_target
 
@@ -113,50 +113,17 @@ def main():
     print("=" * 60)
 
     try:
-        module = importlib.import_module(run_target.module_name)
-        player_class = getattr(module, run_target.class_name)
-        player = player_class(account_file=str(context.account_path), headless=context.headless)
-        update_observability(project_root, {
-            "status": "running",
-            "account_file": str(context.account_path),
-            "mode": mode,
-            "module": run_target.module_name
-        })
-        player.run()
-        update_observability(project_root, {
-            "status": "completed",
-            "account_file": str(context.account_path),
-            "mode": mode,
-            "module": run_target.module_name
-        })
-    except ImportError as e:
+        execute_player(
+            run_target,
+            context,
+            update_observability=update_observability,
+            write_failure_snapshot=write_failure_snapshot,
+        )
+    except PlayerImportError as e:
         print(run_target.import_error_message.format(error=e))
         print(run_target.missing_file_message)
-        update_observability(project_root, {
-            "status": "import_error",
-            "account_file": str(context.account_path),
-            "mode": mode,
-            "module": run_target.module_name,
-            "error": str(e)
-        })
         sys.exit(1)
     except Exception as e:
-        snapshot_file = write_failure_snapshot(
-            project_root,
-            str(context.account_path),
-            run_target.module_name,
-            locals().get('player'),
-            e
-        )
-        print(f"[失败快照] {snapshot_file}")
-        update_observability(project_root, {
-            "status": "failed",
-            "account_file": str(context.account_path),
-            "mode": mode,
-            "module": run_target.module_name,
-            "error": str(e),
-            "snapshot": snapshot_file
-        })
         raise
 
 
