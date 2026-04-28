@@ -52,6 +52,7 @@ from video_playback import (
     get_video_progress as playback_get_video_progress,
     is_video_playing as playback_is_video_playing,
 )
+from video_catalog import is_catalog_video_completed
 
 
 class ZhidaoWebAutoPlayerFinal:
@@ -1310,74 +1311,7 @@ class ZhidaoWebAutoPlayerFinal:
     def is_video_completed(self, element):
         """判断视频是否已完成观看（检查特定的class名称）"""
         try:
-            # 从 HTML 中看到的实际class：
-            # 已完成：<i class="iconfont zhihuishu-wancheng"></i> （绿色勾）
-            # 未开始：<i class="iconfont zhihuishu-weikaishi"></i> （空心圆圈）
-            
-            # 获取元素文本用于调试
-            text = element.text
-            
-            # 重要：如果当前元素是<span>标签，需要向上查找父元素
-            # 因为完成标记通常在父元素或兄弟元素中
-            check_elements = [element]
-            
-            # 如果是span标签，添加父元素和祖父元素到检查列表
-            if element.tag_name == 'span':
-                try:
-                    parent = element.find_element(By.XPATH, "./parent::*")
-                    check_elements.append(parent)
-                    # 再向上一级
-                    grandparent = parent.find_element(By.XPATH, "./parent::*")
-                    check_elements.append(grandparent)
-                except:
-                    pass
-            
-            # 策略：优先检查"未完成"的明确证据，再检查"已完成"
-            
-            # 1. 检查是否有未开始标记（空心圆圈）- 优先级最高
-            for check_elem in check_elements:
-                try:
-                    unwatched_icons = check_elem.find_elements(By.XPATH, ".//*[contains(@class, 'zhihuishu-weikaishi')]")
-                    if unwatched_icons:
-                        text_preview = text[:30] if text else "(无文本)"
-                        self.logger.info(f"  → 检测到未开始标记（空心圆圈）- {text_preview}")
-                        return False
-                except:
-                    continue
-            
-            # 2. 检查是否有部分观看百分比（如 0%, 8%, 17%, 50% 等）
-            import re
-            # 匹配 0%-99% 的百分比（但不包括100%）
-            partial_match = re.search(r'\b(0%|[1-9]\d?%)\b', text)
-            if partial_match:
-                percentage = partial_match.group(1)
-                if percentage != '100%':  # 确保不是100%
-                    self.logger.info(f"  → 找到部分观看视频：{percentage}，需要继续播放 - {text[:30]}")
-                    return False
-            
-            # 3. 检查文本中的100%（完全观看完毕）
-            if '100%' in text:
-                self.logger.info(f"  → 检测到100%: {text[:30]}")
-                return True
-            
-            # 4. 检查是否有完成标记（绿色勾）
-            for check_elem in check_elements:
-                try:
-                    completed_icons = check_elem.find_elements(By.XPATH, ".//*[contains(@class, 'zhihuishu-wancheng')]")
-                    if completed_icons:
-                        text_preview = text[:30] if text else "(无文本)"
-                        self.logger.info(f"  → 检测到完成标记（绿色勾）- {text_preview}")
-                        return True
-                except:
-                    continue
-            
-            # 5. 检查文本中的完成标记
-            if '已完成' in text or '已观看' in text:
-                self.logger.info(f"  → 检测到完成文本: {text[:30]}")
-                return True
-            
-            # 如果没有任何完成标记，则认为未完成
-            return False
+            return is_catalog_video_completed(element, logger=self.logger)
 
         except Exception as e:
             # 如果无法判断，默认为未完成

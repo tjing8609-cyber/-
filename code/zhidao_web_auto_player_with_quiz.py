@@ -35,7 +35,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
-from course_catalog import classify_catalog_text, extract_catalog_title
+from course_catalog import classify_catalog_text
 from course_entry import has_course_url, open_course_url
 from deepseek_agent import create_answering_service
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
@@ -53,6 +53,7 @@ from video_playback import (
     get_video_progress as playback_get_video_progress,
     is_video_playing as playback_is_video_playing,
 )
+from video_catalog import is_catalog_video_completed, video_title_from_text
 
 
 def bezier_curve(start, end, control1=None, control2=None, steps=20):
@@ -1746,6 +1747,17 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.logger.debug(f"  → 跳过：章节标题 ({text[:30]}...)")
                                 continue
 
+                    if is_catalog_video_completed(element, logger=self.logger):
+                        self.logger.debug(f"  → 跳过：已完成 ({text[:30]}...)")
+                        video_title = self._extract_video_title(text)
+                        if not any(v.get('title') == video_title for v in watched_videos):
+                            watched_videos.append({
+                                'text': text[:100],
+                                'title': video_title
+                            })
+                            self.logger.debug(f"  ✅ 添加到已观看列表: {video_title[:30]}")
+                        continue
+
                     # 检查是否已完成（查找蓝色勾选标记）
                     try:
                         # 方法1：查找 time_icofinish class（知到平台完成标记）
@@ -1847,7 +1859,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def _extract_video_title(self, text):
         """从元素文本中提取视频标题（去除进度、时长等信息）"""
-        return extract_catalog_title(text, max_length=50)
+        return video_title_from_text(text, max_length=50)
     
     def get_current_video_title(self):
         """获取当前正在播放的视频标题（从左上角）"""
