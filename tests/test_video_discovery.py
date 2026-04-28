@@ -11,6 +11,7 @@ if str(CODE_DIR) not in sys.path:
 from video_discovery import (  # noqa: E402
     collect_elements_by_selectors,
     dedupe_elements_by_text,
+    discover_main_area_videos,
     discover_sidebar_videos,
     is_skippable_video_text,
     scan_video_candidates,
@@ -42,15 +43,20 @@ class FakeElement:
 
 
 class FakeDriver:
-    def __init__(self, elements=None):
+    def __init__(self, elements=None, current_url="", page_source=""):
         self.elements = elements or {}
         self.scripts = []
+        self.current_url = current_url
+        self.page_source = page_source
 
     def find_element(self, by, value):
         items = self.elements.get(value, [])
         if items:
             return items[0]
         raise RuntimeError("not found")
+
+    def find_elements(self, by, value):
+        return self.elements.get(value, [])
 
     def execute_script(self, script, *args):
         self.scripts.append((script, args))
@@ -127,6 +133,17 @@ class VideoDiscoveryTests(unittest.TestCase):
         result = discover_sidebar_videos(FakeDriver(), sidebar_selectors=["//aside"], expand_chapters=False)
 
         self.assertIsNone(result)
+
+    def test_discover_main_area_videos(self):
+        video = FakeElement("1.1 绪论.mp4 00:10", tag_name="a")
+        driver = FakeDriver({
+            "//a[contains(text(), '.mp4') or contains(text(), '.MP4')]": [video]
+        }, current_url="https://example.com/study")
+
+        result = discover_main_area_videos(driver, wait_func=lambda _seconds: None)
+
+        self.assertEqual(len(result.unwatched), 1)
+        self.assertIs(result.unwatched[0]["element"], video)
 
 
 if __name__ == "__main__":

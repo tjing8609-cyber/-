@@ -66,9 +66,8 @@ from video_catalog import is_catalog_video_completed
 from video_discovery import (
     DEFAULT_SIDEBAR_SELECTORS,
     DEFAULT_SIDEBAR_VIDEO_SELECTORS,
-    dedupe_elements_by_text,
+    discover_main_area_videos,
     discover_sidebar_videos,
-    scan_video_candidates,
 )
 
 
@@ -672,98 +671,14 @@ class ZhidaoWebAutoPlayerFinal:
         """查找未观看的视频（不包括PPT）"""
         self.logger.info("正在查找未观看的视频...")
 
-        unwatched_videos = []
-
         try:
-            # 等待页面加载
-            self.smart_wait(5)
-            
-            # 检查当前页面URL
-            current_url = self.driver.current_url
-            self.logger.info(f"视频列表页面URL: {current_url}")
-            
-            # 滚动页面，确保所有视频都加载出来
-            self.logger.info("滚动页面加载所有视频...")
-            for i in range(5):
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                self.smart_wait(2)
-                self.logger.info(f"滚动进度: {i+1}/5")
-            
-            # 回到顶部
-            self.driver.execute_script("window.scrollTo(0, 0);")
-            self.smart_wait(2)
-
-            # 优先查找可点击的视频元素（先找<a>标签，最可靠）
-            video_selectors = [
-                # 第一优先级：包含视频链接的<a>标签（最可靠）
-                "//a[contains(@href, 'video') or contains(@href, 'play') or contains(@href, 'watch')]",
-                "//a[contains(text(), '.mp4') or contains(text(), '.MP4')]",
-                "//a[contains(@class, 'video')]",
-                "//a[contains(@class, 'lesson')]",
-                "//a[contains(@class, 'chapter')]",
-                
-                # 第二优先级：可点击的div/li（有onclick）
-                "//div[@onclick and (contains(@class, 'video') or contains(@class, 'lesson'))]",
-                "//li[@onclick and (contains(@class, 'video') or contains(@class, 'lesson'))]",
-                
-                # 第三优先级：包含视频相关class的可交互元素
-                "//div[contains(@class, 'video-item') or contains(@class, 'lesson-item')]",
-                "//li[contains(@class, 'video-item') or contains(@class, 'lesson-item')]",
-                
-                # 第四优先级：包含.mp4文本的元素内的链接
-                "//*[contains(text(), '.mp4') or contains(text(), '.MP4')]/ancestor::a",
-                "//*[contains(text(), '.mp4') or contains(text(), '.MP4')]/parent::*[self::a or @onclick]",
-                
-                # 第五优先级（备用）：所有包含.mp4/.MP4文本的元素
-                "//*[contains(text(), '.mp4') or contains(text(), '.MP4')]",
-                
-                # 第六优先级（最宽泛）：所有可能的可点击元素
-                "//a[@href]",
-                "//div[@onclick]",
-                "//li[@onclick]",
-            ]
-
-            all_video_elements = []
-            self.logger.info("开始查找视频元素...")
-            
-            for selector in video_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    if elements:
-                        self.logger.info(f"选择器 {selector} 找到 {len(elements)} 个元素")
-                        all_video_elements.extend(elements)
-                except Exception as e:
-                    self.logger.warning(f"选择器 {selector} 失败: {e}")
-                    continue
-            
-            self.logger.info(f"总共找到 {len(all_video_elements)} 个可能的视频元素")
-            
-            # 如果没找到任何元素，保存页面HTML用于调试
-            if len(all_video_elements) == 0:
-                try:
-                    import datetime
-                    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                    html_file = f"debug_page_{timestamp}.html"
-                    with open(html_file, 'w', encoding='utf-8') as f:
-                        f.write(self.driver.page_source)
-                    self.logger.warning(f"⚠️  未找到任何视频元素，已保存页面HTML到: {html_file}")
-                    self.logger.warning("🔍 请打开此文件查看页面结构，找到视频元素的class或id")
-                except Exception as e:
-                    self.logger.error(f"保存页面HTML失败: {e}")
-
-            # 去重
-            unique_elements = dedupe_elements_by_text(all_video_elements)
-            
-            self.logger.info(f"去重后剩余 {len(unique_elements)} 个元素")
-
-            scan_result = scan_video_candidates(
-                unique_elements,
+            scan_result = discover_main_area_videos(
+                self.driver,
                 completed_texts=self.progress.get('completed_videos', []),
                 logger=self.logger,
-                require_mp4=True,
-                prefer_inner_link=True,
+                wait_func=self.smart_wait,
             )
-            unwatched_videos.extend(scan_result.unwatched)
+            unwatched_videos = scan_result.unwatched
 
             self.logger.info(f"\n共找到 {len(unwatched_videos)} 个未观看视频")
             

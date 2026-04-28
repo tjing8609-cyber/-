@@ -1,3 +1,4 @@
+import datetime
 from dataclasses import dataclass, field
 
 from course_catalog import classify_catalog_text
@@ -34,6 +35,23 @@ EXTENDED_SIDEBAR_VIDEO_SELECTORS = [
     ".//div[contains(@class, 'chapter-item')]",
     ".//span[contains(@class, 'catalog_title')]",
     ".//li",
+]
+MAIN_AREA_VIDEO_SELECTORS = [
+    "//a[contains(@href, 'video') or contains(@href, 'play') or contains(@href, 'watch')]",
+    "//a[contains(text(), '.mp4') or contains(text(), '.MP4')]",
+    "//a[contains(@class, 'video')]",
+    "//a[contains(@class, 'lesson')]",
+    "//a[contains(@class, 'chapter')]",
+    "//div[@onclick and (contains(@class, 'video') or contains(@class, 'lesson'))]",
+    "//li[@onclick and (contains(@class, 'video') or contains(@class, 'lesson'))]",
+    "//div[contains(@class, 'video-item') or contains(@class, 'lesson-item')]",
+    "//li[contains(@class, 'video-item') or contains(@class, 'lesson-item')]",
+    "//*[contains(text(), '.mp4') or contains(text(), '.MP4')]/ancestor::a",
+    "//*[contains(text(), '.mp4') or contains(text(), '.MP4')]/parent::*[self::a or @onclick]",
+    "//*[contains(text(), '.mp4') or contains(text(), '.MP4')]",
+    "//a[@href]",
+    "//div[@onclick]",
+    "//li[@onclick]",
 ]
 SKIP_TEXT_MARKERS = [
     ".pptx",
@@ -171,6 +189,81 @@ def write_debug_html(element, debug_html_path, logger=None):
         _log(logger, "warning", f"⚠️  未找到任何视频元素，已保存侧边栏HTML到 {debug_html_path}")
     except Exception as e:
         _log(logger, "debug", f"保存HTML失败: {e}")
+
+
+def write_debug_page(driver, debug_html_path=None, logger=None):
+    try:
+        if debug_html_path is None:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            debug_html_path = f"debug_page_{timestamp}.html"
+        with open(debug_html_path, "w", encoding="utf-8") as file:
+            file.write(driver.page_source)
+        _log(logger, "warning", f"⚠️  未找到任何视频元素，已保存页面HTML到: {debug_html_path}")
+        _log(logger, "warning", "🔍 请打开此文件查看页面结构，找到视频元素的class或id")
+    except Exception as e:
+        _log(logger, "error", f"保存页面HTML失败: {e}")
+
+
+def scroll_main_area_for_videos(driver, logger=None, wait_func=None, passes=5):
+    _log(logger, "info", "滚动页面加载所有视频...")
+    for index in range(passes):
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        if wait_func:
+            wait_func(2)
+        _log(logger, "info", f"滚动进度: {index + 1}/{passes}")
+    driver.execute_script("window.scrollTo(0, 0);")
+    if wait_func:
+        wait_func(2)
+
+
+def collect_driver_elements_by_selectors(driver, selectors, logger=None):
+    elements = []
+    for selector in selectors:
+        try:
+            found = driver.find_elements("xpath", selector)
+            if found:
+                _log(logger, "info", f"选择器 {selector} 找到 {len(found)} 个元素")
+                elements.extend(found)
+        except Exception as e:
+            _log(logger, "warning", f"选择器 {selector} 失败: {e}")
+    return elements
+
+
+def discover_main_area_videos(
+    driver,
+    completed_texts=None,
+    logger=None,
+    wait_func=None,
+    video_selectors=None,
+    debug_html_path=None,
+):
+    if wait_func:
+        wait_func(5)
+    try:
+        _log(logger, "info", f"视频列表页面URL: {driver.current_url}")
+    except Exception:
+        pass
+
+    scroll_main_area_for_videos(driver, logger=logger, wait_func=wait_func)
+    _log(logger, "info", "开始查找视频元素...")
+    all_video_elements = collect_driver_elements_by_selectors(
+        driver,
+        video_selectors or MAIN_AREA_VIDEO_SELECTORS,
+        logger=logger,
+    )
+    _log(logger, "info", f"总共找到 {len(all_video_elements)} 个可能的视频元素")
+    if not all_video_elements:
+        write_debug_page(driver, debug_html_path=debug_html_path, logger=logger)
+
+    unique_elements = dedupe_elements_by_text(all_video_elements)
+    _log(logger, "info", f"去重后剩余 {len(unique_elements)} 个元素")
+    return scan_video_candidates(
+        unique_elements,
+        completed_texts=completed_texts,
+        logger=logger,
+        require_mp4=True,
+        prefer_inner_link=True,
+    )
 
 
 def discover_sidebar_videos(
@@ -336,10 +429,12 @@ __all__ = [
     "DEFAULT_SIDEBAR_VIDEO_SELECTORS",
     "EXTENDED_SIDEBAR_SELECTORS",
     "EXTENDED_SIDEBAR_VIDEO_SELECTORS",
+    "MAIN_AREA_VIDEO_SELECTORS",
     "VideoDiscoveryResult",
     "clickable_video_element",
     "collect_elements_by_selectors",
     "dedupe_elements_by_text",
+    "discover_main_area_videos",
     "discover_sidebar_videos",
     "find_visible_sidebar",
     "is_skippable_video_text",
