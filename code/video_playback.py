@@ -30,6 +30,57 @@ class VideoState:
         return self.duration > 0 and self.current_time >= max(0, self.duration - 5)
 
 
+@dataclass
+class ProgressDecision:
+    progress: float
+    stalled: bool = False
+    recovered: bool = False
+    stall_count: int = 0
+    should_recover: bool = False
+
+
+class ProgressStallMonitor:
+    def __init__(self, min_delta=1.0, recover_after=3, near_end_percent=95.0):
+        self.min_delta = min_delta
+        self.recover_after = recover_after
+        self.near_end_percent = near_end_percent
+        self.last_progress = None
+        self.stall_count = 0
+
+    def update(self, progress, progress_percent=0.0):
+        progress = float(progress or 0)
+        if self.last_progress is None:
+            self.last_progress = progress
+            return ProgressDecision(progress=progress, stall_count=0)
+
+        stalled = abs(progress - self.last_progress) < self.min_delta
+        recovered = False
+        should_recover = False
+
+        if stalled:
+            self.stall_count += 1
+            reported_stall_count = self.stall_count
+            should_recover = (
+                self.stall_count >= self.recover_after
+                and float(progress_percent or 0) < self.near_end_percent
+            )
+            if should_recover:
+                self.stall_count = 0
+        else:
+            recovered = self.stall_count > 0
+            self.stall_count = 0
+            reported_stall_count = 0
+
+        self.last_progress = progress
+        return ProgressDecision(
+            progress=progress,
+            stalled=stalled,
+            recovered=recovered,
+            stall_count=reported_stall_count,
+            should_recover=should_recover,
+        )
+
+
 def _log(logger, level, message):
     if logger is None:
         return

@@ -50,6 +50,7 @@ from page_detection import (
     try_click_enter_study as detect_try_click_enter_study,
 )
 from video_playback import (
+    ProgressStallMonitor,
     get_video_progress as playback_get_video_progress,
     is_video_playing as playback_is_video_playing,
 )
@@ -3447,9 +3448,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         check_interval = random.uniform(8, 15)  # 8-15秒随机间隔
         max_wait_time = max_wait_minutes * 60  # 最长等待时间（秒）
         elapsed_time = 0
-        
-        last_progress_check = 0  # 上次检查的进度
-        no_progress_count = 0  # 连续无进展次数
+        progress_monitor = ProgressStallMonitor(recover_after=3)
         
         start_time = time.time()
         
@@ -3461,24 +3460,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
             
             # 检查进度是否卡住
             current_progress = self.get_video_progress()
-            
-            # 如果进度完全没有变化（差距小于1秒）
-            if abs(current_progress - last_progress_check) < 1:
-                no_progress_count += 1
-                self.logger.warning(f"⚠️  视频进度无变化，连续{no_progress_count}次 ({current_progress:.0f}秒)")
-                
-                # 连续3次无进展就触发恢夏（防脚本机制）
-                if no_progress_count >= 3:
-                    self.logger.warning(f"🔧 连续{no_progress_count}次进度无变化，可能触发防脚本机制，尝试恢复...")
-                    self.recover_stuck_video()
-                    no_progress_count = 0  # 重置计数
-            else:
-                # 有进展，重置计数
-                if no_progress_count > 0:
-                    self.logger.info(f"✅ 视频恢复正常，进度: {current_progress:.0f}秒")
-                no_progress_count = 0
-            
-            last_progress_check = current_progress
+            progress_decision = progress_monitor.update(current_progress)
+            if progress_decision.stalled:
+                self.logger.warning(
+                    f"⚠️  视频进度无变化，连续{progress_decision.stall_count}次 ({current_progress:.0f}秒)"
+                )
+            if progress_decision.should_recover:
+                self.logger.warning("🔧 视频进度连续无变化，可能触发防脚本机制，尝试恢复...")
+                self.recover_stuck_video()
+            elif progress_decision.recovered:
+                self.logger.info(f"✅ 视频恢复正常，进度: {current_progress:.0f}秒")
             
             # TODO: 添加视频完成检测逻辑
             # 可以通过检测视频总时长和当前进度来判断

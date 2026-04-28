@@ -9,6 +9,7 @@ if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
 from video_playback import (  # noqa: E402
+    ProgressStallMonitor,
     VideoState,
     get_video_duration,
     get_video_progress,
@@ -77,6 +78,35 @@ class VideoPlaybackTests(unittest.TestCase):
         self.assertEqual(get_video_duration(driver), 90)
         self.assertEqual(get_video_progress(driver), 45)
         self.assertTrue(is_video_playing(driver))
+
+    def test_progress_monitor_requests_recover_after_stalls(self):
+        monitor = ProgressStallMonitor(recover_after=3)
+
+        self.assertFalse(monitor.update(10).stalled)
+        self.assertFalse(monitor.update(10.5).should_recover)
+        self.assertFalse(monitor.update(10.7).should_recover)
+        decision = monitor.update(10.8)
+
+        self.assertTrue(decision.stalled)
+        self.assertTrue(decision.should_recover)
+
+    def test_progress_monitor_does_not_recover_near_end(self):
+        monitor = ProgressStallMonitor(recover_after=2, near_end_percent=95)
+        monitor.update(100)
+        monitor.update(100, progress_percent=96)
+        decision = monitor.update(100, progress_percent=96)
+
+        self.assertTrue(decision.stalled)
+        self.assertFalse(decision.should_recover)
+
+    def test_progress_monitor_reports_recovered_progress(self):
+        monitor = ProgressStallMonitor(recover_after=3)
+        monitor.update(5)
+        monitor.update(5)
+        decision = monitor.update(8)
+
+        self.assertTrue(decision.recovered)
+        self.assertEqual(decision.stall_count, 0)
 
 
 if __name__ == "__main__":
