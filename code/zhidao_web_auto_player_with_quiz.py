@@ -41,6 +41,10 @@ from page_detection import (
     is_quiz_dialog_present,
     try_click_enter_study as detect_try_click_enter_study,
 )
+from video_playback import (
+    get_video_progress as playback_get_video_progress,
+    is_video_playing as playback_is_video_playing,
+)
 
 
 def bezier_curve(start, end, control1=None, control2=None, steps=20):
@@ -2386,18 +2390,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
     
     def get_video_progress(self):
         """获取视频当前播放进度（秒）"""
-        try:
-            progress = self.driver.execute_script("""
-                var video = document.querySelector('video');
-                if (video) {
-                    return video.currentTime;
-                }
-                return 0;
-            """)
-            return float(progress) if progress else 0
-        except Exception as e:
-            self.logger.debug(f"获取视频进度失败: {e}")
-            return 0
+        return playback_get_video_progress(self.driver, logger=self.logger)
     
     def ensure_video_playing(self):
         """确保视频正在播放（优先检查题目弹窗）"""
@@ -2407,15 +2400,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 self.logger.debug("🚨 检测到题目弹窗，视频暂停是正常现象")
                 return True  # 返回 True，让主循环不尝试恢复播放
             
-            # 检查视频是否正在播放
-            is_playing = self.driver.execute_script("""
-                var video = document.querySelector('video');
-                if (video) {
-                    return !video.paused && !video.ended;
-                }
-                return false;
-            """)
-            return bool(is_playing)
+            return playback_is_video_playing(self.driver, logger=self.logger)
         except Exception as e:
             self.logger.debug(f"检查视频播放状态失败: {e}")
             return False

@@ -42,6 +42,12 @@ from page_detection import (
     is_course_page_ready as detect_course_page_ready,
     try_click_enter_study as detect_try_click_enter_study,
 )
+from video_playback import (
+    click_video_center as playback_click_video_center,
+    get_video_duration as playback_get_video_duration,
+    get_video_progress as playback_get_video_progress,
+    is_video_playing as playback_is_video_playing,
+)
 
 
 class ZhidaoWebAutoPlayerFinal:
@@ -1670,69 +1676,29 @@ class ZhidaoWebAutoPlayerFinal:
 
     def get_video_duration(self):
         """获取视频实际时长（秒）"""
-        try:
-            # 在当前上下文获取（可能在iframe中）
-            duration = self.driver.execute_script(
-                "return document.querySelector('video') ? document.querySelector('video').duration : null"
-            )
-            if duration and duration > 0:
-                self.logger.info(f"✅ 成功获取视频时长: {duration:.0f}秒 ({duration/60:.1f}分钟)")
-                return duration
-            else:
-                self.logger.warning(f"⚠️ 视频时长为空或无效: {duration}")
-        except Exception as e:
-            self.logger.warning(f"❌ 无法获取视频时长: {e}")
-        
-        # 默认返回None，让调用方决定如何处理
-        self.logger.warning("⚠️ 视频时长获取失败，返回None")
-        return None
+        duration = playback_get_video_duration(self.driver, logger=self.logger)
+        if duration:
+            self.logger.info(f"✅ 成功获取视频时长: {duration:.0f}秒 ({duration/60:.1f}分钟)")
+        else:
+            self.logger.warning("⚠️ 视频时长获取失败，返回None")
+        return duration
     
     def is_video_playing(self):
         """检测视频是否正在播放"""
-        try:
-            # 在当前上下文检测
-            is_playing = self.driver.execute_script(
-                "return document.querySelector('video') ? !document.querySelector('video').paused : false"
-            )
-            return is_playing
-        except Exception as e:
-            self.logger.warning(f"无法检测视频播放状态: {e}")
-            return False
+        return playback_is_video_playing(self.driver, logger=self.logger)
     
     def get_video_progress(self):
         """获取视频当前播放进度（秒）"""
-        try:
-            # 在当前上下文获取
-            current_time = self.driver.execute_script(
-                "return document.querySelector('video') ? document.querySelector('video').currentTime : 0"
-            )
-            return current_time if current_time else 0
-        except Exception as e:
-            self.logger.warning(f"无法获取视频进度: {e}")
-            return 0
+        return playback_get_video_progress(self.driver, logger=self.logger)
 
     def click_video_center_with_offset(self, offset_min=-30, offset_max=30, success_prefix="✅ 已点击视频中央"):
-        try:
-            video = self.driver.find_element(By.XPATH, "//video")
-            from selenium.webdriver.common.action_chains import ActionChains
-
-            size = video.size
-            width = size['width']
-            height = size['height']
-
-            offset_x = width // 2 + random.randint(offset_min, offset_max)
-            offset_y = height // 2 + random.randint(offset_min, offset_max)
-
-            actions = ActionChains(self.driver)
-            actions.move_to_element_with_offset(video, offset_x - width // 2, offset_y - height // 2)
-            actions.click()
-            actions.perform()
-
-            self.logger.info(f"{success_prefix}(偏移: {offset_x}, {offset_y})")
-            return True
-        except Exception as e:
-            self.logger.warning(f"点击视频中央失败: {e}")
-            return False
+        return playback_click_video_center(
+            self.driver,
+            logger=self.logger,
+            offset_min=offset_min,
+            offset_max=offset_max,
+            success_message=success_prefix,
+        )
     
     def ensure_video_playing(self):
         """确保视频正在播放（使用ActionChains点击视频）"""
