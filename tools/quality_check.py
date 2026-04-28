@@ -13,6 +13,7 @@ PY_FILES = [
     ROOT / "code" / "player_runner.py",
     ROOT / "code" / "browser_session.py",
     ROOT / "code" / "auth_flow.py",
+    ROOT / "code" / "auth_actions.py",
     ROOT / "code" / "course_entry.py",
     ROOT / "code" / "course_search.py",
     ROOT / "code" / "element_actions.py",

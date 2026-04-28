@@ -33,6 +33,11 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
+from auth_actions import (
+    login_method_script as auth_login_method_script,
+    login_method_standard as auth_login_method_standard,
+    try_login_methods as auth_try_login_methods,
+)
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from course_entry import has_course_url, open_course_url
@@ -574,176 +579,29 @@ class ZhidaoWebAutoPlayerWithQuiz:
 
     def try_login_methods(self, username, password):
         """尝试多种登录方式"""
-        login_methods = [
-            self.login_method1,  # 标准登录方式
-            self.login_method2,  # 备用登录方式
-        ]
-
-        for method in login_methods:
-            try:
-                if method(username, password):
-                    return True
-            except Exception as e:
-                self.logger.warning(f"登录方式 {method.__name__} 失败: {e}")
-                continue
-
-        return False
+        return auth_try_login_methods(
+            self.driver,
+            self.wait,
+            username,
+            password,
+            logger=self.logger,
+            wait_func=self.smart_wait,
+        )
 
     def login_method1(self, username, password):
         """标准登录方式"""
-        self.logger.info("尝试标准登录方式1...")
-        
-        # 查找用户名输入框
-        username_selectors = [
-            "//input[@type='text']",
-            "//input[@placeholder='手机号']",
-            "//input[contains(@placeholder, '账号')]",
-            "//input[contains(@placeholder, '用户')]",
-            "//input[contains(@id, 'username')]",
-            "//input[contains(@name, 'username')]",
-            "//input[contains(@class, 'username')]",
-            "//input[contains(@class, 'account')]",
-        ]
-
-        username_input = None
-        for selector in username_selectors:
-            try:
-                username_input = self.wait.until(EC.presence_of_element_located((By.XPATH, selector)))
-                self.logger.info(f"找到用户名输入框: {selector}")
-                break
-            except Exception as e:
-                continue
-
-        if not username_input:
-            self.logger.warning("未找到用户名输入框")
-            return False
-
-        username_input.clear()
-        username_input.send_keys(username)
-        self.logger.info(f"已输入用户名: {username}")
-        self.smart_wait(1)
-
-        # 查找密码输入框
-        password_selectors = [
-            "//input[@type='password']",
-            "//input[@placeholder='密码']",
-            "//input[contains(@placeholder, '密码')]",
-            "//input[contains(@id, 'password')]",
-            "//input[contains(@name, 'password')]",
-            "//input[contains(@class, 'password')]",
-        ]
-
-        password_input = None
-        for selector in password_selectors:
-            try:
-                password_input = self.wait.until(EC.presence_of_element_located((By.XPATH, selector)))
-                self.logger.info(f"找到密码输入框: {selector}")
-                break
-            except Exception as e:
-                continue
-
-        if not password_input:
-            self.logger.warning("未找到密码输入框")
-            return False
-
-        password_input.clear()
-        password_input.send_keys(password)
-        self.logger.info("已输入密码")
-        self.smart_wait(1)
-
-        # 查找登录按钮
-        login_selectors = [
-            "//button[contains(text(), '登录')]",
-            "//button[contains(text(), '登 录')]",
-            "//a[contains(text(), '登录')]",
-            "//span[contains(text(), '登录')]",
-            "//div[contains(text(), '登录')]",
-            "//button[contains(@class, 'login')]",
-            "//button[@type='submit']",
-            "//input[@type='submit']",
-            "//div[contains(@class, 'login-btn')]",
-            "//div[contains(@class, 'loginBtn')]",
-            "//span[contains(text(), '登录')]/parent::button",
-            "//span[contains(text(), '登录')]/parent::div",
-            "//span[contains(text(), '登录')]/parent::a",
-            # 尝试查找所有可能的按钮
-            "//button",
-            "//div[@role='button']",
-        ]
-
-        login_btn = None
-        for selector in login_selectors:
-            try:
-                elements = self.driver.find_elements(By.XPATH, selector)
-                for elem in elements:
-                    try:
-                        # 检查元素文本是否包含“登录”
-                        if '登录' in elem.text or 'login' in elem.text.lower():
-                            login_btn = elem
-                            self.logger.info(f"找到登录按钮: {selector}, 文本: {elem.text}")
-                            break
-                    except:
-                        continue
-                if login_btn:
-                    break
-            except Exception as e:
-                continue
-
-        if not login_btn:
-            self.logger.warning("未找到登录按钮")
-            return False
-
-        try:
-            login_btn.click()
-            self.logger.info("已点击登录按钮")
-        except Exception as e:
-            self.logger.warning(f"点击登录按钮失败，尝试ActionChains点击: {e}")
-            try:
-                from selenium.webdriver.common.action_chains import ActionChains
-                actions = ActionChains(self.driver)
-                actions.move_to_element(login_btn)
-                actions.click()
-                actions.perform()
-                self.logger.info("已通过ActionChains点击登录按钮")
-            except Exception as e2:
-                self.logger.error(f"ActionChains点击也失败: {e2}")
-                return False
-        
-        self.smart_wait(3)
-        return True
+        return auth_login_method_standard(
+            self.driver,
+            self.wait,
+            username,
+            password,
+            logger=self.logger,
+            wait_func=self.smart_wait,
+        )
 
     def login_method2(self, username, password):
         """备用登录方式"""
-        # 尝试通过JavaScript执行登录
-        script = f"""
-        var usernameInputs = document.querySelectorAll('input[type="text"], input[placeholder*="手机"], input[id*="username"]');
-        var passwordInputs = document.querySelectorAll('input[type="password"], input[placeholder*="密码"], input[id*="password"]');
-        var loginButtons = document.querySelectorAll('button[class*="login"], button:contains("登录"), input[type="submit"]');
-
-        if (usernameInputs.length > 0 && passwordInputs.length > 0) {{
-            usernameInputs[0].value = '{username}';
-            passwordInputs[0].value = '{password}';
-            return loginButtons.length > 0;
-        }}
-        return false;
-        """
-
-        result = self.driver.execute_script(script)
-        if result:
-            # 找到输入框和按钮，使用ActionChains模拟真实点击
-            try:
-                login_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), '登录')] | //button[@type='submit'] | //input[@type='submit']")
-                from selenium.webdriver.common.action_chains import ActionChains
-                actions = ActionChains(self.driver)
-                actions.move_to_element(login_btn)
-                actions.click()
-                actions.perform()
-                self.logger.info("已通过ActionChains点击登录按钮")
-                return True
-            except Exception as e:
-                self.logger.error(f"ActionChains点击登录按钮失败: {e}")
-                return False
-        return False
+        return auth_login_method_script(self.driver, username, password, logger=self.logger)
     
     def check_captcha(self):
         """检查是否有人机验证"""
