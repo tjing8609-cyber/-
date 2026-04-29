@@ -8,6 +8,11 @@ from selenium.webdriver.common.by import By
 
 
 VISIBLE_DIALOG_XPATH = "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+VISIBLE_BLOCKING_DIALOG_XPATHS = [
+    VISIBLE_DIALOG_XPATH,
+    "//*[@role='dialog']",
+    "//*[contains(@class,'el-overlay-dialog') or contains(@class,'modal') or contains(@class,'popup')]",
+]
 FALLBACK_DIALOG_XPATHS = [
     VISIBLE_DIALOG_XPATH,
     "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'modal') or contains(@class,'popup') or contains(@class,'pop')]",
@@ -18,6 +23,16 @@ FALLBACK_DIALOG_XPATHS = [
 SUBMIT_TEXTS = ["提交", "确定", "确认", "完成", "继续"]
 BLOCKED_TEXTS = ["交卷", "提交作业", "提交试卷", "提交测试", "提交考试", "确认提交", "考试提交", "作业提交"]
 QUIZ_DIALOG_MARKERS = ["AI随堂练习", "提交作答", "单选题", "多选题", "判断题"]
+CLOSE_TEXTS = ["关闭", "取消", "知道了", "我知道了", "确定", "确认", "同意", "×"]
+CLOSE_BUTTON_XPATHS = [
+    ".//button[contains(@class,'el-dialog__headerbtn')]",
+    ".//*[contains(@class,'el-dialog__close') or contains(@class,'el-icon-close') or contains(@class,'icon-close')]",
+    ".//*[@aria-label='Close' or @aria-label='close']",
+    ".//img[@alt='close' or @alt='Close']",
+    ".//*[contains(@class,'close') or contains(@class,'guanbi') or contains(@class,'iconguanbi')]",
+    ".//button[contains(normalize-space(.),'关闭') or contains(normalize-space(.),'取消') or contains(normalize-space(.),'知道了') or contains(normalize-space(.),'确定') or contains(normalize-space(.),'确认') or contains(normalize-space(.),'同意')]",
+    ".//*[normalize-space(.)='×']",
+]
 
 
 def _log(logger, level, message):
@@ -71,18 +86,33 @@ def _dedupe_elements(elements):
     return result
 
 
-def visible_quiz_dialogs(driver, dialog_xpath=None):
-    xpaths = [dialog_xpath] if dialog_xpath else []
-    xpaths.extend(xpath for xpath in FALLBACK_DIALOG_XPATHS if xpath and xpath not in xpaths)
+def _dialog_candidates(driver, dialog_xpath=None, xpaths=None):
+    search_xpaths = [dialog_xpath] if dialog_xpath else []
+    source_xpaths = xpaths or FALLBACK_DIALOG_XPATHS
+    search_xpaths.extend(xpath for xpath in source_xpaths if xpath and xpath not in search_xpaths)
 
     candidates = []
-    for xpath in xpaths:
+    for xpath in search_xpaths:
         try:
             candidates.extend(_visible(driver.find_elements(By.XPATH, xpath)))
         except Exception:
             continue
+    return _dedupe_elements(candidates)
 
-    candidates = _dedupe_elements(candidates)
+
+def visible_blocking_dialogs(driver, dialog_xpath=None):
+    return _dialog_candidates(driver, dialog_xpath=dialog_xpath, xpaths=VISIBLE_BLOCKING_DIALOG_XPATHS)
+
+
+def probable_quiz_dialogs(driver, dialog_xpath=None):
+    candidates = _dialog_candidates(driver, dialog_xpath=dialog_xpath)
+    probable = [element for element in candidates if _is_probable_quiz_dialog(element)]
+    probable.sort(key=lambda element: len(_text(element)))
+    return probable
+
+
+def visible_quiz_dialogs(driver, dialog_xpath=None):
+    candidates = _dialog_candidates(driver, dialog_xpath=dialog_xpath)
     probable = [element for element in candidates if _is_probable_quiz_dialog(element)]
     probable.sort(key=lambda element: len(_text(element)))
     return probable or candidates[:1]
@@ -97,6 +127,30 @@ def _button_text(element):
 
 def _is_blocked(text):
     return any(marker in text for marker in BLOCKED_TEXTS)
+
+
+def _looks_like_close_button(element):
+    text = _button_text(element)
+    if text and any(label in text for label in CLOSE_TEXTS) and not _is_blocked(text):
+        return True
+    try:
+        class_name = str(element.get_attribute("class") or "").lower()
+    except Exception:
+        class_name = ""
+    try:
+        alt = str(element.get_attribute("alt") or "").lower()
+    except Exception:
+        alt = ""
+    try:
+        aria = str(element.get_attribute("aria-label") or "").lower()
+    except Exception:
+        aria = ""
+    return (
+        "close" in class_name
+        or "guanbi" in class_name
+        or "close" in alt
+        or aria == "close"
+    )
 
 
 def _click_element(driver, element):
@@ -125,6 +179,30 @@ def find_dialog_action_buttons(dialog):
         except Exception:
             continue
     return list(dict.fromkeys(_visible(buttons)))
+
+
+def click_first_non_quiz_dialog_close(driver, logger=None, dialog_xpath=None):
+    """Close one visible non-quiz modal/dialog and leave quiz dialogs for the agent."""
+    dialogs = visible_blocking_dialogs(driver, dialog_xpath=dialog_xpath)
+    for dialog in dialogs:
+        if _is_probable_quiz_dialog(dialog):
+            continue
+
+        buttons = []
+        for selector in CLOSE_BUTTON_XPATHS:
+            try:
+                buttons.extend(dialog.find_elements(By.XPATH, selector))
+            except Exception:
+                continue
+
+        for button in _visible(_dedupe_elements(buttons)):
+            if not _looks_like_close_button(button):
+                continue
+            if _click_element(driver, button):
+                _log(logger, "info", "✅ 已关闭一个非题目弹窗")
+                return True
+
+    return False
 
 
 def visible_quiz_options(driver, option_xpaths):

@@ -48,10 +48,13 @@ from quiz_agent import QuizAutomationAgent, normalize_answer_mode
 from quiz_popup_agent import QuizPopupToolbox, run_quiz_popup_agent
 from quiz_popup_reader import build_popup_question_data
 from quiz_popup_actions import (
+    click_first_non_quiz_dialog_close,
     click_quiz_popup_submit,
     is_multi_choice_dialog,
+    probable_quiz_dialogs,
     scroll_quiz_dialog as action_scroll_quiz_dialog,
     select_options_by_letters as action_select_options_by_letters,
+    visible_blocking_dialogs,
     visible_quiz_dialogs,
     visible_quiz_options,
 )
@@ -59,7 +62,6 @@ from runtime_center import load_selectors, selector_value
 from page_detection import (
     is_captcha_present,
     is_course_page_ready as detect_course_page_ready,
-    is_quiz_dialog_present,
     try_click_enter_study as detect_try_click_enter_study,
     wait_for_captcha_completion as detect_wait_for_captcha_completion,
     wait_for_course_page_ready as detect_wait_for_course_page_ready,
@@ -1354,7 +1356,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     self.logger.warning(f"⚠️  检测到重复播放已观看视频: {current_title}")
                     self.logger.info("🔄 重新检索视频列表，跳转到下一个未观看视频...")
                     
-                    # 重新查找未观看视频
+                    # 重新查找未观看视频前先清理可能新出现的弹窗
+                    if not self.ensure_popups_cleared(timeout_seconds=45):
+                        return False
                     unwatched_videos = self.find_unwatched_videos()
                     
                     if not unwatched_videos:
@@ -1642,6 +1646,63 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         # 检查是否还有可见的弹窗，如果有则保存HTML调试
         self.check_and_save_dialogs_for_debug()
+
+    def drain_blocking_popups(self, max_rounds=12):
+        """逐个清理课程页阻塞弹窗；题目弹窗先交给答题agent，非题目弹窗只关闭。"""
+        self.logger.info("🧹 开始逐个检测并处理课程页弹窗...")
+        for round_index in range(1, max_rounds + 1):
+            try:
+                if self.check_for_quiz():
+                    self.logger.info(f"📝 检测到题目弹窗，开始第 {round_index} 轮自动作答")
+                    handled = self.answer_quiz()
+                    self.smart_wait(1)
+                    if self.check_for_quiz():
+                        self.logger.warning("⚠️ 题目弹窗仍未关闭，尝试强制关闭当前题目弹窗")
+                        self.close_quiz_dialog()
+                        self.smart_wait(1)
+                    if handled or not self.check_for_quiz():
+                        continue
+
+                dialogs = visible_blocking_dialogs(self.driver)
+                if not dialogs:
+                    self.logger.info("✅ 课程页弹窗已全部处理完成")
+                    return True
+
+                self.logger.info(f"🔍 检测到 {len(dialogs)} 个阻塞弹窗，逐个处理")
+                if click_first_non_quiz_dialog_close(self.driver, logger=self.logger):
+                    self.smart_wait(1)
+                    continue
+
+                before_count = len(dialogs)
+                self.close_all_dialogs()
+                self.smart_wait(1)
+                after_count = len(visible_blocking_dialogs(self.driver))
+                if after_count < before_count:
+                    continue
+
+                self.logger.warning("⚠️ 当前弹窗未能自动关闭，停止本轮弹窗清理")
+                return False
+            except Exception as e:
+                self.logger.debug(f"弹窗清理第 {round_index} 轮失败: {e}")
+                return False
+
+        remaining = len(visible_blocking_dialogs(self.driver))
+        if remaining:
+            self.logger.warning(f"⚠️ 弹窗清理达到上限，仍剩余 {remaining} 个阻塞弹窗")
+            return False
+        return True
+
+    def ensure_popups_cleared(self, timeout_seconds=60):
+        """确保弹窗清理完成后再进入课程目录查找或播放流程。"""
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if self.drain_blocking_popups():
+                return True
+            self.logger.warning("⏳ 弹窗仍在阻塞页面，等待后重试...")
+            self.smart_wait(2)
+        self.logger.error("❌ 弹窗未能自动清理完成，已停止后续课程查找/播放，避免误判课程为空")
+        self.check_and_save_dialogs_for_debug()
+        return False
         
     def select_options_by_letters(self, letters):
         """根据字母点击选项（支持多选）"""
@@ -2654,9 +2715,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 "with_quiz.dialog_xpath",
                 "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
             )
-            if visible_quiz_dialogs(self.driver, dialog_xpath):
-                return True
-            return is_quiz_dialog_present(self.driver, dialog_xpath)
+            return bool(probable_quiz_dialogs(self.driver, dialog_xpath))
         except Exception:
             return False
 
@@ -2877,28 +2936,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         if not self.wait_for_course_page_ready():
                             return
             
-            # 查找未观看的视频
-            # 弹窗安全处理：尝试关闭，失败则等待人工处理
-            try:
-                self.close_all_dialogs()
-            except Exception:
-                pass
-            dialogs = []
-            try:
-                dialogs = self.driver.find_elements(By.XPATH, "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'el-dialog__wrapper')]")
-            except Exception:
-                dialogs = []
-            if dialogs:
-                self.logger.info("🔔 检测到弹窗，请手动关闭；程序将等待进入播放页面...")
-                waited = 0
-                while waited < 600:
-                    try:
-                        if self.driver.find_elements(By.TAG_NAME, 'video'):
-                            break
-                    except Exception:
-                        pass
-                    time.sleep(2)
-                    waited += 2
+            # 查找未观看的视频前必须先清空阻塞弹窗；否则目录元素会被遮罩挡住。
+            if not self.ensure_popups_cleared(timeout_seconds=90):
+                return
             unwatched_videos = self.find_unwatched_videos()
             
             if not unwatched_videos:
@@ -3015,6 +3055,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 # 注意：attempt从1开始，第一轮不需要查找（已经在入口处查找过）
                 if not unwatched_videos or (attempt > 1 and (attempt - 1) % 10 == 0):
                     self.logger.info("🔍 查找未观看的视频...")
+                    if not self.ensure_popups_cleared(timeout_seconds=60):
+                        break
                     unwatched_videos = self.find_unwatched_videos()
                     
                     if not unwatched_videos:
