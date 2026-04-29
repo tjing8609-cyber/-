@@ -7,13 +7,20 @@ from llm_response import (
     summarize_chat_response,
     summarize_exception,
 )
-from quiz_answering import QuizAnsweringService
+from quiz_answering import QuizAnsweringService, parse_answer_letters
 
 
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
-DEEPSEEK_VALIDATION_QUESTION = "sin30°是多少？"
-DEEPSEEK_VALIDATION_EXPECTED = "0.5"
+DEEPSEEK_VALIDATION_QUESTION = (
+    "sin30\u00b0是多少？\n"
+    "A. 二分之一\n"
+    "B. 二\n"
+    "C. 三\n"
+    "D. 四\n"
+    "请只返回正确选项字母的 json 对象，例如 {\"answer\":\"A\"}。"
+)
+DEEPSEEK_VALIDATION_EXPECTED = "A"
 
 
 @dataclass(frozen=True)
@@ -101,6 +108,10 @@ def is_expected_validation_answer(content):
     if not text:
         return False
 
+    answer = parse_answer_letters(text, ["A", "B", "C", "D"], "single")
+    if answer.valid and answer.value == DEEPSEEK_VALIDATION_EXPECTED:
+        return True
+
     compact = re.sub(r"\s+", "", text)
     compact = compact.replace("／", "/").replace("．", ".")
     accepted_literals = ("1/2", "二分之一", "一半")
@@ -123,9 +134,10 @@ def verify_deepseek_client(client, config, logger=None):
         response = client.chat.completions.create(
             model=config.model,
             messages=[
-                {"role": "system", "content": "只回答最终数值，不要解释。"},
+                {"role": "system", "content": "只返回合法 json 对象，例如 {\"answer\":\"A\"}，不要解释。"},
                 {"role": "user", "content": DEEPSEEK_VALIDATION_QUESTION},
             ],
+            response_format={"type": "json_object"},
             temperature=0,
             max_tokens=32,
             stream=False,

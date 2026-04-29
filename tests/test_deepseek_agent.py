@@ -33,7 +33,7 @@ class FakeResponse:
 
 
 class FakeCompletions:
-    def __init__(self, content="0.5", error=None):
+    def __init__(self, content='{"answer":"A"}', error=None):
         self.content = content
         self.error = error
         self.calls = []
@@ -46,7 +46,7 @@ class FakeCompletions:
 
 
 class FakeClient:
-    def __init__(self, content="0.5", error=None):
+    def __init__(self, content='{"answer":"A"}', error=None):
         self.chat = type("Chat", (), {})()
         self.chat.completions = FakeCompletions(content=content, error=error)
 
@@ -102,7 +102,10 @@ class DeepSeekAgentTests(unittest.TestCase):
         self.assertTrue(result.ok)
         call = client.chat.completions.calls[0]
         self.assertEqual(call["model"], "deepseek-chat")
-        self.assertEqual(call["messages"][1]["content"], DEEPSEEK_VALIDATION_QUESTION)
+        self.assertEqual(call["messages"][-1]["content"], DEEPSEEK_VALIDATION_QUESTION)
+        self.assertIn("A.", DEEPSEEK_VALIDATION_QUESTION)
+        self.assertIn("B.", DEEPSEEK_VALIDATION_QUESTION)
+        self.assertEqual(call["response_format"], {"type": "json_object"})
 
     def test_verify_deepseek_client_rejects_unexpected_answer(self):
         config = load_deepseek_config({"deepseek_api_key": "key"}, env={})
@@ -127,6 +130,9 @@ class DeepSeekAgentTests(unittest.TestCase):
         self.assertIn("content_len=0", result.message)
 
     def test_validation_answer_accepts_common_sin30_forms(self):
+        self.assertTrue(is_expected_validation_answer("A"))
+        self.assertTrue(is_expected_validation_answer('{"answer":"A"}'))
+        self.assertFalse(is_expected_validation_answer("B"))
         self.assertTrue(is_expected_validation_answer("0.5"))
         self.assertTrue(is_expected_validation_answer("1/2"))
         self.assertTrue(is_expected_validation_answer("二分之一"))
