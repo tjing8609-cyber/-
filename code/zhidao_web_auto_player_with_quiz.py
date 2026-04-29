@@ -192,7 +192,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     logger=self.logger,
                 )
                 if not validation.ok:
-                    self.logger.error("❌ DeepSeek API不可用，已禁用弹窗API答题；请检查 deepseek_api_key/base_url/model")
+                    self.logger.error(
+                        f"❌ DeepSeek API不可用，已禁用弹窗API答题；"
+                        f"请检查 deepseek_api_key/base_url/model。原因: {validation.message}"
+                    )
                     self.answering_service = None
             else:
                 self.logger.info("ℹ️ 已跳过DeepSeek启动校验（verify_api_on_start=false）")

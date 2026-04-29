@@ -34,7 +34,7 @@ from selenium.webdriver.common.action_chains import ActionChains
 from auth_actions import try_login_methods as auth_try_login_methods
 from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
-from deepseek_agent import create_deepseek_components
+from deepseek_agent import create_deepseek_components, verify_deepseek_client
 from page_detection import (
     is_captcha_present,
     wait_for_captcha_completion as detect_wait_for_captcha_completion,
@@ -106,7 +106,7 @@ class ZhidaoQuizOnlyPlayer:
         else:
             self.logger.warning("⚠️  未配置API密钥（账号配置和环境变量均未找到），答题功能将受限")
         
-        verify_api_on_start = self.account_config.get('verify_api_on_start', False)
+        verify_api_on_start = self.account_config.get('verify_api_on_start', True)
         if self.api_key and verify_api_on_start:
             if not self.verify_api_connection():
                 self.logger.error("❌ API连接验证失败，程序退出")
@@ -601,44 +601,20 @@ class ZhidaoQuizOnlyPlayer:
     
     def verify_api_connection(self):
         """验证DeepSeek API连接"""
-        try:
-            self.logger.info("\n" + "="*60)
-            self.logger.info("🔍 验证DeepSeek API连接...")
-            self.logger.info("="*60)
-            
-            self.logger.info(f"📡 API Base URL: {self.api_base_url}")
-            self.logger.info(f"🤖 使用模型: {self.api_model}")
-            self.logger.info(f"💬 发送问题: sin30°等于多少？")
-            
-            # 【修改】使用OpenAI SDK调用API
-            response = self.api_client.chat.completions.create(
-                model=self.api_model,
-                messages=[
-                    {"role": "user", "content": "sin30°等于多少？请直接回答数值。"}
-                ],
-                max_tokens=50,
-                stream=False
-            )
-            
-            # 获取回复
-            reply = response.choices[0].message.content.strip()
-            
-            self.logger.info(f"✅ API连接成功！")
-            if reply:
-                self.logger.info(f"💬 AI回答: {reply}")
-                # 验证回答是否包含正确答案（0.5）
-                if '0.5' in reply or '1/2' in reply or '一半' in reply:
-                    self.logger.info(f"✅ AI回答正确（sin30° = 0.5）")
-                else:
-                    self.logger.warning(f"⚠️  AI回答可能不准确（期望: 0.5）")
-            else:
-                self.logger.warning(f"⚠️  API回复为空，但连接成功")
-            self.logger.info("="*60 + "\n")
-            return True
-            
-        except Exception as e:
-            self.handle_api_error(e, "API连接验证")
-            return False
+        self.logger.info("\n" + "="*60)
+        self.logger.info("🔍 验证DeepSeek API连接...")
+        self.logger.info("="*60)
+        self.logger.info(f"📡 API Base URL: {self.api_base_url}")
+        self.logger.info(f"🤖 使用模型: {self.api_model}")
+        validation = verify_deepseek_client(
+            self.api_client,
+            self.deepseek_config,
+            logger=self.logger,
+        )
+        if not validation.ok:
+            self.logger.error(f"❌ DeepSeek启动校验失败: {validation.message}")
+        self.logger.info("="*60 + "\n")
+        return validation.ok
     
     def find_and_enter_quiz(self):
         """查找并进入测试"""

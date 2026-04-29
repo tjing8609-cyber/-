@@ -8,7 +8,13 @@ CODE_DIR = ROOT / "code"
 if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
-from deepseek_agent import create_deepseek_components, load_deepseek_config, verify_deepseek_client  # noqa: E402
+from deepseek_agent import (  # noqa: E402
+    DEEPSEEK_VALIDATION_QUESTION,
+    create_deepseek_components,
+    is_expected_validation_answer,
+    load_deepseek_config,
+    verify_deepseek_client,
+)
 
 
 class FakeMessage:
@@ -27,7 +33,7 @@ class FakeResponse:
 
 
 class FakeCompletions:
-    def __init__(self, content="A", error=None):
+    def __init__(self, content="0.5", error=None):
         self.content = content
         self.error = error
         self.calls = []
@@ -40,7 +46,7 @@ class FakeCompletions:
 
 
 class FakeClient:
-    def __init__(self, content="A", error=None):
+    def __init__(self, content="0.5", error=None):
         self.chat = type("Chat", (), {})()
         self.chat.completions = FakeCompletions(content=content, error=error)
 
@@ -89,12 +95,21 @@ class DeepSeekAgentTests(unittest.TestCase):
 
     def test_verify_deepseek_client_success(self):
         config = load_deepseek_config({"deepseek_api_key": "key"}, env={})
-        client = FakeClient("A")
+        client = FakeClient("sin30° = 1/2")
 
         result = verify_deepseek_client(client, config)
 
         self.assertTrue(result.ok)
-        self.assertEqual(client.chat.completions.calls[0]["model"], "deepseek-chat")
+        call = client.chat.completions.calls[0]
+        self.assertEqual(call["model"], "deepseek-chat")
+        self.assertEqual(call["messages"][1]["content"], DEEPSEEK_VALIDATION_QUESTION)
+
+    def test_verify_deepseek_client_rejects_unexpected_answer(self):
+        config = load_deepseek_config({"deepseek_api_key": "key"}, env={})
+        result = verify_deepseek_client(FakeClient("42"), config)
+
+        self.assertFalse(result.ok)
+        self.assertIn("unexpected", result.message)
 
     def test_verify_deepseek_client_failure(self):
         config = load_deepseek_config({"deepseek_api_key": "key"}, env={})
@@ -102,6 +117,15 @@ class DeepSeekAgentTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertIn("401", result.message)
+
+    def test_validation_answer_accepts_common_sin30_forms(self):
+        self.assertTrue(is_expected_validation_answer("0.5"))
+        self.assertTrue(is_expected_validation_answer("1/2"))
+        self.assertTrue(is_expected_validation_answer("二分之一"))
+        self.assertTrue(is_expected_validation_answer("一半"))
+        self.assertTrue(is_expected_validation_answer(".5"))
+        self.assertFalse(is_expected_validation_answer("30"))
+        self.assertFalse(is_expected_validation_answer("10.5"))
 
 
 if __name__ == "__main__":
