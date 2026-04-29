@@ -49,7 +49,9 @@ from quiz_popup_agent import QuizPopupToolbox, run_quiz_popup_agent
 from quiz_popup_reader import build_popup_question_data
 from quiz_popup_actions import (
     click_first_non_quiz_dialog_close,
+    click_quiz_popup_close,
     click_quiz_popup_submit,
+    is_quiz_popup_submitted,
     is_multi_choice_dialog,
     probable_quiz_dialogs,
     scroll_quiz_dialog as action_scroll_quiz_dialog,
@@ -2629,6 +2631,21 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.smart_wait(close_delay)
             
             # 【P1 - 反检测优化】减少选择器数量，只保疙4个最常用
+            dialog_xpath = selector_value(
+                self.selectors,
+                "with_quiz.dialog_xpath",
+                "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+            )
+            if click_quiz_popup_close(
+                self.driver,
+                logger=self.logger,
+                dialog_xpath=dialog_xpath,
+            ):
+                self.smart_wait(1)
+                if not self.check_for_quiz():
+                    self.logger.info("题目弹窗已成功关闭")
+                    return True
+
             close_selectors = [
                 # 知到平台题目弹窗的关闭按钮
                 "//span[contains(@class, 'dialog-footer')]//div[contains(@class, 'btn') and text()='关闭']",  # 精确匹配
@@ -2809,11 +2826,24 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 "with_quiz.dialog_xpath",
                 "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
             )
-            return click_quiz_popup_submit(
+            submitted = click_quiz_popup_submit(
                 self.driver,
                 logger=self.logger,
                 dialog_xpath=dialog_xpath,
             )
+            if submitted:
+                self.smart_wait(0.8)
+                if is_quiz_popup_submitted(self.driver, dialog_xpath=dialog_xpath):
+                    self.logger.info("检测到题目弹窗已提交，尝试关闭弹窗")
+                    if click_quiz_popup_close(
+                        self.driver,
+                        logger=self.logger,
+                        dialog_xpath=dialog_xpath,
+                        require_submitted=True,
+                    ):
+                        self.smart_wait(1)
+                return True
+            return False
         except Exception as e:
             self.logger.debug(f"点击题目弹窗提交按钮失败: {e}")
             return False

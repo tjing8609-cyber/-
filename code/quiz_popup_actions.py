@@ -25,6 +25,7 @@ FALLBACK_DIALOG_XPATHS = [
     "//*[contains(normalize-space(.),'单选题') or contains(normalize-space(.),'多选题')]",
 ]
 SUBMIT_TEXTS = ["提交", "确定", "确认", "完成", "继续"]
+SUBMITTED_TEXTS = ["已提交"]
 BLOCKED_TEXTS = ["交卷", "提交作业", "提交试卷", "提交测试", "提交考试", "确认提交", "考试提交", "作业提交"]
 QUIZ_DIALOG_MARKERS = ["AI随堂练习", "提交作答", "单选题", "多选题", "判断题"]
 CLOSE_TEXTS = ["关闭", "取消", "知道了", "我知道了", "确定", "确认", "同意", "×"]
@@ -33,6 +34,7 @@ CLOSE_BUTTON_XPATHS = [
     ".//*[contains(@class,'el-dialog__close') or contains(@class,'el-icon-close') or contains(@class,'icon-close')]",
     ".//*[@aria-label='Close' or @aria-label='close']",
     ".//img[@alt='close' or @alt='Close']",
+    ".//*[contains(@class,'header-icon')]",
     ".//*[contains(@class,'close') or contains(@class,'guanbi') or contains(@class,'iconguanbi')]",
     ".//button[contains(normalize-space(.),'关闭') or contains(normalize-space(.),'取消') or contains(normalize-space(.),'知道了') or contains(normalize-space(.),'确定') or contains(normalize-space(.),'确认') or contains(normalize-space(.),'同意')]",
     ".//*[normalize-space(.)='×']",
@@ -175,6 +177,7 @@ def _looks_like_close_button(element):
     return (
         "close" in class_name
         or "guanbi" in class_name
+        or "header-icon" in class_name
         or "close" in alt
         or aria == "close"
     )
@@ -206,6 +209,45 @@ def find_dialog_action_buttons(dialog):
         except Exception:
             continue
     return list(dict.fromkeys(_visible(buttons)))
+
+
+def is_quiz_dialog_submitted(dialog):
+    text = _text(dialog)
+    if any(label in text for label in SUBMITTED_TEXTS):
+        return True
+    try:
+        buttons = find_dialog_action_buttons(dialog)
+    except Exception:
+        buttons = []
+    return any(any(label in _button_text(button) for label in SUBMITTED_TEXTS) for button in buttons)
+
+
+def is_quiz_popup_submitted(driver, dialog_xpath=None):
+    return any(is_quiz_dialog_submitted(dialog) for dialog in visible_quiz_dialogs(driver, dialog_xpath))
+
+
+def click_quiz_popup_close(driver, logger=None, dialog_xpath=None, require_submitted=False):
+    """Close a visible in-video quiz popup, optionally only after it shows submitted state."""
+    dialogs = visible_quiz_dialogs(driver, dialog_xpath)
+    for dialog in dialogs:
+        if require_submitted and not is_quiz_dialog_submitted(dialog):
+            continue
+
+        buttons = []
+        for selector in CLOSE_BUTTON_XPATHS:
+            try:
+                buttons.extend(dialog.find_elements(By.XPATH, selector))
+            except Exception:
+                continue
+
+        for button in _visible(_dedupe_elements(buttons)):
+            if not _looks_like_close_button(button):
+                continue
+            if _click_element(driver, button):
+                _log(logger, "info", "已点击题目弹窗关闭按钮")
+                return True
+
+    return False
 
 
 def click_first_non_quiz_dialog_close(driver, logger=None, dialog_xpath=None):
@@ -352,6 +394,9 @@ def click_quiz_popup_submit(driver, logger=None, dialog_xpath=None):
             text = _button_text(button)
             if not text:
                 continue
+            if any(label in text for label in SUBMITTED_TEXTS):
+                _log(logger, "info", f"题目弹窗已处于提交完成状态: {text}")
+                return True
             if _is_blocked(text):
                 scored_like.append(text)
                 continue

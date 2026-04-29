@@ -10,7 +10,9 @@ if str(CODE_DIR) not in sys.path:
 
 from quiz_popup_actions import (  # noqa: E402
     click_first_non_quiz_dialog_close,
+    click_quiz_popup_close,
     click_quiz_popup_submit,
+    is_quiz_popup_submitted,
     is_multi_choice_dialog,
     probable_quiz_dialogs,
     select_options_by_letters,
@@ -68,6 +70,27 @@ class QuizPopupActionsTests(unittest.TestCase):
 
         self.assertTrue(click_quiz_popup_submit(driver))
         self.assertTrue(submit.clicked)
+
+    def test_submitted_button_is_state_not_click_target(self):
+        submitted = FakeElement("已提交")
+        dialog = FakeElement("AI随堂练习\n1.【判断题】\nA 正确\nB 错误", children=[submitted])
+        driver = FakeDriver([dialog])
+
+        self.assertTrue(click_quiz_popup_submit(driver))
+        self.assertFalse(submitted.clicked)
+        self.assertTrue(is_quiz_popup_submitted(driver))
+
+    def test_closes_submitted_popup_with_header_icon(self):
+        close_icon = FakeElement(attrs={"class": "header-icon"})
+        dialog = FakeElement(
+            "AI随堂练习\n1.【判断题】\nA 正确\nB 错误\n已提交",
+            children=[close_icon],
+            attrs={"class": "el-dialog ai-class-exercise-dialog"},
+        )
+        driver = FakeDriver([dialog])
+
+        self.assertTrue(click_quiz_popup_close(driver, require_submitted=True))
+        self.assertTrue(close_icon.clicked)
 
     def test_blocks_formal_exam_submit_text(self):
         submit = FakeElement("确认提交")
