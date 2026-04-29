@@ -21,7 +21,7 @@
   "use_sidebar_layout_note": "侧边栏布局: false=使用主区域查找(默认,稳定), true=启用侧边栏布局检测(适用于新版界面)",
   "max_watch_minutes_note": "最大观看时长(分钟): 0=播放完所有视频(默认), >0=播放指定分钟数后停止",
   "quiz_type_note": "测试类型(仅纯答题模式): 课程测试/章节测试/单元测试/期末考试",
-  "deepseek_api_key_note": "DeepSeek API密钥(纯答题模式必需): 优先使用此配置，留空则从系统环境变量DEEPSEEK_API_KEY加载（兼容ANTHROPIC_AUTH_TOKEN）",
+  "deepseek_api_key_note": "DeepSeek API密钥: 纯答题模式必需；视频有题目模式在auto_practice/semi_auto下也会使用。优先使用此配置，留空则从系统环境变量DEEPSEEK_API_KEY加载（兼容ANTHROPIC_AUTH_TOKEN）",
   "api_base_url_note": "API基础URL(可选): 自定义API地址，留空使用环境变量或默认值",
   "api_model_note": "API模型(可选): 指定使用的模型，留空使用默认值deepseek-chat",
   "verify_api_on_start_note": "启动时API连通性校验: true=启动时先验证API可用性(默认), false=跳过启动校验",

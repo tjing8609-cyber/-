@@ -270,8 +270,8 @@ class ZhidaoGUILauncher:
         row4.pack(fill=tk.X, pady=3)
         tk.Label(row4, text="课程类型:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.course_type_var = tk.IntVar(value=1)
-        tk.Radiobutton(row4, text="1-无题目", variable=self.course_type_var, value=1, font=("微软雅黑", 9)).pack(side=tk.LEFT, padx=5)
-        tk.Radiobutton(row4, text="2-有题目(自动关闭)", variable=self.course_type_var, value=2, font=("微软雅黑", 9)).pack(side=tk.LEFT, padx=5)
+        tk.Radiobutton(row4, text="1-无题目", variable=self.course_type_var, value=1, font=("微软雅黑", 9), command=self.on_mode_change).pack(side=tk.LEFT, padx=5)
+        tk.Radiobutton(row4, text="2-有题目/弹窗答题", variable=self.course_type_var, value=2, font=("微软雅黑", 9), command=self.on_mode_change).pack(side=tk.LEFT, padx=5)
         
         # 侧边栏布局
         row5 = tk.Frame(self.video_frame)
@@ -317,8 +317,33 @@ class ZhidaoGUILauncher:
             state="readonly"
         ).pack(side=tk.LEFT, padx=5)
         
+        # ==================== DeepSeek / Agent 配置 ====================
+        self.ai_frame = tk.LabelFrame(
+            container,
+            text="🤖 DeepSeek / 弹窗答题配置",
+            font=("微软雅黑", 10, "bold"),
+            padx=10,
+            pady=8
+        )
+        self.ai_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # 答题Agent模式
+        row8_mode = tk.Frame(self.ai_frame)
+        row8_mode.pack(fill=tk.X, pady=3)
+        tk.Label(row8_mode, text="弹窗处理:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self.answer_mode_var = tk.StringVar(value="auto_practice")
+        ttk.Combobox(
+            row8_mode,
+            textvariable=self.answer_mode_var,
+            values=["auto_practice", "semi_auto", "assist", "manual"],
+            font=("微软雅黑", 9),
+            width=20,
+            state="readonly"
+        ).pack(side=tk.LEFT, padx=5)
+        tk.Label(row8_mode, text="auto=自动选择并提交；semi=只选择不提交", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
+
         # DeepSeek API
-        row8 = tk.Frame(self.quiz_frame)
+        row8 = tk.Frame(self.ai_frame)
         row8.pack(fill=tk.X, pady=3)
         tk.Label(row8, text="DeepSeek API:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.api_key_var = tk.StringVar()
@@ -336,7 +361,7 @@ class ZhidaoGUILauncher:
         ).pack(side=tk.LEFT, padx=5)
         
         # API Base URL
-        row9 = tk.Frame(self.quiz_frame)
+        row9 = tk.Frame(self.ai_frame)
         row9.pack(fill=tk.X, pady=3)
         tk.Label(row9, text="API Base URL:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.api_base_url_var = tk.StringVar()
@@ -344,14 +369,14 @@ class ZhidaoGUILauncher:
         tk.Label(row9, text="(可选)", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
         
         # API Model
-        row10 = tk.Frame(self.quiz_frame)
+        row10 = tk.Frame(self.ai_frame)
         row10.pack(fill=tk.X, pady=3)
         tk.Label(row10, text="API Model:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.api_model_var = tk.StringVar()
         tk.Entry(row10, textvariable=self.api_model_var, font=("微软雅黑", 9), width=50).pack(side=tk.LEFT, padx=5)
         tk.Label(row10, text="(可选)", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
 
-        row10b = tk.Frame(self.quiz_frame)
+        row10b = tk.Frame(self.ai_frame)
         row10b.pack(fill=tk.X, pady=3)
         self.verify_api_on_start_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
@@ -362,17 +387,17 @@ class ZhidaoGUILauncher:
         ).pack(side=tk.LEFT, padx=5)
         
         # ==================== 运行选项 ====================
-        option_frame = tk.LabelFrame(
+        self.option_frame = tk.LabelFrame(
             container,
             text="⚙️ 运行选项",
             font=("微软雅黑", 10, "bold"),
             padx=10,
             pady=8
         )
-        option_frame.pack(fill=tk.X, pady=(0, 10))
+        self.option_frame.pack(fill=tk.X, pady=(0, 10))
         
         # 无头模式
-        row11 = tk.Frame(option_frame)
+        row11 = tk.Frame(self.option_frame)
         row11.pack(fill=tk.X, pady=3)
         self.headless_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
@@ -383,7 +408,7 @@ class ZhidaoGUILauncher:
         ).pack(side=tk.LEFT, padx=5)
         
         # 实时日志
-        row12 = tk.Frame(option_frame)
+        row12 = tk.Frame(self.option_frame)
         row12.pack(fill=tk.X, pady=3)
         self.show_realtime_log_var = tk.BooleanVar(value=True)
         tk.Checkbutton(
@@ -395,7 +420,7 @@ class ZhidaoGUILauncher:
         ).pack(side=tk.LEFT, padx=5)
         
         # 多实例运行
-        row13 = tk.Frame(option_frame)
+        row13 = tk.Frame(self.option_frame)
         row13.pack(fill=tk.X, pady=3)
         self.multi_instance_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
@@ -405,7 +430,7 @@ class ZhidaoGUILauncher:
             font=("微软雅黑", 9)
         ).pack(side=tk.LEFT, padx=5)
 
-        row14 = tk.Frame(option_frame)
+        row14 = tk.Frame(self.option_frame)
         row14.pack(fill=tk.X, pady=3)
         self.enable_orchestrator_var = tk.BooleanVar(value=False)
         tk.Checkbutton(
@@ -415,14 +440,14 @@ class ZhidaoGUILauncher:
             font=("微软雅黑", 9)
         ).pack(side=tk.LEFT, padx=5)
 
-        row15 = tk.Frame(option_frame)
+        row15 = tk.Frame(self.option_frame)
         row15.pack(fill=tk.X, pady=3)
         tk.Label(row15, text="账号队列:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.orchestrator_accounts_var = tk.StringVar(value="")
         tk.Entry(row15, textvariable=self.orchestrator_accounts_var, font=("微软雅黑", 9), width=50).pack(side=tk.LEFT, padx=5)
         tk.Label(row15, text="(逗号分隔，可留空)", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
 
-        row16 = tk.Frame(option_frame)
+        row16 = tk.Frame(self.option_frame)
         row16.pack(fill=tk.X, pady=3)
         tk.Label(row16, text="最大并发:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
         self.orchestrator_concurrency_var = tk.IntVar(value=1)
@@ -649,11 +674,16 @@ class ZhidaoGUILauncher:
     def on_mode_change(self):
         """模式切换"""
         if self.mode_var.get() == "video":
-            self.video_frame.pack(fill=tk.X, pady=(0, 10))
+            self.video_frame.pack(fill=tk.X, pady=(0, 10), before=self.option_frame)
             self.quiz_frame.pack_forget()
+            if self.course_type_var.get() == 2:
+                self.ai_frame.pack(fill=tk.X, pady=(0, 10), before=self.option_frame)
+            else:
+                self.ai_frame.pack_forget()
         else:
             self.video_frame.pack_forget()
-            self.quiz_frame.pack(fill=tk.X, pady=(0, 10))
+            self.quiz_frame.pack(fill=tk.X, pady=(0, 10), before=self.option_frame)
+            self.ai_frame.pack(fill=tk.X, pady=(0, 10), before=self.option_frame)
     
     def select_account_file(self):
         """选择配置文件"""
@@ -694,6 +724,7 @@ class ZhidaoGUILauncher:
                 "api_base_url": "",
                 "api_model": "",
                 "verify_api_on_start": True,
+                "answer_mode": "auto_practice",
                 "enable_orchestrator": False,
                 "orchestrator_accounts": "",
                 "orchestrator_max_concurrency": 1,
@@ -740,10 +771,11 @@ class ZhidaoGUILauncher:
                 self.max_watch_minutes_var.set(config.get('max_watch_minutes', 0))
                 self.mode_var.set(config.get('mode', 'video'))
                 self.quiz_type_var.set(config.get('quiz_type', '课程测试'))
+                self.answer_mode_var.set(config.get('answer_mode', 'auto_practice'))
                 self.api_key_var.set(config.get('deepseek_api_key', ''))
                 self.api_base_url_var.set(config.get('api_base_url', ''))
                 self.api_model_var.set(config.get('api_model', ''))
-                self.verify_api_on_start_var.set(config.get('verify_api_on_start', False))
+                self.verify_api_on_start_var.set(config.get('verify_api_on_start', True))
                 self.enable_orchestrator_var.set(config.get('enable_orchestrator', False))
                 self.orchestrator_accounts_var.set(config.get('orchestrator_accounts', ''))
                 self.orchestrator_concurrency_var.set(config.get('orchestrator_max_concurrency', 1))
@@ -773,6 +805,7 @@ class ZhidaoGUILauncher:
                 "max_watch_minutes": self.max_watch_minutes_var.get(),
                 "mode": self.mode_var.get(),
                 "quiz_type": self.quiz_type_var.get(),
+                "answer_mode": self.answer_mode_var.get(),
                 "deepseek_api_key": self.api_key_var.get(),
                 "api_base_url": self.api_base_url_var.get(),
                 "api_model": self.api_model_var.get(),
@@ -981,8 +1014,21 @@ class ZhidaoGUILauncher:
             messagebox.showerror("错误", "请填写课程名称或课程URL！")
             return False
         
-        if self.mode_var.get() == "quiz_only" and not self.api_key_var.get().strip():
-            messagebox.showerror("错误", "答题模式需要填写DeepSeek API密钥！")
+        needs_deepseek = (
+            self.mode_var.get() == "quiz_only"
+            or (
+                self.mode_var.get() == "video"
+                and self.course_type_var.get() == 2
+                and self.answer_mode_var.get() in ("auto_practice", "semi_auto")
+            )
+        )
+        has_deepseek_key = (
+            self.api_key_var.get().strip()
+            or os.getenv('DEEPSEEK_API_KEY', '').strip()
+            or os.getenv('ANTHROPIC_AUTH_TOKEN', '').strip()
+        )
+        if needs_deepseek and not has_deepseek_key:
+            messagebox.showerror("错误", "当前模式需要填写DeepSeek API密钥，或先设置 DEEPSEEK_API_KEY 环境变量！")
             return False
         
         return True
