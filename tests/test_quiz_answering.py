@@ -11,8 +11,10 @@ if str(CODE_DIR) not in sys.path:
 from quiz_answering import (  # noqa: E402
     allowed_option_labels,
     build_answer_messages,
+    format_options_for_prompt,
     normalize_question_data,
     parse_answer_letters,
+    question_type_label,
 )
 
 
@@ -65,13 +67,19 @@ class QuizAnsweringTests(unittest.TestCase):
     def test_build_answer_messages_contains_options(self):
         messages = build_answer_messages({
             "question": "Q?",
-            "type": "single",
+            "type": "multiple",
             "options": {"A": {"text": "One"}, "B": {"text": "Two"}},
         })
 
         self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("题目类型: 多选题", messages[1]["content"])
+        self.assertIn("题干: Q?", messages[1]["content"])
         self.assertIn("A. One", messages[1]["content"])
         self.assertIn("B. Two", messages[1]["content"])
+
+    def test_question_type_label_and_option_prompt_format(self):
+        self.assertEqual(question_type_label("judgement"), "判断题")
+        self.assertEqual(format_options_for_prompt({"A": "正确", "B": "错误"}), "A. 正确\nB. 错误")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ if str(CODE_DIR) not in sys.path:
 
 from quiz_popup_reader import (  # noqa: E402
     build_popup_question_data,
+    detect_question_type_from_text,
     extract_question_from_dialog_text,
     extract_question_from_page_dom,
     strip_option_prefix,
@@ -111,6 +112,11 @@ class QuizPopupReaderTests(unittest.TestCase):
 
         self.assertTrue(question.startswith("政治安全影响着军事安全"))
 
+    def test_detect_question_type_from_text(self):
+        self.assertEqual(detect_question_type_from_text("1.[判断题] 这是题干"), "judgement")
+        self.assertEqual(detect_question_type_from_text("1.【多选题】 这是题干"), "multiple")
+        self.assertEqual(detect_question_type_from_text("1.【单选题】 这是题干"), "single")
+
     def test_build_popup_question_data_reads_question_info_dom(self):
         question = FakeElement("下列关于政治安全表述正确的有（）。", role="question")
         dialog = FakeElement(
@@ -123,7 +129,21 @@ class QuizPopupReaderTests(unittest.TestCase):
         data = build_popup_question_data(FakeDriver([dialog]), [option_a, option_b], question_type="multiple")
 
         self.assertEqual(data["question"], "下列关于政治安全表述正确的有（）。")
+        self.assertEqual(data["type"], "multiple")
         self.assertEqual(data["options"]["A"]["text"], "政治安全仅关乎党和国家安危")
+
+    def test_build_popup_question_data_sends_judgement_type_and_options(self):
+        dialog = FakeElement(
+            "AI随堂练习\n1.[判断题]\n政治安全影响着军事安全。（）\nA 正确\nB 错误\n提交作答"
+        )
+        option_a = FakeElement("A 正确")
+        option_b = FakeElement("B 错误")
+
+        data = build_popup_question_data(FakeDriver([dialog]), [option_a, option_b], question_type="single")
+
+        self.assertEqual(data["type"], "judgement")
+        self.assertEqual(data["options"]["A"]["text"], "正确")
+        self.assertEqual(data["options"]["B"]["text"], "错误")
 
 
 if __name__ == "__main__":

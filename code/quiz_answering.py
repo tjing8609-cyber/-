@@ -11,6 +11,16 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 
 ANSWER_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+QUESTION_TYPE_LABELS = {
+    "single": "单选题",
+    "multiple": "多选题",
+    "judgement": "判断题",
+    "judge": "判断题",
+    "true_false": "判断题",
+    "单选题": "单选题",
+    "多选题": "多选题",
+    "判断题": "判断题",
+}
 
 
 @dataclass
@@ -61,6 +71,15 @@ def normalize_question_data(question_data) -> QuestionData:
     )
 
 
+def question_type_label(question_type: str) -> str:
+    normalized = str(question_type or "single").strip()
+    return QUESTION_TYPE_LABELS.get(normalized, normalized or "单选题")
+
+
+def format_options_for_prompt(options: Dict[str, str]) -> str:
+    return "\n".join(f"{label}. {text}" for label, text in options.items())
+
+
 def allowed_option_labels(question_data) -> List[str]:
     question = normalize_question_data(question_data)
     return [label for label in question.options.keys() if label in ANSWER_ALPHABET]
@@ -68,22 +87,23 @@ def allowed_option_labels(question_data) -> List[str]:
 
 def build_answer_messages(question_data) -> List[dict]:
     question = normalize_question_data(question_data)
-    options_text = "\n".join(f"{label}. {text}" for label, text in question.options.items())
+    options_text = format_options_for_prompt(question.options)
+    type_label = question_type_label(question.question_type)
     user_prompt = (
-        "Please answer the following quiz question.\n\n"
-        f"Question type: {question.question_type}\n"
-        f"Question: {question.question}\n\n"
-        f"Options:\n{options_text}\n\n"
-        "Return only the option letter or letters. "
-        "For a single-choice question return one letter like A. "
-        "For a multiple-choice question return letters like AC."
+        "请回答下面的题目。\n\n"
+        f"题目类型: {type_label}\n"
+        f"题干: {question.question}\n\n"
+        f"选项:\n{options_text}\n\n"
+        "要求: 只返回选项字母，不要解释。"
+        "单选题或判断题返回一个字母，例如 A。"
+        "多选题返回多个字母，例如 AC。"
     )
     return [
         {
             "role": "system",
             "content": (
-                "You answer multiple-choice questions. "
-                "Return only option letters and no explanation."
+                "你是选择题答题助手。你必须根据题目类型、题干和选项作答，"
+                "并且只返回选项字母，不要返回解释。"
             ),
         },
         {"role": "user", "content": user_prompt},
@@ -180,7 +200,13 @@ class QuizAnsweringService:
         question = normalize_question_data(question_data)
         messages = build_answer_messages(question)
         if self.logger:
-            self.logger.info("🤖 调用API获取答案...")
+            options_preview = "; ".join(
+                f"{label}. {text[:60]}" for label, text in question.options.items()
+            )
+            self.logger.info(
+                f"🤖 调用DeepSeek获取答案: 类型={question_type_label(question.question_type)}; "
+                f"题干={question.question[:120]}; 选项={options_preview}"
+            )
 
         response = self.client.chat.completions.create(
             model=self.model,

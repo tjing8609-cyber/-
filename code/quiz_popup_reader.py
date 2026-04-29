@@ -21,6 +21,11 @@ SKIP_QUESTION_LINES = {
     "关闭",
 }
 QUESTION_TYPE_MARKERS = ("单选题", "多选题", "判断题")
+QUESTION_TYPE_ALIASES = {
+    "多选题": "multiple",
+    "单选题": "single",
+    "判断题": "judgement",
+}
 QUESTION_INFO_XPATHS = [
     ".//*[contains(@class,'question-info')]",
     ".//*[contains(@class,'richtext-container') and contains(@class,'question')]",
@@ -105,6 +110,14 @@ def is_question_meta_line(line):
     if "AI生成" in normalized or "注意甄别" in normalized:
         return True
     return False
+
+
+def detect_question_type_from_text(text, default="single"):
+    source = str(text or "")
+    for label, normalized in QUESTION_TYPE_ALIASES.items():
+        if label in source:
+            return normalized
+    return default
 
 
 def extract_question_from_dialog_text(dialog_text, option_texts=None):
@@ -207,6 +220,21 @@ def extract_question_from_page_dom(driver, option_texts=None):
     return ""
 
 
+def detect_question_type_from_page_dom(driver, default="single"):
+    question_type = default
+    for candidate in _question_candidates_from_page_script(driver):
+        if not isinstance(candidate, dict):
+            continue
+        for key in ("typeText", "questionText", "rootText", "rootHtml"):
+            text = candidate.get(key, "")
+            if key == "rootHtml":
+                text = html_to_text(text)
+            question_type = detect_question_type_from_text(text, question_type)
+            if question_type != default:
+                return question_type
+    return question_type
+
+
 def read_visible_dialog_text(driver, dialog_xpath=None):
     dialogs = probable_quiz_dialogs(driver, dialog_xpath) or visible_quiz_dialogs(driver, dialog_xpath)
     # Prefer larger containers for text extraction; small matched child nodes are
@@ -242,6 +270,10 @@ def build_popup_question_data(driver, option_elements, question_type="single", d
     if not question:
         question = extract_question_from_page_dom(driver, option_texts=option_texts)
     dialog_text = read_visible_dialog_text(driver, dialog_xpath=dialog_xpath)
+    detected_question_type = detect_question_type_from_text(
+        dialog_text,
+        detect_question_type_from_page_dom(driver, question_type),
+    )
     if not question:
         question = extract_question_from_dialog_text(dialog_text, option_texts=option_texts)
     if not question:
@@ -252,18 +284,24 @@ def build_popup_question_data(driver, option_elements, question_type="single", d
             )
         return None
     if logger:
-        logger.info(f"🧾 已提取题干: {question[:120]}")
+        option_preview = "; ".join(f"{label}. {data['text'][:60]}" for label, data in options.items())
+        logger.info(
+            f"🧾 已提取题目: 类型={detected_question_type}; "
+            f"题干={question[:120]}; 选项={option_preview}"
+        )
 
     return PopupQuestionData(
         question=question,
         options=options,
-        question_type=question_type,
+        question_type=detected_question_type,
     ).as_legacy_dict()
 
 
 __all__ = [
     "PopupQuestionData",
     "build_popup_question_data",
+    "detect_question_type_from_page_dom",
+    "detect_question_type_from_text",
     "expand_compact_dialog_text",
     "extract_question_from_page_dom",
     "extract_question_from_dialog_text",
