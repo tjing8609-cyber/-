@@ -9,6 +9,12 @@ from typing import Dict, Iterable, List, Optional
 
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from llm_response import (
+    extract_chat_message_text,
+    summarize_chat_response,
+    summarize_exception,
+)
+
 
 ANSWER_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 QUESTION_TYPE_LABELS = {
@@ -83,6 +89,17 @@ def format_options_for_prompt(options: Dict[str, str]) -> str:
 def allowed_option_labels(question_data) -> List[str]:
     question = normalize_question_data(question_data)
     return [label for label in question.options.keys() if label in ANSWER_ALPHABET]
+
+
+def validate_question_for_api(question_data) -> Optional[str]:
+    question = normalize_question_data(question_data)
+    if not question.question:
+        return "missing question text"
+    if not question.options:
+        return "missing answer options"
+    if not allowed_option_labels(question):
+        return "missing lettered answer options"
+    return None
 
 
 def build_answer_messages(question_data) -> List[dict]:
@@ -201,12 +218,30 @@ class QuizAnsweringService:
         self.temperature = temperature
         self.max_tokens = max_tokens
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10), reraise=True)
+    def _create_completion(self, messages):
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+            stream=False,
+        )
+
     def answer(self, question_data) -> AnswerResult:
         if self.client is None:
             return AnswerResult([], valid=False, reason="api client is not configured")
 
         question = normalize_question_data(question_data)
+        validation_error = validate_question_for_api(question)
+        if validation_error:
+            if self.logger:
+                self.logger.warning(
+                    f"DeepSeek answer skipped: {validation_error}; question={question.question[:120]!r}"
+                )
+            return AnswerResult([], valid=False, reason=validation_error)
+
         messages = build_answer_messages(question)
         if self.logger:
             options_preview = "; ".join(
@@ -217,15 +252,21 @@ class QuizAnsweringService:
                 f"题干={question.question[:120]}; 选项={options_preview}"
             )
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=self.temperature,
-            max_tokens=self.max_tokens,
-            stream=False,
-        )
-        answer_text = response.choices[0].message.content.strip()
+        try:
+            response = self._create_completion(messages)
+        except Exception as error:
+            detail = summarize_exception(error)
+            reason = f"{classify_api_error(error)}; {detail}"
+            if self.logger:
+                self.logger.error(f"DeepSeek answer request failed: {reason}")
+            return AnswerResult([], valid=False, reason=reason)
+
+        answer_text = extract_chat_message_text(response)
+        if not answer_text:
+            diagnostics = summarize_chat_response(response)
+            if self.logger:
+                self.logger.warning(f"DeepSeek answer response is empty: {diagnostics}")
+            return AnswerResult([], raw_text="", valid=False, reason=f"empty response; {diagnostics}")
         result = parse_answer_letters(answer_text, question.options.keys(), question.question_type)
         if self.logger:
             if result.valid:

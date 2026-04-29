@@ -2,6 +2,11 @@ import os
 import re
 from dataclasses import dataclass
 
+from llm_response import (
+    extract_chat_message_text,
+    summarize_chat_response,
+    summarize_exception,
+)
 from quiz_answering import QuizAnsweringService
 
 
@@ -125,20 +130,25 @@ def verify_deepseek_client(client, config, logger=None):
             max_tokens=32,
             stream=False,
         )
-        content = response.choices[0].message.content.strip()
+        content = extract_chat_message_text(response)
         if not content:
+            diagnostics = summarize_chat_response(response)
             if logger:
-                logger.error("DeepSeek validation response is empty")
-            return DeepSeekValidationResult(False, "DeepSeek validation response is empty")
+                logger.error(f"DeepSeek validation response is empty: {diagnostics}")
+            return DeepSeekValidationResult(
+                False,
+                f"DeepSeek validation response is empty; {diagnostics}",
+            )
         if not is_expected_validation_answer(content):
+            diagnostics = summarize_chat_response(response)
             if logger:
                 logger.error(
                     f"DeepSeek validation answer is unexpected: {content}; "
-                    f"expected {DEEPSEEK_VALIDATION_EXPECTED}"
+                    f"expected {DEEPSEEK_VALIDATION_EXPECTED}; {diagnostics}"
                 )
             return DeepSeekValidationResult(
                 False,
-                f"DeepSeek validation answer is unexpected: {content}",
+                f"DeepSeek validation answer is unexpected: {content}; {diagnostics}",
             )
         if logger:
             logger.info(
@@ -147,9 +157,10 @@ def verify_deepseek_client(client, config, logger=None):
             )
         return DeepSeekValidationResult(True, content)
     except Exception as e:
+        detail = summarize_exception(e)
         if logger:
-            logger.error(f"DeepSeek API validation failed: {e}")
-        return DeepSeekValidationResult(False, str(e))
+            logger.error(f"DeepSeek API validation failed: {detail}")
+        return DeepSeekValidationResult(False, detail)
 
 
 def create_answering_service(account_config=None, logger=None, env=None):

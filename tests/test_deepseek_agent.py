@@ -118,6 +118,14 @@ class DeepSeekAgentTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("401", result.message)
 
+    def test_verify_deepseek_client_empty_response_has_diagnostics(self):
+        config = load_deepseek_config({"deepseek_api_key": "key"}, env={})
+        result = verify_deepseek_client(FakeClient(""), config)
+
+        self.assertFalse(result.ok)
+        self.assertIn("empty", result.message)
+        self.assertIn("content_len=0", result.message)
+
     def test_validation_answer_accepts_common_sin30_forms(self):
         self.assertTrue(is_expected_validation_answer("0.5"))
         self.assertTrue(is_expected_validation_answer("1/2"))

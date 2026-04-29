@@ -16,6 +16,7 @@ from quiz_answering import (  # noqa: E402
     normalize_question_data,
     parse_answer_letters,
     question_type_label,
+    validate_question_for_api,
 )
 
 
@@ -134,6 +135,22 @@ class QuizAnsweringTests(unittest.TestCase):
         self.assertIn("题目类型: 判断题", call["messages"][1]["content"])
         self.assertTrue(result.valid)
         self.assertEqual(result.value, "B")
+
+
+    def test_answer_service_skips_missing_options(self):
+        client = FakeClient('{"answer":"A"}')
+        service = QuizAnsweringService(client, "deepseek-chat")
+
+        result = service.answer({"question": "Q?", "type": "single", "options": {}})
+
+        self.assertFalse(result.valid)
+        self.assertEqual(result.reason, "missing answer options")
+        self.assertEqual(client.chat.completions.calls, [])
+
+    def test_validate_question_for_api_reports_missing_question(self):
+        reason = validate_question_for_api({"question": "", "type": "single", "options": {"A": "x"}})
+
+        self.assertEqual(reason, "missing question text")
 
 
 if __name__ == "__main__":
