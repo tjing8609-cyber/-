@@ -2,7 +2,7 @@ import html as html_lib
 import re
 from dataclasses import dataclass
 
-from quiz_popup_actions import visible_quiz_dialogs
+from quiz_popup_actions import probable_quiz_dialogs, visible_quiz_dialogs
 
 
 OPTION_PREFIX_RE = re.compile(r"^\s*([A-Z])\s*[\.\u3001\uff09\)]?\s*(.*)$")
@@ -26,6 +26,8 @@ QUESTION_INFO_XPATHS = [
     ".//*[contains(@class,'richtext-container') and contains(@class,'question')]",
     ".//*[contains(@class,'ques-list')]//*[contains(@class,'row')]",
 ]
+QUESTION_PREFIX_RE = re.compile(r"^\s*\d+\s*[\.\u3001\uff0e]?\s*[\[\u3010]?\s*(?:单选题|多选题|判断题)\s*[\]\u3011]?\s*")
+INLINE_OPTION_SPLIT_RE = re.compile(r"\s+[A-Z]\s*[\.\u3001\uff09\)]?\s*(?=[\u4e00-\u9fff])")
 
 
 @dataclass(frozen=True)
@@ -65,10 +67,30 @@ def html_to_text(markup):
     return html_lib.unescape(text)
 
 
+def expand_compact_dialog_text(text):
+    text = str(text or "").replace("\xa0", " ")
+    for marker in (
+        "AI随堂练习",
+        "以下所有内容均由AI生成请注意甄别",
+        "提交作答",
+        "提交",
+    ):
+        text = text.replace(marker, f"\n{marker}\n")
+    text = re.sub(r"(\d+\s*[\.\u3001\uff0e]?\s*[\[\u3010]?\s*(?:单选题|多选题|判断题)\s*[\]\u3011]?)", r"\n\1", text)
+    text = re.sub(r"(?<![A-Z])([A-Z])\s*[\.\u3001\uff09\)]?\s*(?=[\u4e00-\u9fff])", r"\n\1 ", text)
+    return text
+
+
 def normalize_question_line(line):
     line = str(line or "").strip()
-    line = re.sub(r"^\s*\d+\s*[\.\u3001\uff0e]\s*", "", line)
+    for marker in ("AI随堂练习", "以下所有内容均由AI生成请注意甄别"):
+        if line.startswith(marker):
+            line = line[len(marker):].strip()
+    line = QUESTION_PREFIX_RE.sub("", line)
     line = re.sub(r"^[\[\u3010]?\s*(?:单选题|多选题|判断题)\s*[\]\u3011]?\s*", "", line)
+    line = line.split("提交作答", 1)[0].strip()
+    line = line.split("提交", 1)[0].strip()
+    line = INLINE_OPTION_SPLIT_RE.split(line, maxsplit=1)[0].strip()
     return line.strip()
 
 
@@ -87,7 +109,7 @@ def is_question_meta_line(line):
 
 def extract_question_from_dialog_text(dialog_text, option_texts=None):
     option_texts = {str(text).strip() for text in (option_texts or []) if str(text).strip()}
-    for raw_line in str(dialog_text or "").splitlines():
+    for raw_line in expand_compact_dialog_text(dialog_text).splitlines():
         line = normalize_question_line(raw_line)
         if not line:
             continue
@@ -124,6 +146,41 @@ def _element_text(driver, element):
     return ""
 
 
+def _question_candidates_from_page_script(driver):
+    try:
+        return driver.execute_script(
+            """
+            const visible = (el) => {
+              if (!el) return false;
+              const style = window.getComputedStyle(el);
+              const rect = el.getBoundingClientRect();
+              return style.display !== 'none' && style.visibility !== 'hidden' &&
+                     rect.width > 0 && rect.height > 0;
+            };
+            const roots = Array.from(document.querySelectorAll(
+              '[role="dialog"], .ai-class-exercise-dialog, .el-dialog, .ques-list'
+            )).filter(visible);
+            return roots.map((root) => {
+              const questionEl = root.querySelector(
+                '.question-info, .richText-container.question-info, .ques-list .row .question-info, .ques-list .row'
+              );
+              const optionEls = Array.from(root.querySelectorAll('.option, li.option, label.el-radio, label.el-checkbox'))
+                .filter(visible);
+              const typeEl = root.querySelector('.type, .title-tit');
+              return {
+                questionText: questionEl ? (questionEl.innerText || questionEl.textContent || '') : '',
+                rootText: root.innerText || root.textContent || '',
+                rootHtml: root.innerHTML || '',
+                typeText: typeEl ? (typeEl.innerText || typeEl.textContent || '') : '',
+                optionTexts: optionEls.map((el) => el.innerText || el.textContent || '').filter(Boolean)
+              };
+            });
+            """
+        ) or []
+    except Exception:
+        return []
+
+
 def extract_question_from_dialog_dom(driver, dialog):
     for xpath in QUESTION_INFO_XPATHS:
         try:
@@ -138,8 +195,23 @@ def extract_question_from_dialog_dom(driver, dialog):
     return ""
 
 
+def extract_question_from_page_dom(driver, option_texts=None):
+    for candidate in _question_candidates_from_page_script(driver):
+        for key in ("questionText", "rootText", "rootHtml"):
+            text = candidate.get(key, "") if isinstance(candidate, dict) else ""
+            if key == "rootHtml":
+                text = html_to_text(text)
+            question = extract_question_from_dialog_text(text, option_texts=option_texts)
+            if question:
+                return question
+    return ""
+
+
 def read_visible_dialog_text(driver, dialog_xpath=None):
-    dialogs = visible_quiz_dialogs(driver, dialog_xpath)
+    dialogs = probable_quiz_dialogs(driver, dialog_xpath) or visible_quiz_dialogs(driver, dialog_xpath)
+    # Prefer larger containers for text extraction; small matched child nodes are
+    # often just the title or type marker.
+    dialogs = sorted(dialogs, key=lambda element: len(_element_text(driver, element)), reverse=True)
     for dialog in dialogs:
         text = _element_text(driver, dialog)
         if text:
@@ -161,17 +233,26 @@ def build_popup_question_data(driver, option_elements, question_type="single", d
     if not options:
         return None
 
-    dialogs = visible_quiz_dialogs(driver, dialog_xpath)
+    dialogs = probable_quiz_dialogs(driver, dialog_xpath) or visible_quiz_dialogs(driver, dialog_xpath)
     question = ""
-    if dialogs:
-        question = extract_question_from_dialog_dom(driver, dialogs[0])
+    for dialog in dialogs:
+        question = extract_question_from_dialog_dom(driver, dialog)
+        if question:
+            break
+    if not question:
+        question = extract_question_from_page_dom(driver, option_texts=option_texts)
     dialog_text = read_visible_dialog_text(driver, dialog_xpath=dialog_xpath)
     if not question:
         question = extract_question_from_dialog_text(dialog_text, option_texts=option_texts)
     if not question:
         if logger:
-            logger.warning("⚠️ 未能从题目弹窗中提取题干，跳过API答题")
+            logger.warning(
+                "⚠️ 未能从题目弹窗中提取题干，跳过API答题；"
+                f"候选弹窗={len(dialogs)}，选项={len(options)}，文本片段={dialog_text[:120]!r}"
+            )
         return None
+    if logger:
+        logger.info(f"🧾 已提取题干: {question[:120]}")
 
     return PopupQuestionData(
         question=question,
@@ -183,6 +264,8 @@ def build_popup_question_data(driver, option_elements, question_type="single", d
 __all__ = [
     "PopupQuestionData",
     "build_popup_question_data",
+    "expand_compact_dialog_text",
+    "extract_question_from_page_dom",
     "extract_question_from_dialog_text",
     "extract_question_from_dialog_dom",
     "html_to_text",

@@ -8,7 +8,12 @@ CODE_DIR = ROOT / "code"
 if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
-from quiz_popup_reader import build_popup_question_data, extract_question_from_dialog_text, strip_option_prefix  # noqa: E402
+from quiz_popup_reader import (  # noqa: E402
+    build_popup_question_data,
+    extract_question_from_dialog_text,
+    extract_question_from_page_dom,
+    strip_option_prefix,
+)
 
 
 class FakeElement:
@@ -28,13 +33,16 @@ class FakeElement:
 
 
 class FakeDriver:
-    def __init__(self, dialogs):
+    def __init__(self, dialogs, script_candidates=None):
         self.dialogs = dialogs
+        self.script_candidates = script_candidates
 
     def find_elements(self, by, value):
         return self.dialogs
 
     def execute_script(self, script, element=None):
+        if self.script_candidates is not None:
+            return self.script_candidates
         return ""
 
 
@@ -71,6 +79,37 @@ class QuizPopupReaderTests(unittest.TestCase):
         question = extract_question_from_dialog_text(text)
 
         self.assertEqual(question, "下列关于政治安全表述正确的有（）。")
+
+    def test_extract_question_from_compact_dialog_text(self):
+        text = (
+            "AI随堂练习以下所有内容均由AI生成请注意甄别"
+            "1.[判断题]政治安全影响着军事安全、经济安全、社会安全、文化安全等各个领域的安全，"
+            "国家安全的其他要素最终也要反映到维护政治安全上来。（）"
+            "A 正确B 错误提交作答"
+        )
+
+        question = extract_question_from_dialog_text(text)
+
+        self.assertEqual(
+            question,
+            "政治安全影响着军事安全、经济安全、社会安全、文化安全等各个领域的安全，国家安全的其他要素最终也要反映到维护政治安全上来。（）",
+        )
+
+    def test_extract_question_from_page_dom_script_candidates(self):
+        driver = FakeDriver(
+            [],
+            script_candidates=[
+                {
+                    "questionText": "政治安全影响着军事安全、经济安全、社会安全、文化安全等各个领域的安全，国家安全的其他要素最终也要反映到维护政治安全上来。（）",
+                    "rootText": "",
+                    "rootHtml": "",
+                }
+            ],
+        )
+
+        question = extract_question_from_page_dom(driver)
+
+        self.assertTrue(question.startswith("政治安全影响着军事安全"))
 
     def test_build_popup_question_data_reads_question_info_dom(self):
         question = FakeElement("下列关于政治安全表述正确的有（）。", role="question")
