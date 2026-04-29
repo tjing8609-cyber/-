@@ -11,11 +11,15 @@ VISIBLE_DIALOG_XPATH = "//div[contains(@class,'el-dialog__wrapper') and not(cont
 VISIBLE_BLOCKING_DIALOG_XPATHS = [
     VISIBLE_DIALOG_XPATH,
     "//*[@role='dialog']",
+    "//*[contains(@class,'ai-class-exercise-dialog')]",
     "//*[contains(@class,'el-overlay-dialog') or contains(@class,'modal') or contains(@class,'popup')]",
 ]
 FALLBACK_DIALOG_XPATHS = [
     VISIBLE_DIALOG_XPATH,
     "//*[@role='dialog' or contains(@class,'dialog') or contains(@class,'modal') or contains(@class,'popup') or contains(@class,'pop')]",
+    "//*[contains(@class,'ai-class-exercise-dialog')]",
+    "//*[contains(@class,'ques-list')]/ancestor::*[@role='dialog' or contains(@class,'el-dialog')][1]",
+    "//*[contains(@class,'question-info')]/ancestor::*[@role='dialog' or contains(@class,'el-dialog')][1]",
     "//*[contains(normalize-space(.),'AI随堂练习')]",
     "//*[contains(normalize-space(.),'提交作答')]",
     "//*[contains(normalize-space(.),'单选题') or contains(normalize-space(.),'多选题')]",
@@ -59,8 +63,31 @@ def _text(element):
         return ""
 
 
+def _attr(element, name):
+    try:
+        return str(element.get_attribute(name) or "")
+    except Exception:
+        return ""
+
+
+def _has_descendant(element, xpath):
+    try:
+        return bool(_visible(element.find_elements(By.XPATH, xpath)))
+    except Exception:
+        return False
+
+
 def _is_probable_quiz_dialog(element):
     text = _text(element)
+    class_name = _attr(element, "class")
+    has_exercise_class = "ai-class-exercise-dialog" in class_name
+    has_ques_list = _has_descendant(element, ".//*[contains(@class,'ques-list')]")
+    has_question_info = _has_descendant(element, ".//*[contains(@class,'question-info')]")
+    has_option_nodes = _has_descendant(element, ".//*[contains(@class,'option')]")
+
+    if has_exercise_class or (has_ques_list and (has_question_info or has_option_nodes)):
+        return True
+
     if not text:
         return False
     has_question_type = any(marker in text for marker in ["单选题", "多选题", "判断题"])
@@ -217,7 +244,10 @@ def visible_quiz_options(driver, option_xpaths):
 
 def is_multi_choice_dialog(driver):
     try:
-        elems = driver.find_elements(By.XPATH, "//span[contains(@class,'title-tit')]")
+        elems = driver.find_elements(
+            By.XPATH,
+            "//*[contains(@class,'title-tit') or contains(@class,'type') or contains(@class,'ai-class-exercise-dialog')]",
+        )
         for elem in elems:
             if elem.is_displayed() and "多选题" in ((elem.text or "").strip()):
                 return True

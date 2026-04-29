@@ -21,10 +21,11 @@ from quiz_popup_actions import (  # noqa: E402
 
 
 class FakeElement:
-    def __init__(self, text="", displayed=True, children=None):
+    def __init__(self, text="", displayed=True, children=None, attrs=None):
         self.text = text
         self.displayed = displayed
         self.children = children or []
+        self.attrs = attrs or {}
         self.clicked = False
 
     def is_displayed(self):
@@ -34,10 +35,14 @@ class FakeElement:
         self.clicked = True
 
     def find_elements(self, by, value):
+        if "ques-list" in value or "question-info" in value:
+            return [child for child in self.children if child.attrs.get("role") == "quiz-marker"]
+        if "option" in value:
+            return [child for child in self.children if child.attrs.get("role") == "option"]
         return self.children
 
     def get_attribute(self, name):
-        return ""
+        return self.attrs.get(name, "")
 
 
 class FakeDriver:
@@ -138,6 +143,15 @@ class QuizPopupActionsTests(unittest.TestCase):
         self.assertTrue(click_first_non_quiz_dialog_close(driver))
         self.assertFalse(quiz_close.clicked)
         self.assertTrue(normal_close.clicked)
+
+    def test_probable_quiz_dialogs_detects_ai_exercise_container_class(self):
+        dialog = FakeElement(
+            "1.【多选题】\n下列关于政治安全表述正确的有（）。\nA 政治安全仅关乎党和国家安危\nB 政治安全是根本保障\n提交作答",
+            attrs={"class": "el-dialog ai-class-exercise-dialog"},
+        )
+        driver = FakeDriver([dialog])
+
+        self.assertEqual(probable_quiz_dialogs(driver), [dialog])
 
 
 if __name__ == "__main__":

@@ -1714,6 +1714,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 self.selectors,
                 "with_quiz.option_xpaths",
                 [
+                    "//*[contains(@class,'ai-class-exercise-dialog')]//*[contains(@class,'ques-list')]//*[contains(@class,'option')]",
+                    "//*[contains(@class,'ques-list')]//*[contains(@class,'option')]",
+                    "//*[contains(@class,'el-dialog') and .//*[contains(@class,'ques-list')]]//*[contains(@class,'option')]",
                     "//div[contains(@class,'topic-item')]",
                     "//li[contains(@class,'option')]",
                     "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
@@ -2690,6 +2693,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 self.selectors,
                 "with_quiz.option_xpaths",
                 [
+                    "//*[contains(@class,'ai-class-exercise-dialog')]//*[contains(@class,'ques-list')]//*[contains(@class,'option')]",
+                    "//*[contains(@class,'ques-list')]//*[contains(@class,'option')]",
+                    "//*[contains(@class,'el-dialog') and .//*[contains(@class,'ques-list')]]//*[contains(@class,'option')]",
                     "//li[contains(@class,'topic-item')]",
                     "//li[contains(@class,'option')]",
                     "//label[contains(@class,'el-radio') or contains(@class,'el-checkbox')]",
