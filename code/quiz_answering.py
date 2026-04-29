@@ -94,7 +94,8 @@ def build_answer_messages(question_data) -> List[dict]:
         f"题目类型: {type_label}\n"
         f"题干: {question.question}\n\n"
         f"选项:\n{options_text}\n\n"
-        "要求: 只返回选项字母，不要解释。"
+        "要求: 只返回合法 json 对象，不要解释。"
+        'JSON格式示例: {"answer":"A"} 或 {"answer":["A","C"]}。'
         "单选题或判断题返回一个字母，例如 A。"
         "多选题返回多个字母，例如 AC。"
     )
@@ -103,7 +104,8 @@ def build_answer_messages(question_data) -> List[dict]:
             "role": "system",
             "content": (
                 "你是选择题答题助手。你必须根据题目类型、题干和选项作答，"
-                "并且只返回选项字母，不要返回解释。"
+                "并且只返回合法 json 对象，不要返回解释。"
+                '输出格式固定为 {"answer":"A"} 或 {"answer":["A","C"]}。'
             ),
         },
         {"role": "user", "content": user_prompt},
@@ -114,7 +116,14 @@ def _extract_json_answer(text: str) -> Optional[str]:
     try:
         data = json.loads(text)
         if isinstance(data, dict):
-            value = data.get("answer") or data.get("answers")
+            value = (
+                data.get("answer")
+                or data.get("answers")
+                or data.get("letter")
+                or data.get("letters")
+                or data.get("option")
+                or data.get("options")
+            )
             if isinstance(value, list):
                 return "".join(str(item) for item in value)
             if value is not None:
@@ -185,7 +194,7 @@ def classify_api_error(error) -> str:
 
 
 class QuizAnsweringService:
-    def __init__(self, client, model: str, logger=None, temperature: float = 0.3, max_tokens: int = 16):
+    def __init__(self, client, model: str, logger=None, temperature: float = 0.3, max_tokens: int = 64):
         self.client = client
         self.model = model
         self.logger = logger
@@ -211,6 +220,7 @@ class QuizAnsweringService:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
+            response_format={"type": "json_object"},
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             stream=False,

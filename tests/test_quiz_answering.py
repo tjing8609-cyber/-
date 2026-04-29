@@ -9,6 +9,7 @@ if str(CODE_DIR) not in sys.path:
     sys.path.insert(0, str(CODE_DIR))
 
 from quiz_answering import (  # noqa: E402
+    QuizAnsweringService,
     allowed_option_labels,
     build_answer_messages,
     format_options_for_prompt,
@@ -16,6 +17,37 @@ from quiz_answering import (  # noqa: E402
     parse_answer_letters,
     question_type_label,
 )
+
+
+class FakeMessage:
+    def __init__(self, content):
+        self.content = content
+
+
+class FakeChoice:
+    def __init__(self, content):
+        self.message = FakeMessage(content)
+
+
+class FakeResponse:
+    def __init__(self, content):
+        self.choices = [FakeChoice(content)]
+
+
+class FakeCompletions:
+    def __init__(self, content='{"answer":"A"}'):
+        self.content = content
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return FakeResponse(self.content)
+
+
+class FakeClient:
+    def __init__(self, content='{"answer":"A"}'):
+        self.chat = type("Chat", (), {})()
+        self.chat.completions = FakeCompletions(content)
 
 
 class QuizAnsweringTests(unittest.TestCase):
@@ -53,6 +85,12 @@ class QuizAnsweringTests(unittest.TestCase):
         self.assertTrue(result.valid)
         self.assertEqual(result.value, ["A", "C"])
 
+    def test_parse_json_answer_letters(self):
+        result = parse_answer_letters('{"letters":["A","C"]}', ["A", "B", "C", "D"], "multiple")
+
+        self.assertTrue(result.valid)
+        self.assertEqual(result.value, ["A", "C"])
+
     def test_reject_multiple_answer_for_single_question(self):
         result = parse_answer_letters("AB", ["A", "B", "C"], "single")
 
@@ -80,6 +118,22 @@ class QuizAnsweringTests(unittest.TestCase):
     def test_question_type_label_and_option_prompt_format(self):
         self.assertEqual(question_type_label("judgement"), "判断题")
         self.assertEqual(format_options_for_prompt({"A": "正确", "B": "错误"}), "A. 正确\nB. 错误")
+
+    def test_answer_service_requests_json_output(self):
+        client = FakeClient('{"answer":"B"}')
+        service = QuizAnsweringService(client, "deepseek-chat")
+
+        result = service.answer({
+            "question": "判断题？",
+            "type": "judgement",
+            "options": {"A": {"text": "正确"}, "B": {"text": "错误"}},
+        })
+
+        call = client.chat.completions.calls[0]
+        self.assertEqual(call["response_format"], {"type": "json_object"})
+        self.assertIn("题目类型: 判断题", call["messages"][1]["content"])
+        self.assertTrue(result.valid)
+        self.assertEqual(result.value, "B")
 
 
 if __name__ == "__main__":
