@@ -42,11 +42,20 @@ from .probe import (
     create_probe,
     record_observation_once,
 )
+from .probe_config import (
+    AgentProbeConfig,
+    default_probe_config,
+    load_probe_config,
+    parse_bool,
+    parse_string,
+    to_probe_options,
+)
 
 __all__ = [
     "ActionProposal",
     "AgentObserver",
     "AgentProbe",
+    "AgentProbeConfig",
     "AgentEventLog",
     "AgentEvent",
     "ObservationFrame",
@@ -57,6 +66,7 @@ __all__ = [
     "clamp_confidence",
     "create_probe",
     "current_timestamp",
+    "default_probe_config",
     "ensure_event_log_dir",
     "event_log_path",
     "extract_basic_driver_info",
@@ -67,8 +77,11 @@ __all__ = [
     "normalize_dialogs",
     "normalize_video_state",
     "observe_to_event",
+    "load_probe_config",
     "read_events",
     "record_observation_once",
+    "parse_bool",
+    "parse_string",
     "safe_call",
     "safe_dict",
     "safe_getattr",
@@ -76,6 +89,7 @@ __all__ = [
     "safe_read_jsonl",
     "safe_string",
     "summarize_events",
+    "to_probe_options",
     "utc_timestamp",
     "write_event",
 ]
