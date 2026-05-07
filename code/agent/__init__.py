@@ -35,16 +35,27 @@ from .observer import (
     safe_getattr,
     safe_string,
 )
+from .probe import (
+    AgentProbe,
+    ProbeOptions,
+    ProbeRecordResult,
+    create_probe,
+    record_observation_once,
+)
 
 __all__ = [
     "ActionProposal",
     "AgentObserver",
+    "AgentProbe",
     "AgentEventLog",
     "AgentEvent",
     "ObservationFrame",
     "ObserverOptions",
+    "ProbeOptions",
+    "ProbeRecordResult",
     "StateSnapshot",
     "clamp_confidence",
+    "create_probe",
     "current_timestamp",
     "ensure_event_log_dir",
     "event_log_path",
@@ -57,6 +68,7 @@ __all__ = [
     "normalize_video_state",
     "observe_to_event",
     "read_events",
+    "record_observation_once",
     "safe_call",
     "safe_dict",
     "safe_getattr",
