@@ -106,6 +106,9 @@ class DeepSeekAgentTests(unittest.TestCase):
         self.assertIn("A.", DEEPSEEK_VALIDATION_QUESTION)
         self.assertIn("B.", DEEPSEEK_VALIDATION_QUESTION)
         self.assertEqual(call["response_format"], {"type": "json_object"})
+        self.assertEqual(call["max_tokens"], 1024)
+        self.assertIn("极其精简的自动答题API", call["messages"][0]["content"])
+        self.assertIn('{"answer": "正确选项"}', call["messages"][0]["content"])
 
     def test_verify_deepseek_client_rejects_unexpected_answer(self):
         config = load_deepseek_config({"deepseek_api_key": "key"}, env={})

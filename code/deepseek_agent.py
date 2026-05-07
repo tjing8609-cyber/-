@@ -131,15 +131,21 @@ def verify_deepseek_client(client, config, logger=None):
     try:
         if logger:
             logger.info(f"DeepSeek validation question: {DEEPSEEK_VALIDATION_QUESTION}")
+        system_prompt = """你是一个极其精简的自动答题API。你的唯一任务是提取答案并返回合法的JSON对象。
+【严格规则】
+1. 只能返回纯JSON对象，格式强制为：{"answer": "正确选项"}。
+2. 单选题/多选题的 "正确选项" 仅为字母（如 "A" 或 "ABC"），不要空格。判断题为 "正确" 或 "错误"。
+3. 绝对禁止输出任何推理过程、解释或分析。
+4. 不要使用 markdown 代码块包裹 JSON。"""
         response = client.chat.completions.create(
             model=config.model,
             messages=[
-                {"role": "system", "content": "只返回合法 json 对象，例如 {\"answer\":\"A\"}，不要解释。"},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": DEEPSEEK_VALIDATION_QUESTION},
             ],
             response_format={"type": "json_object"},
             temperature=0,
-            max_tokens=32,
+            max_tokens=1024,
             stream=False,
         )
         content = extract_chat_message_text(response)
