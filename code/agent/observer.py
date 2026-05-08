@@ -292,6 +292,7 @@ class AgentObserver:
         return ObservationFrame(
             url=info["url"],
             title=info["title"],
+            page_text_digest=info["page_text_digest"],
             mode=safe_string(mode, 100),
             course_name=safe_string(course_name, 300),
             timestamp=current_timestamp(),

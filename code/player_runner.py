@@ -3,8 +3,10 @@ import importlib
 from agent.probe_adapter import (
     close_probe_handle,
     create_probe_handle,
+    is_probe_enabled,
     record_probe_complete,
     record_probe_error,
+    record_probe_observation,
     record_probe_start,
 )
 
@@ -76,6 +78,36 @@ def _safe_probe_call(callback, *args, **kwargs):
         return None
 
 
+def _player_driver(player):
+    if player is None:
+        return None
+    try:
+        return getattr(player, "driver", None)
+    except Exception:
+        return None
+
+
+def _record_lifecycle_observation(probe_handle, player, context, target, lifecycle):
+    try:
+        if not is_probe_enabled(probe_handle):
+            return None
+        driver = _player_driver(player)
+        if driver is None:
+            return None
+        return _safe_probe_call(
+            record_probe_observation,
+            probe_handle,
+            driver=driver,
+            mode=getattr(context, "mode", ""),
+            course_name=getattr(context, "course_name", ""),
+            account_file=str(getattr(context, "account_path", "")),
+            event_type="observe",
+            notes=f"lifecycle={lifecycle}; module={target.module_name}",
+        )
+    except Exception:
+        return None
+
+
 def execute_player(target, context, update_observability, write_failure_snapshot):
     project_root = str(context.project_root)
     probe_handle = _create_probe_handle_for_runner(project_root, context)
@@ -90,6 +122,7 @@ def execute_player(target, context, update_observability, write_failure_snapshot
         player = create_player(target, context)
         update_observability(project_root, observability_payload("running", context, target))
         player.run()
+        _record_lifecycle_observation(probe_handle, player, context, target, "run_complete")
         _safe_probe_call(
             record_probe_complete,
             probe_handle,
@@ -111,6 +144,7 @@ def execute_player(target, context, update_observability, write_failure_snapshot
         )
         raise
     except Exception as e:
+        _record_lifecycle_observation(probe_handle, player, context, target, "error")
         _safe_probe_call(
             record_probe_error,
             probe_handle,

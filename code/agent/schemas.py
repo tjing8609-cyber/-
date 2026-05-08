@@ -171,6 +171,7 @@ class ObservationFrame:
     html_snapshot_path: str = ""
     som_image_path: str = ""
     notes: str = ""
+    page_text_digest: str = ""
 
     def __post_init__(self):
         self.url = _text(self.url)
@@ -186,11 +187,13 @@ class ObservationFrame:
         self.html_snapshot_path = _text(self.html_snapshot_path)
         self.som_image_path = _text(self.som_image_path)
         self.notes = _text(self.notes)
+        self.page_text_digest = _text(self.page_text_digest)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "url": self.url,
             "title": self.title,
+            "page_text_digest": self.page_text_digest,
             "mode": self.mode,
             "course_name": self.course_name,
             "timestamp": self.timestamp,
@@ -221,6 +224,7 @@ class ObservationFrame:
             html_snapshot_path=value.get("html_snapshot_path", ""),
             som_image_path=value.get("som_image_path", ""),
             notes=value.get("notes", ""),
+            page_text_digest=value.get("page_text_digest", ""),
         )
 
     @classmethod
