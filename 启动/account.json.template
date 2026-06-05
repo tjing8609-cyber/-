@@ -10,7 +10,9 @@
   "api_base_url": "https://api.deepseek.com",
   "api_model": "deepseek-chat",
   "verify_api_on_start": true,
+  "random_answer_fallback": false,
   "max_watch_minutes": 0,
+  "replay_watched_videos": false,
   "use_sidebar_layout": false,
   "answer_mode": "auto_practice",
   "submit_confirm_required": true,
@@ -20,11 +22,13 @@
   "course_type_note": "课程类型: 1=无题目课程(默认), 2=有题目课程(会弹出题目，自动点击关闭), 3=纯答题模式(建议使用mode='quiz_only')",
   "use_sidebar_layout_note": "侧边栏布局: false=使用主区域查找(默认,稳定), true=启用侧边栏布局检测(适用于新版界面)",
   "max_watch_minutes_note": "最大观看时长(分钟): 0=播放完所有视频(默认), >0=播放指定分钟数后停止",
+  "replay_watched_videos_note": "刷时长模式: true=跳过未播放筛查，播放第一个视频并在播完后点击视频中央重复播放，达到max_watch_minutes后停止",
   "quiz_type_note": "测试类型(仅纯答题模式): 课程测试/章节测试/单元测试/期末考试",
   "deepseek_api_key_note": "DeepSeek API密钥: 纯答题模式必需；视频有题目模式在auto_practice/semi_auto下也会使用。优先使用此配置，留空则从系统环境变量DEEPSEEK_API_KEY加载（兼容ANTHROPIC_AUTH_TOKEN）",
   "api_base_url_note": "API基础URL(可选): 自定义API地址，留空使用环境变量或默认值",
   "api_model_note": "API模型(可选): 指定使用的模型，留空使用默认值deepseek-chat",
   "verify_api_on_start_note": "启动时API连通性校验: true=启动时先验证API可用性(默认), false=跳过启动校验",
+  "random_answer_fallback_note": "选A策略: true=所有视频弹窗题直接选择A并提交关闭，不初始化、不调用DeepSeek；false=按answer_mode/DeepSeek流程处理",
   "answer_mode_note": "有题目视频弹窗处理模式: manual=只提示不处理, assist=仅给出建议, semi_auto=需人工确认后点击, auto_practice=自动选择并提交可见答案的练习弹窗",
   "submit_confirm_required_note": "提交/交卷前是否必须人工确认: true=需要确认(推荐), false=仅在明确允许的练习场景使用"
 }

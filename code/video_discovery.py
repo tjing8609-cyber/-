@@ -121,19 +121,27 @@ def collect_elements_by_selectors(root, selectors, logger=None, log_empty=False)
     return elements
 
 
-def scroll_sidebar_simple(driver, sidebar, logger=None, wait_func=None, passes=5):
+def scroll_sidebar_simple(driver, sidebar, logger=None, wait_func=None, passes=2):
     _log(logger, "info", "滚动侧边栏加载所有视频...")
     for index in range(passes):
-        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", sidebar)
+        moved = driver.execute_script(
+            """
+            var element = arguments[0];
+            var before = element.scrollTop || 0;
+            element.scrollTop = element.scrollHeight;
+            return (element.scrollTop || 0) !== before;
+            """,
+            sidebar,
+        )
         if wait_func:
-            wait_func(1)
+            wait_func(0.1)
+        if moved is False:
+            break
         _log(logger, "info", f"滚动进度: {index + 1}/{passes}")
     driver.execute_script("arguments[0].scrollTop = 0;", sidebar)
-    if wait_func:
-        wait_func(2)
 
 
-def scroll_sidebar_with_wheel(driver, scroll_container, logger=None, wait_func=None, max_scroll_attempts=20):
+def scroll_sidebar_with_wheel(driver, scroll_container, logger=None, wait_func=None, max_scroll_attempts=8):
     _log(logger, "info", "🔄 开始使用鼠标滚轮模拟滚动...")
     scroll_no_change_count = 0
     for index in range(max_scroll_attempts):
@@ -141,18 +149,19 @@ def scroll_sidebar_with_wheel(driver, scroll_container, logger=None, wait_func=N
         driver.execute_script(
             """
             var element = arguments[0];
+            var step = Math.max(900, Math.floor((element.clientHeight || 500) * 1.8));
             var wheelEvent = new WheelEvent('wheel', {
-                deltaY: 500,
+                deltaY: step,
                 bubbles: true,
                 cancelable: true
             });
             element.dispatchEvent(wheelEvent);
-            element.scrollTop = element.scrollTop + 500;
+            element.scrollTop = element.scrollTop + step;
             """,
             scroll_container,
         )
         if wait_func:
-            wait_func(0.8)
+            wait_func(0.1)
         scroll_after = driver.execute_script("return arguments[0].scrollTop;", scroll_container)
         scroll_height = driver.execute_script("return arguments[0].scrollHeight;", scroll_container)
         _log(
@@ -173,11 +182,7 @@ def scroll_sidebar_with_wheel(driver, scroll_container, logger=None, wait_func=N
             break
 
     _log(logger, "info", "✅ 滚动完成，等待内容加载...")
-    if wait_func:
-        wait_func(2)
     driver.execute_script("arguments[0].scrollTop = 0;", scroll_container)
-    if wait_func:
-        wait_func(1)
 
 
 def write_debug_html(element, debug_html_path, logger=None):
@@ -236,6 +241,8 @@ def discover_main_area_videos(
     wait_func=None,
     video_selectors=None,
     debug_html_path=None,
+    include_completed=False,
+    require_mp4=True,
 ):
     if wait_func:
         wait_func(5)
@@ -261,8 +268,9 @@ def discover_main_area_videos(
         unique_elements,
         completed_texts=completed_texts,
         logger=logger,
-        require_mp4=True,
+        require_mp4=require_mp4,
         prefer_inner_link=True,
+        include_completed=include_completed,
     )
 
 
@@ -277,6 +285,7 @@ def discover_sidebar_videos(
     use_wheel_scroll=False,
     include_watched=False,
     debug_html_path=None,
+    include_completed=False,
 ):
     sidebar = find_visible_sidebar(driver, selectors=sidebar_selectors, logger=logger)
     if not sidebar:
@@ -288,7 +297,7 @@ def discover_sidebar_videos(
             sidebar,
             logger=logger,
             wait_func=wait_func,
-            max_passes=8,
+            max_passes=4,
         )
 
     if use_wheel_scroll:
@@ -318,6 +327,7 @@ def discover_sidebar_videos(
         completed_texts=completed_texts,
         logger=logger,
         record_watched=include_watched,
+        include_completed=include_completed,
     )
 
 
@@ -365,6 +375,7 @@ def scan_video_candidates(
     require_mp4=False,
     prefer_inner_link=False,
     record_watched=True,
+    include_completed=False,
 ):
     completed_texts = set(completed_texts or [])
     result = VideoDiscoveryResult()
@@ -388,14 +399,17 @@ def scan_video_candidates(
                 result.skipped += 1
                 continue
 
-            if is_catalog_video_completed(element, logger=logger):
+            catalog_completed = is_catalog_video_completed(element, logger=logger)
+            if catalog_completed:
                 _log(logger, "debug", f"  → 跳过：已完成 ({text[:30]}...)")
                 if record_watched:
                     add_watched_record(result.watched, text)
-                result.skipped += 1
-                continue
+                if not include_completed:
+                    result.skipped += 1
+                    continue
 
-            if text in completed_texts:
+            recorded_completed = text in completed_texts
+            if recorded_completed and not include_completed:
                 _log(logger, "debug", f"  → 跳过：已记录 ({text[:30]}...)")
                 result.skipped += 1
                 continue

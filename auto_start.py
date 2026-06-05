@@ -292,6 +292,17 @@ class ZhidaoGUILauncher:
         self.max_watch_minutes_var = tk.IntVar(value=0)
         tk.Spinbox(row6, from_=0, to=999, textvariable=self.max_watch_minutes_var, font=("微软雅黑", 9), width=10).pack(side=tk.LEFT, padx=5)
         tk.Label(row6, text="(0=播放全部)", font=("微软雅黑", 8), fg="gray").pack(side=tk.LEFT)
+
+        row6b = tk.Frame(self.video_frame)
+        row6b.pack(fill=tk.X, pady=3)
+        tk.Label(row6b, text="刷时长:", font=("微软雅黑", 9), width=12, anchor=tk.W).pack(side=tk.LEFT)
+        self.replay_watched_videos_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            row6b,
+            text="播放已完成视频并循环重播，达到观看时长后停止",
+            variable=self.replay_watched_videos_var,
+            font=("微软雅黑", 9)
+        ).pack(side=tk.LEFT, padx=5)
         
         # ==================== 答题模式配置 ====================
         self.quiz_frame = tk.LabelFrame(
@@ -383,6 +394,16 @@ class ZhidaoGUILauncher:
             row10b,
             text="启动前验证 API 可用性（可能增加启动耗时）",
             variable=self.verify_api_on_start_var,
+            font=("微软雅黑", 9)
+        ).pack(side=tk.LEFT, padx=5)
+
+        row10c = tk.Frame(self.ai_frame)
+        row10c.pack(fill=tk.X, pady=3)
+        self.random_answer_fallback_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            row10c,
+            text="启用选A策略（所有弹窗题直接选A并提交关闭，不调用DeepSeek）",
+            variable=self.random_answer_fallback_var,
             font=("微软雅黑", 9)
         ).pack(side=tk.LEFT, padx=5)
         
@@ -718,12 +739,14 @@ class ZhidaoGUILauncher:
                 "course_type": 1,
                 "use_sidebar_layout": False,
                 "max_watch_minutes": 0,
+                "replay_watched_videos": False,
                 "mode": "video",
                 "quiz_type": "课程测试",
                 "deepseek_api_key": "",
                 "api_base_url": "",
                 "api_model": "",
                 "verify_api_on_start": True,
+                "random_answer_fallback": False,
                 "answer_mode": "auto_practice",
                 "enable_orchestrator": False,
                 "orchestrator_accounts": "",
@@ -769,6 +792,7 @@ class ZhidaoGUILauncher:
                 self.course_type_var.set(config.get('course_type', 1))
                 self.sidebar_var.set(config.get('use_sidebar_layout', False))
                 self.max_watch_minutes_var.set(config.get('max_watch_minutes', 0))
+                self.replay_watched_videos_var.set(config.get('replay_watched_videos', False))
                 self.mode_var.set(config.get('mode', 'video'))
                 self.quiz_type_var.set(config.get('quiz_type', '课程测试'))
                 self.answer_mode_var.set(config.get('answer_mode', 'auto_practice'))
@@ -776,6 +800,7 @@ class ZhidaoGUILauncher:
                 self.api_base_url_var.set(config.get('api_base_url', ''))
                 self.api_model_var.set(config.get('api_model', ''))
                 self.verify_api_on_start_var.set(config.get('verify_api_on_start', True))
+                self.random_answer_fallback_var.set(config.get('random_answer_fallback', False))
                 self.enable_orchestrator_var.set(config.get('enable_orchestrator', False))
                 self.orchestrator_accounts_var.set(config.get('orchestrator_accounts', ''))
                 self.orchestrator_concurrency_var.set(config.get('orchestrator_max_concurrency', 1))
@@ -803,6 +828,7 @@ class ZhidaoGUILauncher:
                 "course_type": self.course_type_var.get(),
                 "use_sidebar_layout": self.sidebar_var.get(),
                 "max_watch_minutes": self.max_watch_minutes_var.get(),
+                "replay_watched_videos": self.replay_watched_videos_var.get(),
                 "mode": self.mode_var.get(),
                 "quiz_type": self.quiz_type_var.get(),
                 "answer_mode": self.answer_mode_var.get(),
@@ -810,6 +836,7 @@ class ZhidaoGUILauncher:
                 "api_base_url": self.api_base_url_var.get(),
                 "api_model": self.api_model_var.get(),
                 "verify_api_on_start": self.verify_api_on_start_var.get(),
+                "random_answer_fallback": self.random_answer_fallback_var.get(),
                 "enable_orchestrator": self.enable_orchestrator_var.get(),
                 "orchestrator_accounts": self.orchestrator_accounts_var.get(),
                 "orchestrator_max_concurrency": self.orchestrator_concurrency_var.get(),
@@ -1013,6 +1040,15 @@ class ZhidaoGUILauncher:
         if not has_course_name and not has_course_url:
             messagebox.showerror("错误", "请填写课程名称或课程URL！")
             return False
+
+        if self.mode_var.get() == "video" and self.replay_watched_videos_var.get():
+            try:
+                max_watch_minutes = float(self.max_watch_minutes_var.get() or 0)
+            except (TypeError, ValueError):
+                max_watch_minutes = 0
+            if max_watch_minutes <= 0:
+                messagebox.showerror("错误", "刷时长模式需要设置大于0的观看时长！")
+                return False
         
         needs_deepseek = (
             self.mode_var.get() == "quiz_only"
@@ -1020,6 +1056,7 @@ class ZhidaoGUILauncher:
                 self.mode_var.get() == "video"
                 and self.course_type_var.get() == 2
                 and self.answer_mode_var.get() in ("auto_practice", "semi_auto")
+                and not self.random_answer_fallback_var.get()
             )
         )
         has_deepseek_key = (

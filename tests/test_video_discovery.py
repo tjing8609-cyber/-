@@ -89,6 +89,27 @@ class VideoDiscoveryTests(unittest.TestCase):
         self.assertEqual(result.unwatched, [])
         self.assertEqual(result.watched[0]["title"], "1.1 绪论")
 
+    def test_scan_video_candidates_can_include_completed_for_replay(self):
+        element = FakeElement("1.1 缁 100% 00:10")
+
+        result = scan_video_candidates([element], include_completed=True)
+
+        self.assertEqual(len(result.unwatched), 1)
+        self.assertIs(result.unwatched[0]["element"], element)
+        self.assertEqual(result.watched[0]["title"], "1.1 缁")
+
+    def test_scan_video_candidates_can_include_recorded_completed_for_replay(self):
+        element = FakeElement("1.1 缁 00:10")
+
+        result = scan_video_candidates(
+            [element],
+            completed_texts=["1.1 缁 00:10"],
+            include_completed=True,
+        )
+
+        self.assertEqual(len(result.unwatched), 1)
+        self.assertIs(result.unwatched[0]["element"], element)
+
     def test_prefer_inner_link(self):
         link = FakeElement("1.1 绪论.mp4 00:10", tag_name="a")
         wrapper = FakeElement("1.1 绪论.mp4 00:10", children={".//a": [link]})
@@ -141,6 +162,22 @@ class VideoDiscoveryTests(unittest.TestCase):
         }, current_url="https://example.com/study")
 
         result = discover_main_area_videos(driver, wait_func=lambda _seconds: None)
+
+        self.assertEqual(len(result.unwatched), 1)
+        self.assertIs(result.unwatched[0]["element"], video)
+
+
+    def test_discover_main_area_videos_can_skip_mp4_requirement_for_replay(self):
+        video = FakeElement("1.1 replay title 00:10", tag_name="a")
+        driver = FakeDriver({
+            "//a[contains(text(), '.mp4') or contains(text(), '.MP4')]": [video]
+        }, current_url="https://example.com/study")
+
+        result = discover_main_area_videos(
+            driver,
+            wait_func=lambda _seconds: None,
+            require_mp4=False,
+        )
 
         self.assertEqual(len(result.unwatched), 1)
         self.assertIs(result.unwatched[0]["element"], video)

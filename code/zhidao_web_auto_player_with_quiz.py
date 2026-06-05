@@ -42,12 +42,13 @@ from auth_flow import is_login_required, is_login_success, mask_username
 from browser_session import create_browser_session, resolve_local_driver_paths
 from course_entry import has_course_url, open_course_url
 from course_search import enter_study_page as search_enter_study_page
-from course_search import find_and_click_course_by_name
+from course_search import course_name_selectors, find_and_click_course_by_name, resolve_course_click_target
 from deepseek_agent import create_deepseek_components, verify_deepseek_client
 from quiz_agent import QuizAutomationAgent, normalize_answer_mode
 from quiz_popup_agent import QuizPopupToolbox, run_quiz_popup_agent
 from quiz_popup_reader import build_popup_question_data
 from quiz_popup_actions import (
+    click_first_quiz_popup_option,
     click_first_non_quiz_dialog_close,
     click_quiz_popup_close,
     click_quiz_popup_submit,
@@ -61,6 +62,7 @@ from quiz_popup_actions import (
     visible_quiz_options,
 )
 from runtime_center import load_selectors, selector_value
+from runtime_cleanup import cleanup_task_artifacts
 from page_detection import (
     is_captcha_present,
     is_course_page_ready as detect_course_page_ready,
@@ -70,6 +72,7 @@ from page_detection import (
 )
 from video_playback import (
     ProgressStallMonitor,
+    VideoCompletionMonitor,
     click_video_center as playback_click_video_center,
     get_video_progress as playback_get_video_progress,
     is_video_playing as playback_is_video_playing,
@@ -78,7 +81,14 @@ from video_catalog import video_title_from_text
 from video_discovery import (
     EXTENDED_SIDEBAR_SELECTORS,
     EXTENDED_SIDEBAR_VIDEO_SELECTORS,
+    discover_main_area_videos,
     discover_sidebar_videos,
+)
+from watch_time_replay import (
+    click_video_entry,
+    coerce_watch_minutes,
+    is_replay_watched_enabled,
+    run_replay_loop,
 )
 
 
@@ -154,6 +164,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
         
         # 【重要】先设置日志，因为后续方法会使用logger
         self.setup_logging()
+
+        cleanup_task_artifacts(self.project_root, self.account_file, logger=self.logger)
         
         # 加载进度（需要使用logger）
         self.progress = self.load_progress()
@@ -169,42 +181,55 @@ class ZhidaoWebAutoPlayerWithQuiz:
         self.total_watch_time_seconds = 0
         
         # 【新增】读取预设观看时间限制（分钟）
-        self.max_watch_minutes = self.account_config.get('max_watch_minutes', 0)
+        try:
+            self.max_watch_minutes = float(self.account_config.get('max_watch_minutes', 0) or 0)
+        except (TypeError, ValueError):
+            self.max_watch_minutes = 0
+        self.replay_watched_videos = is_replay_watched_enabled(self.account_config)
         if self.max_watch_minutes > 0:
-            self.logger.info(f"⏰ 预设观看时间限制: {self.max_watch_minutes} 分钟")
+            self.logger.info(f"⏰ 预设观看时间限制: {self.max_watch_minutes:g} 分钟")
         else:
             self.logger.info("⏰ 未设置观看时间限制，将播放所有视频")
+        if self.replay_watched_videos:
+            self.logger.info("刷时长模式已启用：将允许重复播放已完成视频")
 
         self.answer_mode = normalize_answer_mode(
             self.account_config.get('answer_mode'),
             default='auto_practice'
         )
+        self.random_answer_fallback = bool(self.account_config.get('random_answer_fallback', False))
         self.quiz_agent = QuizAutomationAgent(self.answer_mode, logger=self.logger)
         self.logger.info(f"🤖 题目弹窗处理模式: {self.answer_mode}")
-        self.deepseek_client, self.answering_service, self.deepseek_config = create_deepseek_components(
-            self.account_config,
-            logger=self.logger,
-        )
-        if self.answering_service:
-            self.logger.info(f"🤖 DeepSeek弹窗答题已启用: model={self.deepseek_config.model}, source={self.deepseek_config.source}")
-            verify_api_on_start = self.account_config.get('verify_api_on_start', True)
-            must_verify_for_agent = self.answer_mode == 'auto_practice'
-            if verify_api_on_start or must_verify_for_agent:
-                validation = verify_deepseek_client(
-                    self.deepseek_client,
-                    self.deepseek_config,
-                    logger=self.logger,
-                )
-                if not validation.ok:
-                    self.logger.error(
-                        f"❌ DeepSeek API不可用，已禁用弹窗API答题；"
-                        f"请检查 deepseek_api_key/base_url/model。原因: {validation.message}"
-                    )
-                    self.answering_service = None
-            else:
-                self.logger.info("ℹ️ 已跳过DeepSeek启动校验（verify_api_on_start=false）")
+        if self.random_answer_fallback:
+            self.logger.warning("🎲 已启用选A策略：所有题目弹窗将直接选择 A 并提交关闭，不初始化、不调用 DeepSeek")
+            self.deepseek_client = None
+            self.answering_service = None
+            self.deepseek_config = None
         else:
-            self.logger.info("🤖 DeepSeek弹窗答题未启用：未配置 deepseek_api_key 或环境变量")
+            self.deepseek_client, self.answering_service, self.deepseek_config = create_deepseek_components(
+                self.account_config,
+                logger=self.logger,
+            )
+            if self.answering_service:
+                self.logger.info(f"🤖 DeepSeek弹窗答题已启用: model={self.deepseek_config.model}, source={self.deepseek_config.source}")
+                verify_api_on_start = self.account_config.get('verify_api_on_start', True)
+                must_verify_for_agent = self.answer_mode == 'auto_practice'
+                if verify_api_on_start or must_verify_for_agent:
+                    validation = verify_deepseek_client(
+                        self.deepseek_client,
+                        self.deepseek_config,
+                        logger=self.logger,
+                    )
+                    if not validation.ok:
+                        self.logger.error(
+                            f"❌ DeepSeek API不可用，已禁用弹窗API答题；"
+                            f"请检查 deepseek_api_key/base_url/model。原因: {validation.message}"
+                        )
+                        self.answering_service = None
+                else:
+                    self.logger.info("ℹ️ 已跳过DeepSeek启动校验（verify_api_on_start=false）")
+            else:
+                self.logger.info("🤖 DeepSeek弹窗答题未启用：未配置 deepseek_api_key 或环境变量")
         
         # 初始化浏览器
         self.setup_driver(headless)
@@ -431,9 +456,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
         self.wait = session.wait
     
     def smart_wait(self, seconds):
-        """智能等待（随机波动）"""
-        actual_wait = seconds + random.uniform(-0.5, 0.5)
-        time.sleep(max(0.5, actual_wait))
+        """等待指定秒数。"""
+        time.sleep(max(0, seconds))
     
     def move_to_element_with_curve(self, element):
         """
@@ -473,7 +497,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # 移动到起点
             actions.move_by_offset(curve_points[0][0] - start_x, curve_points[0][1] - start_y)
             
-            # 沿曲线移动，每次移动添加随机延时
+            # 沿曲线移动
             for i in range(1, len(curve_points)):
                 prev_x, prev_y = curve_points[i-1]
                 curr_x, curr_y = curve_points[i]
@@ -485,15 +509,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 # 移动到下一个点
                 actions.move_by_offset(offset_x, offset_y)
                 
-                # 【反检测】随机暂停时间（0.01-0.05秒）
-                if random.random() < 0.3:  # 30%概率暂停
-                    actions.pause(random.uniform(0.01, 0.05))
             
             # 移动到目标元素
             actions.move_to_element(element)
-            
-            # 【反检测】到达目标后短暂停顿（模拟人类瞄准）
-            actions.pause(random.uniform(0.1, 0.3))
             
             # 点击
             actions.click()
@@ -988,28 +1006,24 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 # 【点击匹配到的课程】
                 if matched_card:
                     card, idx, card_text = matched_card
+                    click_target = resolve_course_click_target(card, course_name)
+                    if click_target is None:
+                        self.logger.warning("⚠️ 匹配到课程卡片，但未找到可点击的课程名称区域，跳过右侧功能组件")
+                        continue
                     
                     # 滚动到可视区域
-                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", card)
+                    self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", click_target)
                     self.smart_wait(1)
                     
-                    # 尝试点击卡片内的链接
-                    link = None
+                    # 只点击课程名称/左侧课程信息区，避免误点右侧成绩、作业、问答、见面课入口
                     try:
-                        link = card.find_element(By.XPATH, ".//a[contains(@href, 'course') or contains(@href, 'study')]")
-                    except:
-                        # 如果没有链接，尝试点击卡片本身
-                        link = card
-                    
-                    # 多策略点击（在课程列表页可以使用JS）
-                    try:
-                        link.click()
-                        self.logger.info("✅ 普通点击成功")
+                        click_target.click()
+                        self.logger.info("✅ 已点击课程名称区域")
                     except:
                         try:
                             # 使用JavaScript点击（课程列表页不涉及视频播放器，可以用JS）
-                            self.driver.execute_script("arguments[0].click();", link)
-                            self.logger.info("✅ JavaScript点击成功")
+                            self.driver.execute_script("arguments[0].click();", click_target)
+                            self.logger.info("✅ 已通过JavaScript点击课程名称区域")
                         except Exception as e:
                             self.logger.error(f"所有点击方式都失败: {e}")
                             # 继续下一次滚动尝试
@@ -1059,8 +1073,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.driver.execute_script("window.scrollTo(0, 0);")
             self.smart_wait(1)
 
-        # 改进的多种课程选择器（优先查找<a>标签）
-        course_selectors = [
+        # 优先使用课程名称节点选择器，避免误点右侧功能区或重要提醒/考试卡片。
+        course_selectors = course_name_selectors(course_name)
+        course_selectors.extend([
             # 策略1：优先查找<a>标签链接（最可靠）
             f"//a[contains(text(), '{course_name}')]",
             # 策略2：查找课程卡片内的<a>标签
@@ -1077,7 +1092,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             f"//h4[contains(text(), '{course_name}')]",
             # 策略6：更广泛的查找
             f"//*[contains(text(), '{course_name}')]",
-        ]
+        ])
         
         # 尝试每个选择器
         for selector_idx, selector in enumerate(course_selectors, 1):
@@ -1125,17 +1140,21 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 # 【改进2】优先尝试<a>标签，然后尝试查找内部<a>标签
                 for idx, element in enumerate(filtered_elements):
                     try:
-                        elem_text = element.text[:50] if element.text else "(无文本)"
-                        elem_tag = element.tag_name
+                        click_target = resolve_course_click_target(element, course_name)
+                        if click_target is None:
+                            self.logger.info(f"跳过非课程名称区域元素 {idx+1}/{len(filtered_elements)}，避免误点右侧功能组件")
+                            continue
+                        elem_text = click_target.text[:50] if click_target.text else "(无文本)"
+                        elem_tag = click_target.tag_name
                         self.logger.info(f"\n尝试点击元素 {idx+1}/{len(filtered_elements)}: <{elem_tag}> {elem_text}")
                         
                         # 滚动到元素
-                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+                        self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", click_target)
                         self.smart_wait(1)
                         
                         # 【改进3】如果是<a>标签，验证href后直接点击
                         if elem_tag.lower() == 'a':
-                            elem_href = element.get_attribute('href') or ''
+                            elem_href = click_target.get_attribute('href') or ''
                             self.logger.debug(f"<a>标签 href: {elem_href}")
                             
                             # 验证href是否有效（包含课程相关路径）
@@ -1145,15 +1164,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 # 【改进4】多策略点击：普通点击 → JavaScript点击（课程列表页可以用JS）
                                 try:
                                     self.logger.debug("尝试普通点击...")
-                                    element.click()
-                                    self.logger.info("✅ 普通点击成功")
+                                    click_target.click()
+                                    self.logger.info("✅ 已点击课程名称链接")
                                     self.smart_wait(5)
                                     return True
                                 except Exception as click_err:
                                     self.logger.debug(f"普通点击失败: {click_err}，尝试JavaScript点击...")
                                     try:
-                                        self.driver.execute_script("arguments[0].click();", element)
-                                        self.logger.info("✅ JavaScript点击成功")
+                                        self.driver.execute_script("arguments[0].click();", click_target)
+                                        self.logger.info("✅ 已通过JavaScript点击课程名称链接")
                                         self.smart_wait(5)
                                         return True
                                     except Exception as ac_err:
@@ -1165,10 +1184,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         
                         # 【改进5】如果不是<a>标签，查找内部的<a>标签
                         else:
-                            self.logger.debug(f"非<a>标签，查找内部链接...")
+                            self.logger.debug(f"非<a>标签，点击课程名称/左侧课程区域...")
                             try:
-                                # 在当前元素内部查找<a>标签
-                                inner_links = element.find_elements(By.XPATH, ".//a")
+                                click_target.click()
+                                self.logger.info("✅ 已点击课程名称区域")
+                                self.smart_wait(5)
+                                return True
+                            except Exception as name_click_error:
+                                self.logger.debug(f"课程名称区域普通点击失败: {name_click_error}，查找内部链接...")
+
+                            try:
+                                # 在课程名称区域内部查找<a>标签
+                                inner_links = click_target.find_elements(By.XPATH, ".//a")
                                 if inner_links:
                                     self.logger.debug(f"找到 {len(inner_links)} 个内部<a>标签")
                                     
@@ -1212,7 +1239,14 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                         else:
                                             self.logger.debug(f"⚠️  内部链接href无效: {inner_href[:60]}")
                                 else:
-                                    self.logger.debug("未找到内部<a>标签")
+                                    self.logger.debug("未找到内部<a>标签，尝试JavaScript点击课程名称区域")
+                                    try:
+                                        self.driver.execute_script("arguments[0].click();", click_target)
+                                        self.logger.info("✅ 已通过JavaScript点击课程名称区域")
+                                        self.smart_wait(5)
+                                        return True
+                                    except Exception as js_click_error:
+                                        self.logger.warning(f"课程名称区域点击失败: {js_click_error}")
                             except Exception as e:
                                 self.logger.debug(f"查找内部链接失败: {e}")
                     
@@ -1305,6 +1339,90 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.error(traceback.format_exc())
             return []
     
+    def find_replay_video(self):
+        """Find the first playable video, including videos already marked complete."""
+        self.logger.info("刷时长模式：查找第一个可播放视频（包含已完成视频）...")
+        try:
+            debug_file = os.path.join(self.project_root, 'log', 'debug_sidebar_replay.html')
+            scan_result = discover_sidebar_videos(
+                self.driver,
+                completed_texts=self.progress.get('completed_videos', []),
+                logger=self.logger,
+                wait_func=self.smart_wait,
+                sidebar_selectors=EXTENDED_SIDEBAR_SELECTORS,
+                video_selectors=EXTENDED_SIDEBAR_VIDEO_SELECTORS,
+                use_wheel_scroll=True,
+                include_watched=True,
+                include_completed=True,
+                debug_html_path=debug_file,
+            )
+            if scan_result is None:
+                self.logger.warning("刷时长模式未找到右侧目录，切换到主区域查找")
+                main_result = discover_main_area_videos(
+                    self.driver,
+                    completed_texts=self.progress.get('completed_videos', []),
+                    logger=self.logger,
+                    wait_func=self.smart_wait,
+                    include_completed=True,
+                    require_mp4=False,
+                )
+                replay_videos = main_result.unwatched
+            else:
+                replay_videos = scan_result.unwatched
+
+            if replay_videos:
+                first_video = replay_videos[0]
+                self.logger.info(f"刷时长模式将播放第一个视频: {first_video.get('text', '')[:80]}")
+                return first_video
+            self.logger.warning("刷时长模式未找到可播放视频")
+            return None
+        except Exception as e:
+            self.logger.error(f"刷时长模式查找视频失败: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
+
+    def click_video_center_with_offset(self, offset_min=-30, offset_max=30, success_prefix="刷时长模式：已点击视频中央"):
+        return playback_click_video_center(
+            self.driver,
+            logger=self.logger,
+            offset_min=offset_min,
+            offset_max=offset_max,
+            success_message=success_prefix,
+            video_xpath="//video",
+        )
+
+    def handle_replay_quiz_popup(self):
+        if self.check_for_quiz():
+            return self.answer_quiz()
+        return False
+
+    def run_replay_watched_mode(self):
+        """Replay the first available video until max_watch_minutes is reached."""
+        self.max_watch_minutes = coerce_watch_minutes(getattr(self, "max_watch_minutes", 0))
+        if self.max_watch_minutes <= 0:
+            self.logger.error("刷时长模式需要设置观看时长(分钟) > 0，已停止以避免无限播放")
+            return False
+
+        video_info = self.find_replay_video()
+        if not video_info:
+            return False
+
+        if not click_video_entry(self.driver, video_info, logger=self.logger):
+            return False
+
+        self.smart_wait(3)
+        self.ensure_video_playing()
+
+        result = run_replay_loop(
+            self,
+            click_replay=lambda: self.click_video_center_with_offset(
+                success_prefix="刷时长模式：已点击视频中央重播"
+            ),
+            quiz_handler=self.handle_replay_quiz_popup,
+        )
+        return result.reached_limit
+
     def _extract_video_title(self, text):
         """从元素文本中提取视频标题（去除进度、时长等信息）"""
         return video_title_from_text(text, max_length=50)
@@ -1859,13 +1977,16 @@ class ZhidaoWebAutoPlayerWithQuiz:
             self.logger.debug(f"检查视频播放状态失败: {e}")
             return False
     
-    def recover_stuck_video(self):
+    def recover_stuck_video(self, force=False):
         """恢复卡停的视频（优先检查题目弹窗）"""
         try:
             # 【新增】在恢复播放前，再次检查题目弹窗
-            if self.check_for_quiz():
+            quiz_present = self.check_for_quiz()
+            if quiz_present and not force:
                 self.logger.info("🚨 检测到题目弹窗，不尝试恢复播放")
                 return True
+            if quiz_present and force:
+                self.logger.warning("⚠️ 检测到疑似题目但视频连续无进度，执行兜底点击视频区域恢复播放")
             
             self.logger.warning("🔧 检测到视频卡停，开始恢复...")
             
@@ -1879,13 +2000,146 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 success_message="✅ 已点击视频中央",
             )
             
-            self.smart_wait(2)
+            self.smart_wait(0.5 if force else 2)
             return True
             
         except Exception as e:
             self.logger.error(f"恢复卡停视频失败: {e}")
             return False
     
+    def should_recover_stalled_video(self, no_progress_count, progress_percentage=0):
+        """Recover after repeated stalls, even near the end of a video."""
+        return int(no_progress_count or 0) >= 3
+
+    def get_current_video_played_seconds(self, current_video_progress=0, video_start_progress=0):
+        """Return actual seconds played in this session for the current video."""
+        try:
+            current_progress = max(0.0, float(current_video_progress or 0))
+        except (TypeError, ValueError):
+            current_progress = 0.0
+        try:
+            start_progress = max(0.0, float(video_start_progress or 0))
+        except (TypeError, ValueError):
+            start_progress = 0.0
+        return max(0.0, current_progress - start_progress)
+
+    def update_current_video_played_seconds(
+        self,
+        current_video_played_seconds=0,
+        current_video_progress=0,
+        last_counted_video_progress=0,
+    ):
+        """Accumulate actual playback by positive progress deltas."""
+        try:
+            played_seconds = max(0.0, float(current_video_played_seconds or 0))
+        except (TypeError, ValueError):
+            played_seconds = 0.0
+        try:
+            current_progress = max(0.0, float(current_video_progress or 0))
+        except (TypeError, ValueError):
+            current_progress = 0.0
+        try:
+            last_progress = max(0.0, float(last_counted_video_progress or 0))
+        except (TypeError, ValueError):
+            last_progress = current_progress
+
+        if current_progress >= last_progress:
+            played_seconds += current_progress - last_progress
+        return played_seconds, current_progress
+
+    def get_session_watch_seconds(
+        self,
+        current_video_progress=0,
+        video_start_total_time=None,
+        video_start_progress=0,
+        current_video_played_seconds=None,
+    ):
+        """Return session watch time including the in-progress video."""
+        if current_video_played_seconds is None:
+            current_played_seconds = self.get_current_video_played_seconds(
+                current_video_progress,
+                video_start_progress,
+            )
+        else:
+            try:
+                current_played_seconds = max(0.0, float(current_video_played_seconds or 0))
+            except (TypeError, ValueError):
+                current_played_seconds = 0.0
+
+        if video_start_total_time is None:
+            video_start_total_time = self.total_watch_time_seconds
+        try:
+            base_seconds = max(0.0, float(video_start_total_time or 0))
+        except (TypeError, ValueError):
+            base_seconds = max(0.0, float(self.total_watch_time_seconds or 0))
+
+        return base_seconds + current_played_seconds
+
+    def commit_current_video_watch_time(
+        self,
+        current_video_progress=0,
+        video_start_total_time=None,
+        video_start_progress=0,
+        current_video_played_seconds=None,
+    ):
+        """Persist watched time for the current video without double-counting it."""
+        total_seconds = self.get_session_watch_seconds(
+            current_video_progress,
+            video_start_total_time,
+            video_start_progress,
+            current_video_played_seconds,
+        )
+        previous_total = max(0.0, float(self.total_watch_time_seconds or 0))
+        self.total_watch_time_seconds = max(previous_total, total_seconds)
+        return self.total_watch_time_seconds
+
+    def has_reached_max_watch_time(
+        self,
+        current_video_progress=0,
+        video_start_total_time=None,
+        video_start_progress=0,
+        current_video_played_seconds=None,
+    ):
+        """Check the configured watch-time limit, counting the active video too."""
+        try:
+            max_watch_minutes = float(self.max_watch_minutes or 0)
+        except (TypeError, ValueError):
+            return False
+        if max_watch_minutes <= 0:
+            return False
+        return self.get_session_watch_seconds(
+            current_video_progress,
+            video_start_total_time,
+            video_start_progress,
+            current_video_played_seconds,
+        ) >= max_watch_minutes * 60
+
+    def format_watch_time_text(self, total_watch_seconds):
+        """Format watch-time progress for logs."""
+        total_minutes = max(0.0, float(total_watch_seconds or 0)) / 60
+        try:
+            max_watch_minutes = float(self.max_watch_minutes or 0)
+        except (TypeError, ValueError):
+            max_watch_minutes = 0
+        if max_watch_minutes > 0:
+            remaining_minutes = max(0.0, max_watch_minutes - total_minutes)
+            return f"{total_minutes:.1f}/{max_watch_minutes:g}分钟 | 剩余: {remaining_minutes:.1f}分钟"
+        return f"{total_minutes:.1f}分钟"
+
+    def log_max_watch_time_reached(self, videos_played=0):
+        """Log the configured watch-time limit and stop reason."""
+        total_minutes = self.total_watch_time_seconds / 60
+        try:
+            max_watch_minutes = float(self.max_watch_minutes or 0)
+        except (TypeError, ValueError):
+            max_watch_minutes = 0
+        self.logger.info("\n" + "="*60)
+        self.logger.info(f"✅ 已达到预设观看时间 {max_watch_minutes:g} 分钟")
+        self.logger.info(f"✅ 已播放时间: {total_minutes:.1f} 分钟 ({self.total_watch_time_seconds:.0f} 秒)")
+        self.logger.info(f"✅ 本次播放 {videos_played} 个视频")
+        self.logger.info("="*60)
+        self.logger.info("🚫 结束播放并退出程序")
+
     def check_for_quiz_legacy(self):
         """检查是否有题目弹窗"""
         try:
@@ -1927,12 +2181,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """回答题目（支持多次作答，识别正确/错误答案）"""
         try:
             self.logger.info("📝 开始回答题目...")
-            
-            # 【P0 - 反检测优化】添加"阅读题目"时间，模拟用户看题干
-            import random
-            reading_time = random.uniform(5, 10)
-            self.logger.info(f"📖 模拟阅读题目时间: {reading_time:.2f} 秒")
-            self.smart_wait(reading_time)
             
             # 查找所有选项元素（优先级从高到低）
             # 【P1 - 反检测优化】减少选择器数量，只保留最常用的选择器
@@ -2031,12 +2279,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     
                     self.logger.info(f"🎯 尝试选择 {current_label}...")
                     
-                    # 【反检测】随机延时0-3秒后再点击选项
-                    import random
-                    random_delay = random.uniform(0, 3)
-                    self.logger.info(f"⏰ 随机延时 {random_delay:.2f} 秒（避免检测）")
-                    self.smart_wait(random_delay)
-                    
                     # 点击选项
                     try:
                         current_option.click()
@@ -2057,17 +2299,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         "//button[contains(text(), '确定')]",
                         "//div[contains(@class, 'popbtn_ok')]",  # 知到平台的确定按钮
                     ]
-                    
-                    # 【P1 - 反检测优化】扩大提交延时范围到2-6秒
-                    submit_delay = random.uniform(2, 6)
-                    self.logger.info(f"⏰ 提交前随机等待 {submit_delay:.2f} 秒")
-                    self.smart_wait(submit_delay)
-                    
-                    # 【反检测优化】模拟犹豫，50%概率额外延时0.5-1秒
-                    if random.random() < 0.5:
-                        hesitation = random.uniform(0.5, 1)
-                        self.logger.info(f"🤔 模拟犹豫 {hesitation:.2f} 秒")
-                        self.smart_wait(hesitation)
                     
                     submit_clicked = False
                     for btn_selector in submit_buttons:
@@ -2107,11 +2338,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         self.logger.info(f"✅ {current_label} 是正确答案！")
                         self.quizzes_answered_this_session += 1
                         self.progress['total_quizzes'] += 1
-                        
-                        # 【P0 - 反检测优化】答对后查看结果时间，2-4秒
-                        result_view_time = random.uniform(2, 4)
-                        self.logger.info(f"📊 查看答题结果 {result_view_time:.2f} 秒")
-                        self.smart_wait(result_view_time)
                         
                         # 点击关闭按钮关闭题目弹窗
                         if self.close_quiz_dialog():
@@ -2182,11 +2408,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 
                                 self.quizzes_answered_this_session += 1
                                 self.progress['total_quizzes'] += 1
-                                
-                                # 【P0 - 反检测优化】答错后查看正确答案解析，2-4秒
-                                answer_review_time = random.uniform(2, 4)
-                                self.logger.info(f"💡 查看正确答案解析 {answer_review_time:.2f} 秒")
-                                self.smart_wait(answer_review_time)
                                 
                                 # 点击关闭按钮关闭题目弹窗
                                 if self.close_quiz_dialog():
@@ -2275,12 +2496,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         
                         if not is_selected:
                             self.logger.info(f"🎯 选择 {label}")
-                            
-                            # 【反检测】随机延时0-3秒后再点击选项
-                            import random
-                            random_delay = random.uniform(0, 3)
-                            self.logger.info(f"⏰ 随机延时 {random_delay:.2f} 秒（避免检测）")
-                            self.smart_wait(random_delay)
                             
                             try:
                                 option.click()
@@ -2607,13 +2822,27 @@ class ZhidaoWebAutoPlayerWithQuiz:
             answer_index = ord(answer_letter) - ord('A')
             
             if 0 <= answer_index < len(options):
-                return action_select_options_by_letters(
+                if action_select_options_by_letters(
                     self.driver,
                     options,
                     [answer_letter],
                     logger=self.logger,
                     wait_func=self.smart_wait,
-                )
+                ):
+                    return True
+                if answer_letter == "A":
+                    self.logger.warning("⚠️ 常规A选项点击失败，尝试从弹窗DOM直接点击第一个选项")
+                    dialog_xpath = selector_value(
+                        self.selectors,
+                        "with_quiz.dialog_xpath",
+                        "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+                    )
+                    return click_first_quiz_popup_option(
+                        self.driver,
+                        logger=self.logger,
+                        wait_func=self.smart_wait,
+                        dialog_xpath=dialog_xpath,
+                    )
             
             return False
             
@@ -2624,12 +2853,6 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def close_quiz_dialog(self):
         """关闭题目对话框"""
         try:
-            # 【P0 - 反检测优化】关闭题目弹窗前延长等待时间到2-5秒
-            import random
-            close_delay = random.uniform(2, 5)
-            self.logger.info(f"⏳ 关闭弹窗前等待 {close_delay:.2f} 秒")
-            self.smart_wait(close_delay)
-            
             # 【P1 - 反检测优化】减少选择器数量，只保疙4个最常用
             dialog_xpath = selector_value(
                 self.selectors,
@@ -2769,6 +2992,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
     def answer_quiz(self):
         """处理题目弹窗：识别题型，滚动查看答案，并选择选项"""
         try:
+            if self.random_answer_fallback:
+                return self.answer_quiz_a_only()
+
             toolbox = QuizPopupToolbox(
                 check_for_quiz=self.check_for_quiz,
                 scroll_dialog=self.scroll_quiz_dialog,
@@ -2781,11 +3007,174 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 close=self.close_quiz_dialog,
                 answer_with_api=self.answer_popup_with_api,
                 wait=self.smart_wait,
+                fallback_answer=self.random_fallback_popup_answer,
             )
             return run_quiz_popup_agent(self.quiz_agent, toolbox, logger=self.logger)
         except Exception as e:
             self.logger.debug(f"处理题目弹窗失败: {e}")
             return False
+
+    def answer_quiz_a_only(self):
+        """Highest-priority A-only path: click the first option, then submit."""
+        try:
+            if not self.check_for_quiz():
+                return False
+
+            self.logger.warning(
+                "🎲 选A策略触发：检测到题目后直接选择第一个选项并提交，不调用 DeepSeek、不提取答案"
+            )
+            dialog_xpath = selector_value(
+                self.selectors,
+                "with_quiz.dialog_xpath",
+                "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+            )
+
+            selected = click_first_quiz_popup_option(
+                self.driver,
+                logger=self.logger,
+                wait_func=None,
+                dialog_xpath=dialog_xpath,
+                verify_selection=False,
+            )
+            if not selected:
+                action_scroll_quiz_dialog(self.driver, position="top", wait_func=None)
+                selected = click_first_quiz_popup_option(
+                    self.driver,
+                    logger=self.logger,
+                    wait_func=None,
+                    dialog_xpath=dialog_xpath,
+                    verify_selection=False,
+                )
+            if not selected:
+                self.logger.warning("⚠️ 选A策略未找到可点击选项，暂不提交")
+                return False
+
+            if not self.submit_quiz_dialog_fast(dialog_xpath=dialog_xpath):
+                self.logger.warning("⚠️ 选A策略已点击选项，但提交失败")
+                return False
+
+            if not self.close_quiz_dialog_fast(dialog_xpath=dialog_xpath):
+                self.logger.warning("⚠️ 选A策略已提交，但关闭弹窗失败")
+                return False
+            return True
+        except Exception as e:
+            self.logger.debug(f"选A策略处理题目弹窗失败: {e}")
+            return False
+
+    def submit_quiz_dialog_fast(self, dialog_xpath=None):
+        """Click the quiz submit button without post-click sleeps."""
+        try:
+            dialog_xpath = dialog_xpath or selector_value(
+                self.selectors,
+                "with_quiz.dialog_xpath",
+                "//div[contains(@class,'el-dialog__wrapper') and not(contains(@style,'display: none'))]"
+            )
+            return click_quiz_popup_submit(
+                self.driver,
+                logger=self.logger,
+                dialog_xpath=dialog_xpath,
+            )
+        except Exception as e:
+            self.logger.debug(f"选A策略快速提交失败: {e}")
+            return False
+
+    def close_quiz_dialog_fast(self, dialog_xpath=None):
+        """Close the quiz popup without review/playback waits."""
+        try:
+            if not self.check_for_quiz():
+                return True
+            if click_quiz_popup_close(
+                self.driver,
+                logger=self.logger,
+                dialog_xpath=dialog_xpath,
+                require_submitted=True,
+            ):
+                return True
+            if click_quiz_popup_close(
+                self.driver,
+                logger=self.logger,
+                dialog_xpath=dialog_xpath,
+                require_submitted=False,
+            ):
+                return True
+            return not self.check_for_quiz()
+        except Exception as e:
+            self.logger.debug(f"选A策略快速关闭失败: {e}")
+            return False
+
+    def close_quiz_dialog_after_submit(self, dialog_xpath=None):
+        """Close the quiz popup after an answer has been submitted."""
+        try:
+            if not self.check_for_quiz():
+                self.confirm_video_playing_after_quiz_close()
+                return True
+            self.smart_wait(1)
+            if click_quiz_popup_close(
+                self.driver,
+                logger=self.logger,
+                dialog_xpath=dialog_xpath,
+                require_submitted=True,
+            ):
+                self.smart_wait(0.5)
+                if not self.check_for_quiz():
+                    self.logger.info("提交后题目弹窗已关闭")
+                    self.confirm_video_playing_after_quiz_close()
+                    return True
+
+            if is_quiz_popup_submitted(self.driver, dialog_xpath=dialog_xpath):
+                if click_quiz_popup_close(
+                    self.driver,
+                    logger=self.logger,
+                    dialog_xpath=dialog_xpath,
+                    require_submitted=False,
+                ):
+                    self.smart_wait(0.5)
+                    if not self.check_for_quiz():
+                        self.logger.info("提交后题目弹窗已关闭")
+                        self.confirm_video_playing_after_quiz_close()
+                        return True
+
+            self.logger.warning("⚠️ 提交后未能关闭题目弹窗")
+            return False
+        except Exception as e:
+            self.logger.debug(f"提交后关闭题目弹窗失败: {e}")
+            return False
+
+    def confirm_video_playing_after_quiz_close(self):
+        """After a quiz popup is closed, verify playback and recover if needed."""
+        try:
+            self.smart_wait(1)
+            if self.check_for_quiz():
+                self.logger.debug("题目弹窗仍存在，暂不恢复视频播放")
+                return False
+
+            if self.ensure_video_playing():
+                self.logger.info("题目弹窗关闭后确认视频正在播放")
+                return True
+
+            self.logger.warning("题目弹窗关闭后视频未播放，尝试恢复播放")
+            recovered = self.recover_stuck_video()
+            self.smart_wait(1)
+            if recovered and self.ensure_video_playing():
+                self.logger.info("题目弹窗关闭后已恢复视频播放")
+                return True
+
+            self.logger.warning("题目弹窗关闭后仍未确认视频播放")
+            return False
+        except Exception as e:
+            self.logger.debug(f"题目弹窗关闭后确认视频播放失败: {e}")
+            return False
+
+    def random_fallback_popup_answer(self, options):
+        """A-only strategy for video practice popups when enabled."""
+        if not self.random_answer_fallback:
+            return []
+        if not options:
+            return []
+        self.logger.warning(
+            "🎲 选A策略触发：本题不调用 DeepSeek，不提取可见答案，直接选择 A 并提交关闭"
+        )
+        return ["A"]
 
     def answer_popup_with_api(self, options):
         """Use DeepSeek for video popup questions when visible answers are not available."""
@@ -2835,13 +3224,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 self.smart_wait(0.8)
                 if is_quiz_popup_submitted(self.driver, dialog_xpath=dialog_xpath):
                     self.logger.info("检测到题目弹窗已提交，尝试关闭弹窗")
-                    if click_quiz_popup_close(
-                        self.driver,
-                        logger=self.logger,
-                        dialog_xpath=dialog_xpath,
-                        require_submitted=True,
-                    ):
-                        self.smart_wait(1)
+                    self.close_quiz_dialog_after_submit(dialog_xpath=dialog_xpath)
                 return True
             return False
         except Exception as e:
@@ -2852,9 +3235,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
         """等待当前视频播放完成（带卡停检测）"""
         self.logger.info("⏰ 开始监控视频播放...")
         
-        # 【反检测优化】检查间隔随机化，不再固定10秒
-        import random
-        check_interval = random.uniform(8, 15)  # 8-15秒随机间隔
+        check_interval = 2
         max_wait_time = max_wait_minutes * 60  # 最长等待时间（秒）
         elapsed_time = 0
         progress_monitor = ProgressStallMonitor(recover_after=3)
@@ -2865,7 +3246,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             # 检查视频是否还在播放
             if not self.ensure_video_playing():
                 self.logger.warning("⚠️  视频似乎已停止，尝试恢复播放")
-                self.recover_stuck_video()
+                self.recover_stuck_video(force=True)
             
             # 检查进度是否卡住
             current_progress = self.get_video_progress()
@@ -2876,16 +3257,15 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 )
             if progress_decision.should_recover:
                 self.logger.warning("🔧 视频进度连续无变化，可能触发防脚本机制，尝试恢复...")
-                self.recover_stuck_video()
+                self.recover_stuck_video(force=True)
             elif progress_decision.recovered:
                 self.logger.info(f"✅ 视频恢复正常，进度: {current_progress:.0f}秒")
             
             # TODO: 添加视频完成检测逻辑
             # 可以通过检测视频总时长和当前进度来判断
             
-            # 【反检测优化】每次等待后重新生成下次检查间隔
             self.smart_wait(check_interval)
-            check_interval = random.uniform(8, 15)  # 下次检查间隔随机化
+            check_interval = 2
             elapsed_time = time.time() - start_time
             
             # 每分钟输出一次日志
@@ -2945,6 +3325,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         pass
                     time.sleep(2)
                     waited += 2
+
+            self.logger.info("🧹 查找课程前先清理页面弹窗，避免弹窗遮挡课程列表")
+            if not self.ensure_popups_cleared(timeout_seconds=60):
+                return
             
             # 【新增】检查是否有course_url，决定是否跳过课程查找
             if has_course_url(getattr(self, 'course_url', '')):
@@ -2966,6 +3350,9 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     if not self.wait_for_course_page_ready():
                         return
                 else:
+                    self.logger.info("🧹 课程点击后再次清理弹窗，再进入学习页")
+                    if not self.ensure_popups_cleared(timeout_seconds=60):
+                        return
                     # 进入学习页面
                     if not self.enter_study_page():
                         self.logger.warning("⚠️ 进入学习页面失败，等待用户手动进入课程页面...")
@@ -2974,6 +3361,10 @@ class ZhidaoWebAutoPlayerWithQuiz:
             
             # 查找未观看的视频前必须先清空阻塞弹窗；否则目录元素会被遮罩挡住。
             if not self.ensure_popups_cleared(timeout_seconds=90):
+                return
+            if self.replay_watched_videos:
+                self.logger.info("刷时长模式已启用：跳过未播放视频筛查，播放第一个视频并循环重播")
+                self.run_replay_watched_mode()
                 return
             unwatched_videos = self.find_unwatched_videos()
             
@@ -3109,7 +3500,8 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 
                 # 播放第一个未观看视频
                 video_to_play = unwatched_videos.pop(0)
-                self.logger.info(f"🎬 开始播放: {video_to_play['text'][:50]}")
+                current_title = video_to_play.get('text', '')[:100]
+                self.logger.info(f"🎬 开始播放: {current_title[:50]}")
                 
                 # 点击视频
                 try:
@@ -3182,10 +3574,18 @@ class ZhidaoWebAutoPlayerWithQuiz:
                 no_progress_count = 0
                 
                 video_completed = False
-                current_title = None
+                current_progress = 0
+                video_duration = 0
+                completion_monitor = VideoCompletionMonitor()
                 
                 # 【新增】记录本次视频开始时的累计播放时间
                 video_start_total_time = self.total_watch_time_seconds
+                video_start_progress = self.get_video_progress()
+                last_progress_check = video_start_progress
+                last_counted_video_progress = video_start_progress
+                current_video_played_seconds = 0.0
+                if video_start_progress > 1:
+                    self.logger.info(f"📍 当前视频从 {video_start_progress:.0f}秒位置开始，本次播放从0秒计时")
                 
                 while elapsed_time < max_wait_time:
                     # 检查是否有题目弹窗
@@ -3194,6 +3594,13 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     
                     # 【优化】获取视频进度和时长，用于判断是否接近结束
                     current_progress = self.get_video_progress()
+                    current_video_played_seconds, last_counted_video_progress = (
+                        self.update_current_video_played_seconds(
+                            current_video_played_seconds,
+                            current_progress,
+                            last_counted_video_progress,
+                        )
+                    )
                     try:
                         video_duration = self.driver.execute_script(
                             "return document.querySelector('video') ? document.querySelector('video').duration : 0"
@@ -3205,26 +3612,19 @@ class ZhidaoWebAutoPlayerWithQuiz:
                         progress_percentage = 0
                     
                     # 【优化】只在视频进度低于95%时才检查卡停
-                    if progress_percentage < 95:
-                        # 检查视频是否还在播放
-                        if not self.ensure_video_playing():
-                            self.logger.warning("⚠️  视频似乎已停止，尝试恢复播放")
-                            self.recover_stuck_video()
-                    else:
-                        self.logger.debug(f"🎯 视频已接近结束 ({progress_percentage:.1f}%)，跳过卡停检测")
+                    if not self.ensure_video_playing():
+                        self.logger.warning("⚠️  视频似乎已停止，尝试恢复播放")
+                        self.recover_stuck_video(force=True)
                     # 检查进度是否卡住
                     if abs(current_progress - last_progress_check) < 1:
                         no_progress_count += 1
                         self.logger.warning(f"⚠️  视频进度无变化，连续{no_progress_count}次 ({current_progress:.0f}秒)")
                         
                         # 【优化】只在进度低于95%时才尝试恢复
-                        if no_progress_count >= 3 and progress_percentage < 95:
+                        if self.should_recover_stalled_video(no_progress_count, progress_percentage):
                             self.logger.warning(f"🔧 连续{no_progress_count}次进度无变化，可能触发防脚本机制，尝试恢复...")
-                            self.recover_stuck_video()
-                            self.smart_wait(2)
+                            self.recover_stuck_video(force=True)
                             no_progress_count = 0
-                        elif progress_percentage >= 95:
-                            self.logger.debug(f"🎯 视频已接近结束 ({progress_percentage:.1f}%)，跳过恢复操作，等待自然结束")
                     else:
                         if no_progress_count > 0:
                             self.logger.info(f"✅ 视频恢复正常，进度: {current_progress:.0f}秒")
@@ -3259,12 +3659,41 @@ class ZhidaoWebAutoPlayerWithQuiz:
                             if duration > 0:
                                 self.logger.debug(f"📊 视频时长信息: 总时长={duration:.0f}秒, 当前={currentTime:.0f}秒, 进度={currentTime/duration*100:.1f}%")
                             
-                            if ended or (duration > 0 and currentTime >= duration - 5):
-                                self.logger.info(f"✅ 检测到视频播放完成: {currentTime:.0f}/{duration:.0f}秒")
+                            completion_decision = completion_monitor.update(
+                                present=True,
+                                duration=duration,
+                                current_time=currentTime,
+                                ended=ended,
+                            )
+
+                            if completion_decision.completed:
+                                self.logger.info(
+                                    f"✅ 检测到视频播放完成: {currentTime:.0f}/{duration:.0f}秒 "
+                                    f"(reason={completion_decision.reason}, max={completion_decision.max_progress_seen:.0f}秒)"
+                                )
                                 
-                                # 【新增】累加本次视频的实际播放时长
-                                video_watch_time = currentTime
-                                self.total_watch_time_seconds += video_watch_time
+                                # 【新增】记录本次视频的实际播放时长，不重复累计当前视频
+                                video_position = max(currentTime or 0, current_progress or 0)
+                                current_video_played_seconds, last_counted_video_progress = (
+                                    self.update_current_video_played_seconds(
+                                        current_video_played_seconds,
+                                        video_position,
+                                        last_counted_video_progress,
+                                    )
+                                )
+                                if completion_decision.reason == "rolled_back_after_near_end" and duration > 0:
+                                    current_video_played_seconds = max(
+                                        current_video_played_seconds,
+                                        self.get_current_video_played_seconds(duration, video_start_progress),
+                                    )
+                                    video_position = duration
+                                video_watch_time = current_video_played_seconds
+                                self.commit_current_video_watch_time(
+                                    video_position,
+                                    video_start_total_time,
+                                    video_start_progress,
+                                    current_video_played_seconds,
+                                )
                                 total_minutes = self.total_watch_time_seconds / 60
                                 self.logger.info(f"📊 本次视频播放: {video_watch_time:.0f}秒 ({video_watch_time/60:.1f}分钟)")
                                 self.logger.info(f"📊 已播放时间: {total_minutes:.1f}分钟 ({self.total_watch_time_seconds:.0f}秒)")
@@ -3275,6 +3704,21 @@ class ZhidaoWebAutoPlayerWithQuiz:
                                 self.logger.debug(f"视频播放中: {currentTime:.0f}/{duration:.0f}秒 ({currentTime/duration*100:.1f}%)")
                     except Exception as e:
                         self.logger.debug(f"检测视频完成状态失败: {e}")
+
+                    if self.has_reached_max_watch_time(
+                        current_progress,
+                        video_start_total_time,
+                        video_start_progress,
+                        current_video_played_seconds,
+                    ):
+                        self.commit_current_video_watch_time(
+                            current_progress,
+                            video_start_total_time,
+                            video_start_progress,
+                            current_video_played_seconds,
+                        )
+                        self.log_max_watch_time_reached(videos_played)
+                        return
                     
                     # 等待10秒
                     time.sleep(10)
@@ -3283,18 +3727,58 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     # 显示进度
                     # 【优化】同时显示视频总时长和已播放时间（包含当前视频已播放部分）
                     try:
+                        current_progress = self.get_video_progress()
+                        current_video_played_seconds, last_counted_video_progress = (
+                            self.update_current_video_played_seconds(
+                                current_video_played_seconds,
+                                current_progress,
+                                last_counted_video_progress,
+                            )
+                        )
                         video_duration = self.driver.execute_script(
                             "return document.querySelector('video') ? document.querySelector('video').duration : 0"
                         )
-                        # 【修改】已播放时间 = 已完成视频的累计时长 + 当前视频已播放时长
-                        total_minutes = (self.total_watch_time_seconds + current_progress) / 60
+                        current_video_played = current_video_played_seconds
+                        total_seconds = self.get_session_watch_seconds(
+                            current_progress,
+                            video_start_total_time,
+                            video_start_progress,
+                            current_video_played_seconds,
+                        )
+                        watch_time_text = self.format_watch_time_text(total_seconds)
                         if video_duration and video_duration > 0:
-                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 视频总长: {video_duration:.0f}秒 | 已播放时间: {total_minutes:.1f}分钟")
+                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 本次播放: {current_video_played:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 视频总长: {video_duration:.0f}秒 | 已播放时间: {watch_time_text}")
                         else:
-                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {total_minutes:.1f}分钟")
+                            self.logger.info(f"播放进度: {current_progress:.0f}秒 | 本次播放: {current_video_played:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {watch_time_text}")
                     except:
-                        total_minutes = (self.total_watch_time_seconds + current_progress) / 60
-                        self.logger.info(f"播放进度: {current_progress:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {total_minutes:.1f}分钟")
+                        current_video_played = self.get_current_video_played_seconds(
+                            current_progress,
+                            video_start_progress,
+                        )
+                        current_video_played = max(current_video_played, current_video_played_seconds)
+                        total_seconds = self.get_session_watch_seconds(
+                            current_progress,
+                            video_start_total_time,
+                            video_start_progress,
+                            current_video_played,
+                        )
+                        watch_time_text = self.format_watch_time_text(total_seconds)
+                        self.logger.info(f"播放进度: {current_progress:.0f}秒 | 本次播放: {current_video_played:.0f}秒 | 等待时间: {int(elapsed_time)}秒 | 已播放时间: {watch_time_text}")
+
+                    if self.has_reached_max_watch_time(
+                        current_progress,
+                        video_start_total_time,
+                        video_start_progress,
+                        current_video_played_seconds,
+                    ):
+                        self.commit_current_video_watch_time(
+                            current_progress,
+                            video_start_total_time,
+                            video_start_progress,
+                            current_video_played_seconds,
+                        )
+                        self.log_max_watch_time_reached(videos_played)
+                        return
                 
                 if video_completed:
                     videos_played += 1
@@ -3311,21 +3795,22 @@ class ZhidaoWebAutoPlayerWithQuiz:
                     if self.max_watch_minutes > 0:
                         total_minutes = self.total_watch_time_seconds / 60
                         if total_minutes >= self.max_watch_minutes:
-                            self.logger.info("\n" + "="*60)
-                            self.logger.info(f"✅ 已达到预设观看时间 {self.max_watch_minutes} 分钟")
-                            self.logger.info(f"✅ 已播放时间: {total_minutes:.1f} 分钟 ({self.total_watch_time_seconds:.0f} 秒)")
-                            self.logger.info(f"✅ 本次播放 {videos_played} 个视频")
-                            self.logger.info("="*60)
-                            self.logger.info("🚫 结束播放并退出程序")
+                            self.log_max_watch_time_reached(videos_played)
                             return  # 直接退出run方法，结束程序
                 else:
+                    self.commit_current_video_watch_time(
+                        current_progress,
+                        video_start_total_time,
+                        video_start_progress,
+                        current_video_played_seconds,
+                    )
                     self.logger.warning(f"⚠️  视频未检测到完成标记，可能超时")
+                    total_seconds = self.total_watch_time_seconds
+                    self.logger.info(f"📊 已计入当前视频播放时长: {self.format_watch_time_text(total_seconds)}")
+                    if self.has_reached_max_watch_time(0, self.total_watch_time_seconds):
+                        self.log_max_watch_time_reached(videos_played)
+                        return
                 
-                # 随机延迟
-                import random
-                delay = random.uniform(5, 10)
-                self.smart_wait(delay)
-            
             # 显示最终统计
             self.logger.info("\n" + "="*60)
             if videos_played > 0:
@@ -3403,6 +3888,7 @@ class ZhidaoWebAutoPlayerWithQuiz:
             if hasattr(self, 'logger'):
                 self.logger.info("🧹 检查并清理日志文件...")
             self.check_and_cleanup_logs()
+            cleanup_task_artifacts(self.project_root, self.account_file, logger=getattr(self, 'logger', None))
             
         except KeyboardInterrupt:
             print("⚠️  清理过程被中断，但浏览器已关闭")
